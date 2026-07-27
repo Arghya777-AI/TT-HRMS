@@ -41,6 +41,7 @@ import { FaceEnrolmentConsole } from "../components/FaceEnrolmentConsole";
 import { gapChip, qualityChip, requestViaLabel } from "../kiosk-display";
 import { KioskSectionNav } from "../components/KioskSectionNav";
 import { KioskLinkCard } from "../components/KioskLinkCard";
+import { asArray } from "@/lib/asArray";
 
 type GapFilter = "all" | "no_consent" | "consented_not_enrolled" | "consent_withdrawn";
 
@@ -71,16 +72,16 @@ export default function EnrolmentQueuePage() {
     queryKey: qk.admin.employees({ scope: "enrolment-requests" }),
     queryFn: ({ signal }) => fetchEmployeeOptions({}, 300, signal),
     retry: shouldRetryQuery,
-    enabled: (requests.data ?? []).length > 0,
+    enabled: asArray(requests.data).length > 0,
   });
 
   const employeeById = useMemo(() => {
     const map = new Map<string, DirectoryRow>();
-    for (const row of employees.data ?? []) map.set(row.id, row);
+    for (const row of asArray(employees.data)) map.set(row.id, row);
     return map;
   }, [employees.data]);
 
-  const allGaps = useMemo(() => gaps.data ?? [], [gaps.data]);
+  const allGaps = useMemo(() => asArray(gaps.data), [gaps.data]);
   const noConsent = allGaps.filter((g) => g.gap_kind === "no_consent").length;
   const notEnrolled = allGaps.filter((g) => g.gap_kind === "consented_not_enrolled").length;
   const withdrawn = allGaps.filter((g) => g.gap_kind === "consent_withdrawn").length;
@@ -327,7 +328,7 @@ export default function EnrolmentQueuePage() {
       >
         <DataGrid
           columns={requestColumns}
-          rows={requests.data ?? []}
+          rows={asArray(requests.data)}
           rowKey={(row) => row.id}
           pageSize={10}
           emptyState={

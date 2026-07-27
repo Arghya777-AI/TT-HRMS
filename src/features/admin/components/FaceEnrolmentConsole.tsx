@@ -111,6 +111,7 @@ import {
 import { EnrolCapture } from "./EnrolCapture";
 import { Notice } from "./Notice";
 import { ReasonActionButton } from "./ReasonActionButton";
+import { asArray } from "@/lib/asArray";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vocabulary
@@ -406,19 +407,19 @@ export function FaceEnrolmentConsole() {
     }
   }
 
-  const canManageTemplates = (caps.data ?? []).includes(CAP_TEMPLATE_MANAGE);
-  const canEnrol = (caps.data ?? []).includes(CAP_BIOMETRIC_ENROL);
+  const canManageTemplates = asArray(caps.data).includes(CAP_TEMPLATE_MANAGE);
+  const canEnrol = asArray(caps.data).includes(CAP_BIOMETRIC_ENROL);
 
   const rows: ConsoleRow[] = useMemo(() => {
-    const gapById = new Map((gaps.data ?? []).map((gap) => [gap.employee_id, gap]));
+    const gapById = new Map(asArray(gaps.data).map((gap) => [gap.employee_id, gap]));
     const requestsById = new Map<string, EnrolmentRequest[]>();
-    for (const req of requests.data ?? []) {
+    for (const req of asArray(requests.data)) {
       const list = requestsById.get(req.employee_id);
       if (list === undefined) requestsById.set(req.employee_id, [req]);
       else list.push(req);
     }
 
-    return (roster.data ?? []).map((employee) => {
+    return asArray(roster.data).map((employee) => {
       const employeeRequests = requestsById.get(employee.id) ?? [];
       const invitation =
         employeeRequests.find((req) => req.status === INVITATION_OPEN_STATUS) ?? null;
@@ -509,7 +510,7 @@ export function FaceEnrolmentConsole() {
 
   // The selected employee's sets, one row per version. The query key carries the
   // employee id, so this is never another person's data mid-switch.
-  const sets = useMemo(() => representativeSets(templates.data?.templates ?? []), [templates.data]);
+  const sets = useMemo(() => representativeSets(asArray(templates.data?.templates)), [templates.data]);
   const activeSet = sets.find((tpl) => tpl.state === "active") ?? null;
   const pendingSet = sets.find((tpl) => tpl.state === "pending_approval") ?? null;
   const historySets = sets.filter((tpl) => tpl !== activeSet && tpl !== pendingSet);
@@ -542,7 +543,7 @@ export function FaceEnrolmentConsole() {
     consent.reset();
   }
 
-  const revealedTemplates = revealedFor === null ? [] : reveal.data?.templates ?? [];
+  const revealedTemplates = revealedFor === null ? [] : asArray(reveal.data?.templates);
 
   return (
     <section className="rounded-lg border bg-card p-4">

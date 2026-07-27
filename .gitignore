@@ -45,3 +45,9 @@ test-results/
 
 # embedded-postgres clusters created by the local test harness
 supabase/tests/harness/pgdata*/
+.vercel
+.env*
+# ...but the TEMPLATE is the one env file that must be committed: it is how anybody
+# knows which VITE_ vars a build needs. `vercel link` added the broad `.env*` above,
+# which would otherwise silently stop a fresh checkout from tracking it.
+!.env.example

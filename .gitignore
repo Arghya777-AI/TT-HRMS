@@ -1,0 +1,47 @@
+# Environment — never commit real credentials
+.env
+.env.local
+.env.*.local
+supabase/.env.secrets
+
+# Reference repo (frontend inspiration only, cloned separately)
+hrms-digitalchemy/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+build/
+*.local
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs & test output
+logs/
+*.log
+npm-debug.log*
+coverage/
+playwright-report/
+test-results/
+
+# server-only credentials, never committed
+.secrets/
+
+# embedded-postgres clusters created by the local test harness
+supabase/tests/harness/pgdata*/

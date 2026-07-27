@@ -1,0 +1,614 @@
+/**
+ * leave-apply.api.ts — the reads and writes E-05.4 (apply), E-05.6 (calendar),
+ * E-05.7 (detail) and E-06 (comp-off) need on top of `leave.api.ts`.
+ *
+ * THE SERVER PREVIEW (spec E-05: "cannot submit without preview loaded")
+ * ---------------------------------------------------------------------
+ * `rpc_leave_preview()` named in the spec is NOT deployed — there is no such
+ * function in migrations 019 or 033–037, and no leave edge function. What IS
+ * deployed is the same computation under a different door:
+ *
+ *   1. INSERT a `leave_requests` row with `status='draft'`
+ *      (RLS `leave_requests__self_insert` permits exactly this).
+ *   2. `calc_leave_days(request_id)` — SECURITY DEFINER, granted to
+ *      `authenticated` (019 line 1466). It calls `rebuild_leave_request_days`,
+ *      which resolves the employee's holiday calendar and weekly-off rule for
+ *      EVERY date in the range and writes one `leave_request_days` row per date
+ *      with `is_holiday`, `is_weekly_off`, `is_counted`, `day_value`, then
+ *      stamps `total_days` / `paid_days` / `unpaid_days` on the request.
+ *   3. SELECT those rows back.
+ *
+ * That is the per-date allocation the spec asks for, computed by the same
+ * function the submit guard re-runs at submit time — so the preview cannot
+ * disagree with what is actually recorded. The client contributes no arithmetic:
+ * `day_value`, `total_days`, `paid_days` and `unpaid_days` are all read.
+ *
+ * The draft is REUSED, never accumulated: `authenticated` has no DELETE grant on
+ * `leave_requests` (migration 048 revokes DELETE across `public`), so the apply
+ * form finds the employee's existing draft and rewrites it instead of leaving a
+ * trail of abandoned rows. A draft holds no balance — `pending_days` moves only
+ * on the transition to `pending`.
+ */
+import { z } from "zod";
+import {
+  dbDate,
+  dbDateNullable,
+  dbInt,
+  dbIntNullable,
+  dbNumeric,
+  dbNumericNullable,
+  dbTimestamp,
+  dbTimestampNullable,
+  dbUuid,
+  dbUuidNullable,
+  eq,
+  gte,
+  inList,
+  lte,
+  QueryError,
+  rpcOne,
+  selectMany,
+  selectOne,
+  type Filter,
+} from "@/shared/api/query";
+import { insertOne, updateOne } from "@/shared/api/write";
+import { nowInstantIso } from "@/lib/datetime";
+import {
+  fetchLeaveRequest,
+  leaveDayPortionSchema,
+  LEAVE_REQUESTS_TABLE,
+  type LeaveRequest,
+} from "./leave.api";
+
+export const LEAVE_TYPES_TABLE = "leave_types";
+export const LEAVE_REQUEST_DAYS_TABLE = "leave_request_days";
+export const APPROVAL_REQUESTS_TABLE = "approval_requests";
+export const APPROVAL_ACTIONS_TABLE = "approval_actions";
+export const HOLIDAYS_TABLE = "holidays";
+export const EMPLOYEE_REF_VIEW = "v_employee_ref";
+export const MY_EMPLOYEE_VIEW = "v_my_employee";
+export const CALC_LEAVE_DAYS_FN = "calc_leave_days";
+
+export type LeaveDayPortion = z.infer<typeof leaveDayPortionSchema>;
+
+// -----------------------------------------------------------------------------
+// 1. leave_types — the rulebook the form explains (never enforces alone)
+// -----------------------------------------------------------------------------
+
+/**
+ * The subset of `leave_types` (019 §1) the apply form needs to TELL the user
+ * what the rules are. Enforcement is `leave_requests_submit_guard`; these
+ * columns exist so the form can say "3 consecutive days maximum for Casual
+ * Leave" before the server says it, not instead of.
+ *
+ * `leave_types` is readable by `authenticated` for active rows
+ * (`leave_types__ref_read`).
+ */
+export const leaveTypeRuleSchema = z.object({
+  id: dbUuid,
+  code: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  sort_order: dbInt,
+  is_paid: z.boolean(),
+  is_comp_off: z.boolean(),
+  unit: z.string(),
+  allow_half_day: z.boolean(),
+  min_days_per_request: dbNumeric,
+  max_days_per_request: dbNumericNullable,
+  max_consecutive_days: dbNumericNullable,
+  min_notice_days: dbInt,
+  max_backdated_days: dbInt,
+  requires_document_after_days: dbNumericNullable,
+  availing_allowed_during_probation: z.boolean(),
+  allow_negative_balance: z.boolean(),
+  max_negative_days: dbNumeric,
+  count_weekly_off_as_leave: z.boolean(),
+  count_holiday_as_leave: z.boolean(),
+  min_service_months: dbInt,
+  max_times_in_service: dbIntNullable,
+  /** NULL = every employment type. Otherwise an allowlist. */
+  applies_to_employment_types: z.array(z.string()).nullable(),
+  gender_restriction: z.string().nullable(),
+  colour_hex: z.string().nullable(),
+});
+
+export type LeaveTypeRule = z.infer<typeof leaveTypeRuleSchema>;
+
+const LEAVE_TYPE_RULE_COLUMNS =
+  "id, code, name, description, sort_order, is_paid, is_comp_off, unit, allow_half_day, " +
+  "min_days_per_request, max_days_per_request, max_consecutive_days, min_notice_days, " +
+  "max_backdated_days, requires_document_after_days, availing_allowed_during_probation, " +
+  "allow_negative_balance, max_negative_days, count_weekly_off_as_leave, " +
+  "count_holiday_as_leave, min_service_months, max_times_in_service, " +
+  "applies_to_employment_types, gender_restriction, colour_hex";
+
+/** Active leave types, in the order the admin console assigned them. */
+export async function fetchLeaveTypeRules(signal?: AbortSignal): Promise<LeaveTypeRule[]> {
+  return selectMany(LEAVE_TYPES_TABLE, leaveTypeRuleSchema, {
+    filters: [eq("is_active", true)],
+    order: [
+      { column: "sort_order", ascending: true },
+      { column: "code", ascending: true },
+    ],
+    limit: 50,
+    columns: LEAVE_TYPE_RULE_COLUMNS,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 2. My employment context — probation is SHOWN, not silently blocked (§4)
+// -----------------------------------------------------------------------------
+
+/**
+ * The employment facts that change what the leave screens may offer:
+ * probation (EL accrues but cannot be availed until confirmation),
+ * the holiday calendar the range preview resolves against, and the department
+ * the concurrency notice would apply to.
+ *
+ * `v_my_employee` is pinned to `app.current_employee_id()`; a narrow projection
+ * keeps this read off every PII column of `SELECT e.*`.
+ */
+export const myLeaveContextSchema = z.object({
+  id: dbUuid,
+  employee_code: z.string(),
+  display_name: z.string(),
+  employment_status: z.string(),
+  employment_type: z.string(),
+  /** Read only to hide leave types with a `gender_restriction` the user fails. */
+  gender: z.string().nullable(),
+  date_of_join: dbDateNullable,
+  confirmation_due_date: dbDateNullable,
+  confirmed_on: dbDateNullable,
+  holiday_calendar_id: dbUuidNullable,
+  weekly_off_rule_id: dbUuidNullable,
+  department_id: dbUuidNullable,
+  mobile: z.string().nullable(),
+});
+
+export type MyLeaveContext = z.infer<typeof myLeaveContextSchema>;
+
+const MY_LEAVE_CONTEXT_COLUMNS =
+  "id, employee_code, display_name, employment_status, employment_type, gender, " +
+  "date_of_join, confirmation_due_date, confirmed_on, holiday_calendar_id, " +
+  "weekly_off_rule_id, department_id, mobile";
+
+/** `null` = no employee record (kiosk-only account) → no-permission state. */
+export async function fetchMyLeaveContext(signal?: AbortSignal): Promise<MyLeaveContext | null> {
+  return selectOne(MY_EMPLOYEE_VIEW, myLeaveContextSchema, [], {
+    columns: MY_LEAVE_CONTEXT_COLUMNS,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** True when this type may not be availed yet because the employee is on probation. */
+export function isProbationLocked(rule: LeaveTypeRule, ctx: MyLeaveContext | null): boolean {
+  if (ctx === null) return false;
+  if (rule.availing_allowed_during_probation) return false;
+  return ctx.employment_status === "on_probation";
+}
+
+/**
+ * The structural eligibility gates `leave_requests_submit_guard` applies to
+ * everyone — employment type and gender restriction. Mirrored here so the form
+ * does not OFFER a type the server will certainly refuse; the server remains the
+ * only thing that decides. Probation is deliberately NOT a gate: spec §4 says it
+ * is shown, not silently blocked.
+ */
+export function isEligibleLeaveType(rule: LeaveTypeRule, ctx: MyLeaveContext | null): boolean {
+  if (ctx === null) return true;
+  const types = rule.applies_to_employment_types;
+  if (types !== null && types.length > 0 && !types.includes(ctx.employment_type)) return false;
+  if (rule.gender_restriction !== null && ctx.gender !== rule.gender_restriction) return false;
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+// 3. leave_request_days — the per-date allocation
+// -----------------------------------------------------------------------------
+
+/** Mirrors `leave_request_days` (019 §3). Written only by the server. */
+export const leaveRequestDaySchema = z.object({
+  id: dbUuid,
+  leave_request_id: dbUuid,
+  leave_date: dbDate,
+  portion: leaveDayPortionSchema,
+  /** 0.000 / 0.500 / 1.000 — the days this date deducts. Server-computed. */
+  day_value: dbNumeric,
+  is_holiday: z.boolean(),
+  is_weekly_off: z.boolean(),
+  /** false = the date falls inside the leave but deducts nothing. */
+  is_counted: z.boolean(),
+  status: z.string(),
+});
+
+export type LeaveRequestDay = z.infer<typeof leaveRequestDaySchema>;
+
+/** Why a date inside the range deducts nothing. Spec E-05 `reason_skipped`. */
+export type LeaveSkipReason = "weekly_off" | "holiday" | "already_leave";
+
+/**
+ * The allocation row as the screens render it: the server row plus the
+ * `reason_skipped` label E-05 specifies.
+ *
+ * This is a re-LABELLING of booleans the server already decided
+ * (`is_counted`, `is_holiday`, `is_weekly_off`) — not a computation. No fraction,
+ * total or balance is derived here; `day_value` is read as-is.
+ */
+export interface LeaveAllocationDay extends LeaveRequestDay {
+  readonly reason_skipped: LeaveSkipReason | null;
+}
+
+function withSkipReason(day: LeaveRequestDay): LeaveAllocationDay {
+  if (day.is_counted) return { ...day, reason_skipped: null };
+  if (day.is_holiday) return { ...day, reason_skipped: "holiday" };
+  if (day.is_weekly_off) return { ...day, reason_skipped: "weekly_off" };
+  return { ...day, reason_skipped: "already_leave" };
+}
+
+/** Every date of one request, earliest first. */
+export async function fetchLeaveAllocation(
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<LeaveAllocationDay[]> {
+  const rows = await selectMany(LEAVE_REQUEST_DAYS_TABLE, leaveRequestDaySchema, {
+    filters: [eq("leave_request_id", requestId)],
+    order: [{ column: "leave_date", ascending: true }],
+    limit: 400,
+    ...(signal ? { signal } : {}),
+  });
+  return rows.map(withSkipReason);
+}
+
+// -----------------------------------------------------------------------------
+// 4. The server preview: draft → calc_leave_days → read back
+// -----------------------------------------------------------------------------
+
+/** Placeholder that satisfies `ck_lr__reason` (≥10 chars) while still a draft. */
+const DRAFT_REASON_PLACEHOLDER = "Draft — reason not entered yet";
+
+export interface LeavePreviewInput {
+  readonly employeeId: string;
+  readonly leaveTypeId: string;
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly portion: LeaveDayPortion;
+  /** The user's reason so far; the placeholder is used until it is long enough. */
+  readonly reason: string;
+}
+
+export interface LeavePreview {
+  readonly requestId: string;
+  readonly requestNumber: string;
+  /** `leave_requests.total_days`, stamped by `calc_leave_days`. */
+  readonly totalDays: number;
+  readonly paidDays: number;
+  readonly unpaidDays: number;
+  readonly days: readonly LeaveAllocationDay[];
+  /** The instant this preview was read, for the "as at" line. */
+  readonly readAt: string;
+}
+
+const draftIdentitySchema = z.object({
+  id: dbUuid,
+  request_number: z.string(),
+  status: z.string(),
+});
+
+/** The employee's reusable draft, if one already exists. */
+async function fetchMyDraftRequest(
+  employeeId: string,
+  signal?: AbortSignal,
+): Promise<{ id: string; request_number: string; status: string } | null> {
+  return selectOne(
+    LEAVE_REQUESTS_TABLE,
+    draftIdentitySchema,
+    [eq("employee_id", employeeId), eq("status", "draft")],
+    {
+      columns: "id, request_number, status",
+      order: [{ column: "created_at", ascending: false }],
+      ...(signal ? { signal } : {}),
+    },
+  );
+}
+
+function draftValues(input: LeavePreviewInput): Record<string, unknown> {
+  const reason = input.reason.trim();
+  return {
+    leave_type_id: input.leaveTypeId,
+    from_date: input.fromDate,
+    to_date: input.toDate,
+    portion: input.portion,
+    reason: reason.length >= 10 ? reason : DRAFT_REASON_PLACEHOLDER,
+  };
+}
+
+/**
+ * Ask the server for the per-date allocation of a not-yet-submitted request.
+ *
+ * Returns the draft id as well, so submitting is a status transition on the very
+ * row that was previewed — the preview and the submission cannot drift apart.
+ */
+export async function previewLeaveRequest(
+  input: LeavePreviewInput,
+  signal?: AbortSignal,
+): Promise<LeavePreview> {
+  const existing = await fetchMyDraftRequest(input.employeeId, signal);
+  const draft =
+    existing === null
+      ? await insertOne(
+          LEAVE_REQUESTS_TABLE,
+          draftIdentitySchema,
+          { employee_id: input.employeeId, status: "draft", ...draftValues(input) },
+          { columns: "id, request_number, status", ...(signal ? { signal } : {}) },
+        )
+      : await updateOne(
+          LEAVE_REQUESTS_TABLE,
+          draftIdentitySchema,
+          draftValues(input),
+          { id: existing.id },
+          { columns: "id, request_number, status", ...(signal ? { signal } : {}) },
+        );
+
+  // The server expands the range: holidays and weekly offs per THIS employee's
+  // calendar and rule, half-day portions, and the day_value of each date.
+  await rpcOne(
+    CALC_LEAVE_DAYS_FN,
+    { p_leave_request_id: draft.id },
+    dbNumeric,
+    signal ? { signal } : {},
+  );
+
+  const [request, days] = await Promise.all([
+    fetchLeaveRequest(draft.id, signal),
+    fetchLeaveAllocation(draft.id, signal),
+  ]);
+
+  return {
+    requestId: draft.id,
+    requestNumber: draft.request_number,
+    // Read, never derived: calc_leave_days stamped these three columns.
+    totalDays: request?.total_days ?? 0,
+    paidDays: request?.paid_days ?? 0,
+    unpaidDays: request?.unpaid_days ?? 0,
+    days,
+    readAt: nowInstantIso(),
+  };
+}
+
+export interface SubmitLeaveInput {
+  /** The id returned by `previewLeaveRequest` — submission is never blind. */
+  readonly requestId: string;
+  readonly reason: string;
+  readonly contactDuringLeave: string | null;
+  readonly handoverToEmployeeId: string | null;
+  readonly handoverNotes: string | null;
+  /** Tick "take the excess as loss of pay"; the server clamps it to total_days. */
+  readonly unpaidDays: number | null;
+}
+
+/**
+ * draft → pending. Every rule (V1–V20: notice, max consecutive, overlap,
+ * backdating, probation, balance, gender/employment-type eligibility, document
+ * requirement) is checked by `leave_requests_submit_guard` inside this one
+ * UPDATE, and the day expansion is recomputed from the submitted values. A
+ * rejection arrives as `QueryError{kind:'conflict'}` carrying the server's own
+ * sentence.
+ */
+export async function submitLeaveRequest(
+  input: SubmitLeaveInput,
+  signal?: AbortSignal,
+): Promise<LeaveRequest> {
+  const values: Record<string, unknown> = {
+    status: "pending",
+    reason: input.reason.trim(),
+    contact_during_leave: input.contactDuringLeave,
+    handover_to_employee_id: input.handoverToEmployeeId,
+    handover_notes: input.handoverNotes,
+  };
+  if (input.unpaidDays !== null) values["unpaid_days"] = input.unpaidDays;
+  try {
+    await updateOne(LEAVE_REQUESTS_TABLE, draftIdentitySchema, values, { id: input.requestId }, {
+      columns: "id, request_number, status",
+      ...(signal ? { signal } : {}),
+    });
+  } catch (e) {
+    // Replay: the row is already out of `draft|pending`, so the RLS USING clause
+    // no longer matches and PostgREST updates nothing. That is the table-path
+    // equivalent of a 409 idempotent replay — if the request did move to
+    // `pending`, the submit succeeded and the UI must treat it as success
+    // (frontend-contract §5). Anything else rethrows.
+    if (!(e instanceof QueryError) || e.kind !== "not_found") throw e;
+    const replayed = await fetchLeaveRequest(input.requestId, signal);
+    if (replayed === null || replayed.status === "draft") throw e;
+    return replayed;
+  }
+  const request = await fetchLeaveRequest(input.requestId, signal);
+  if (request === null) {
+    throw new QueryError(
+      LEAVE_REQUESTS_TABLE,
+      "not_found",
+      "The request was submitted but is no longer readable.",
+    );
+  }
+  return request;
+}
+
+/**
+ * Withdraw a request that has not been decided yet. RLS permits the
+ * `draft|pending → withdrawn` transition for the owner
+ * (`leave_requests__self_update`), and `leave_requests_apply_ledger` releases
+ * the reserved days.
+ */
+export async function withdrawLeaveRequest(
+  requestId: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await updateOne(
+    LEAVE_REQUESTS_TABLE,
+    draftIdentitySchema,
+    { status: "withdrawn", cancellation_reason: reason.trim() },
+    { id: requestId },
+    { columns: "id, request_number, status", ...(signal ? { signal } : {}) },
+  );
+}
+
+// -----------------------------------------------------------------------------
+// 5. Approval trail (E-05.7)
+// -----------------------------------------------------------------------------
+
+export const approvalRequestSchema = z.object({
+  id: dbUuid,
+  request_number: z.string(),
+  detail_table: z.string(),
+  detail_id: dbUuid,
+  status: z.string(),
+  current_level: dbInt,
+  total_levels: dbInt,
+  submitted_at: dbTimestamp,
+  sla_due_at: dbTimestamp,
+  first_action_at: dbTimestampNullable,
+  decided_at: dbTimestampNullable,
+  decision_comment: z.string().nullable(),
+  escalated_at: dbTimestampNullable,
+  cancelled_at: dbTimestampNullable,
+  cancellation_reason: z.string().nullable(),
+});
+
+export type ApprovalRequestRow = z.infer<typeof approvalRequestSchema>;
+
+export const approvalActionSchema = z.object({
+  id: dbUuid,
+  approval_request_id: dbUuid,
+  level: dbInt,
+  actor_id: dbUuidNullable,
+  actor_role: z.string().nullable(),
+  acted_as: z.string().nullable(),
+  action: z.string(),
+  comment: z.string().nullable(),
+  acted_at: dbTimestamp,
+});
+
+export type ApprovalActionRow = z.infer<typeof approvalActionSchema>;
+
+/** Directory-safe label for a person, resolved from a `profiles.id`. */
+export const employeeRefSchema = z.object({
+  id: dbUuid,
+  profile_id: dbUuidNullable,
+  employee_code: z.string(),
+  display_name: z.string(),
+  designation_name: z.string().nullable(),
+});
+
+export type EmployeeRef = z.infer<typeof employeeRefSchema>;
+
+export interface ApprovalTrail {
+  readonly request: ApprovalRequestRow | null;
+  readonly actions: readonly ApprovalActionRow[];
+  /** `profiles.id` → the person, so a decision is attributed by name + role. */
+  readonly actors: ReadonlyMap<string, EmployeeRef>;
+}
+
+/**
+ * The decision trail of one leave request.
+ *
+ * `approval_requests` is visible to the subject (`ar__self_read`) and
+ * `approval_actions` inherits that audience. Actor names come from
+ * `v_employee_ref` keyed by `profile_id` — `profiles` itself is self-only, so a
+ * name+role attribution (DR-23/DR-53) has to be resolved through the directory
+ * view rather than an embedded join.
+ *
+ * `request === null` is normal: the deployed workflow only materialises an
+ * `approval_requests` row when a chain is configured for the type. The screen
+ * then falls back to the decision columns on `leave_requests` itself.
+ */
+export async function fetchApprovalTrail(
+  leaveRequestId: string,
+  signal?: AbortSignal,
+): Promise<ApprovalTrail> {
+  const request = await selectOne(
+    APPROVAL_REQUESTS_TABLE,
+    approvalRequestSchema,
+    [eq("detail_table", "leave_requests"), eq("detail_id", leaveRequestId)],
+    {
+      order: [{ column: "submitted_at", ascending: false }],
+      ...(signal ? { signal } : {}),
+    },
+  );
+  if (request === null) return { request: null, actions: [], actors: new Map() };
+
+  const actions = await selectMany(APPROVAL_ACTIONS_TABLE, approvalActionSchema, {
+    filters: [eq("approval_request_id", request.id)],
+    order: [
+      { column: "level", ascending: true },
+      { column: "acted_at", ascending: true },
+    ],
+    limit: 100,
+    ...(signal ? { signal } : {}),
+  });
+
+  const profileIds = [...new Set(actions.map((a) => a.actor_id).filter((v): v is string => v !== null))];
+  const actors = new Map<string, EmployeeRef>();
+  if (profileIds.length > 0) {
+    const refs = await selectMany(EMPLOYEE_REF_VIEW, employeeRefSchema, {
+      filters: [inList("profile_id", profileIds)],
+      limit: 100,
+      columns: "id, profile_id, employee_code, display_name, designation_name",
+      ...(signal ? { signal } : {}),
+    });
+    for (const ref of refs) if (ref.profile_id !== null) actors.set(ref.profile_id, ref);
+  }
+  return { request, actions, actors };
+}
+
+// -----------------------------------------------------------------------------
+// 6. Holidays in a window (E-05.6)
+// -----------------------------------------------------------------------------
+
+/**
+ * `holidays` (014) narrowed to what a calendar cell renders. Deliberately a
+ * local projection rather than an import from `home.api`: `home.api` imports
+ * `leave.api`, and reaching back into it from the leave feature would make the
+ * leave chunk pull the home chunk's graph.
+ *
+ * Department/location narrowing is not applied client-side — `applies_to_*` are
+ * "everyone when null" arrays and applicability is engine logic. The per-date,
+ * per-employee truth is `is_holiday` on the allocation/attendance rows.
+ */
+export const calendarHolidaySchema = z.object({
+  id: dbUuid,
+  holiday_date: dbDate,
+  name: z.string(),
+  holiday_type: z.string(),
+  is_optional: z.boolean(),
+  compensatory_off_if_worked: z.boolean(),
+});
+
+export type CalendarHoliday = z.infer<typeof calendarHolidaySchema>;
+
+export interface HolidayWindow {
+  readonly holidayCalendarId: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+export async function fetchHolidaysInWindow(
+  w: HolidayWindow,
+  signal?: AbortSignal,
+): Promise<CalendarHoliday[]> {
+  const filters: Filter[] = [
+    eq("holiday_calendar_id", w.holidayCalendarId),
+    eq("is_active", true),
+    gte("holiday_date", w.from),
+    lte("holiday_date", w.to),
+  ];
+  return selectMany(HOLIDAYS_TABLE, calendarHolidaySchema, {
+    filters,
+    order: [{ column: "holiday_date", ascending: true }],
+    limit: 60,
+    columns: "id, holiday_date, name, holiday_type, is_optional, compensatory_off_if_worked",
+    ...(signal ? { signal } : {}),
+  });
+}

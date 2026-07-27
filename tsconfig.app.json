@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    /* Strict posture — the whole point of rebuilding, not lifting, the reference repo. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "types": ["vitest/globals", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  /*
+    `src` plus ONE file from the edge functions.
+
+    `supabase/functions/_shared/geofence.ts` is the single implementation of "is
+    this punch inside the venue", shared by `attendance-self-punch` and
+    `kiosk-punch` so the two cannot disagree. Its verdict cannot be exercised by a
+    live round trip yet (the venue has no coordinates, so every real punch is
+    correctly NULL), which makes a unit test the only way to know the branch is
+    right before it first runs — and the test has to import it from here.
+
+    It is safe to include and it is the ONLY function file that is: pure TypeScript,
+    no imports at all, no Deno APIs, no `Deno.serve`. Pointing this project at any
+    other function file would drag in `npm:` specifiers and Deno globals that the
+    browser config cannot resolve. Nothing in `src` imports it, so it is never
+    bundled — Vite follows imports, not this list.
+
+    Side benefit worth stating: this module is now the one edge-function file that
+    IS typechecked. The rest are covered only by grep-shaped guards in
+    `src/app/edge-function-discipline.test.ts`.
+  */
+  "include": ["src", "supabase/functions/_shared/geofence.ts"]
+}

@@ -1,0 +1,1163 @@
+/**
+ * kiosk-punch — catalogue #1, auth model **D+O** (device HMAC + open operator session).
+ *
+ * THE hot path. A guard-operated tablet sends a 128-float face descriptor; the
+ * SERVER decides who it is, writes the punch, and answers with a name, a code, a
+ * photo and a time. Nothing else. The tablet never sees a descriptor, a distance,
+ * a threshold or any other employee's data (spec-kiosk INV-3/INV-8, §11
+ * allow-list, spec-architecture §6 kiosk hard rule, test T-09).
+ *
+ * Two shapes on the same endpoint:
+ *   single  { clientEventId, capturedAt?, descriptor[128], photoBase64?, queuedAt?, mode:'face' }
+ *   batch   { queue: [ …the same item, up to 25 ] }     ← offline IndexedDB replay
+ *
+ * Batch items keep their ORIGINAL `capturedAt` as `punched_at` (skew-corrected),
+ * are stamped `is_offline_replay = true` with `queued_at` and
+ * `device_clock_skew_seconds`, and each carries its own `clientEventId` so
+ * per-item idempotency is exact — see §8.1 and migration 050 §4.
+ *
+ * INV-4 / INV-9: no biometric event is silently dropped. Every outcome —
+ * matched, ambiguous, no-match, debounced, inactive identity — writes a
+ * `secure.face_match_log` row before the function answers.
+ *
+ * WHY THE MATCH IS SQL, NOT TYPESCRIPT: pulling ~2,000 × 128 floats into the
+ * isolate on every scan is ~1 MB per punch and blows the 700 ms budget. The
+ * distance is computed in Postgres, exactly (sequential scan — spec-kiosk §3.1
+ * is explicit that margin correctness must never be probabilistic).
+ *
+ * AUDIT: `public.attendance_punches` is deliberately NOT audit-trigger-attached
+ * (migration 038 header: "its insert IS the audit record; voids are audited by
+ * the void-punch path"). So this function writes NO `audit_log` row and must not
+ * start: the punch row plus its `face_match_log` row IS the evidence trail.
+ * `void-punch/index.ts` owns the other half.
+ */
+
+import { assertOriginAllowed, corsHeaders, handlePreflight } from "../_shared/cors.ts";
+import { forbidden, methodNotAllowed, ok, tooMany, toProblem, unprocessable } from "../_shared/errors.ts";
+import { common, decodeJson, parse, readRawBody, z } from "../_shared/validate.ts";
+import { createLogger, type Logger } from "../_shared/log.ts";
+import { istTime, nowIso, nowMs, parseFlexibleInstant, toIso } from "../_shared/datetime.ts";
+import {
+  clientIpFrom,
+  firstRow,
+  type RequestContext,
+  requestIdFrom,
+  serviceClient,
+  sql as sqlHandle,
+  userAgentFrom,
+  withContext,
+} from "../_shared/db.ts";
+import { type DeviceAuth, type OperatorSession, requireOperatorSession, verifyDevice } from "../_shared/auth.ts";
+import { evaluateGeofence } from "../_shared/geofence.ts";
+import { limitKey, RATE_LIMITS, tryTake } from "../_shared/ratelimit.ts";
+import { claim, idempotencyKeyFrom, release, replayResponse, requestHash, store } from "../_shared/idempotency.ts";
+import type { Sql } from "../_shared/deps.ts";
+
+const FN_NAME = "kiosk-punch";
+const ALLOWED_METHODS = ["POST", "OPTIONS"] as const;
+
+/** A 640×640 q0.75 JPEG is ~90 KB → ~120 KB base64. Five of those plus descriptors fit here. */
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+/** spec-kiosk §8.1 syncs in batches of 5; 25 is generous headroom, not an invitation. */
+const MAX_BATCH_ITEMS = 25;
+/** Hard cap per photo, mirroring the tablet's 200 KB blob cap (§8) with base64 overhead. */
+const MAX_PHOTO_BASE64_CHARS = 400_000;
+
+const DESCRIPTOR_DIM = 128;
+/** §10: the descriptor is L2-normalised on-device; the server checks |‖d‖ − 1| ≤ 0.02. */
+const DESCRIPTOR_NORM_TOLERANCE = 0.02;
+/** Maximum Euclidean distance between two unit vectors — the confidence denominator. */
+const MAX_UNIT_DISTANCE = 2;
+
+/** Fallbacks when no `attendance_policies` row resolves. Same numbers as the DB defaults. */
+const DEFAULT_MIN_CONFIDENCE = 0.62;
+const DEFAULT_MIN_MARGIN = 0.06;
+const DEFAULT_DEBOUNCE_SECONDS = 120;
+
+/**
+ * spec-kiosk §3.3 `T_far = 0.62` (Euclidean). Below the accept threshold but
+ * within this, the guard is offered the top 3 to confirm; beyond it there are no
+ * candidates worth showing. There is no column for it yet — see the DB-gap note.
+ */
+const GUARD_CONFIRM_MAX_DISTANCE = 0.62;
+/** §3.3 `T_review = 0.38`: an accepted match beyond this is band `low` → review queue. */
+const REVIEW_DISTANCE = 0.38;
+
+/** §11: a candidate/matched reference photo is a 120-second signed URL. */
+const REFERENCE_PHOTO_TTL_SECONDS = 120;
+/** §8.1 KS-4: device time is trusted for a queued punch only while |skew| ≤ 60 s. */
+const OFFLINE_SKEW_TRUST_SECONDS = 60;
+
+const PUNCH_PHOTO_BUCKET = "kiosk-punch-photos";
+const EMPLOYEE_PHOTO_BUCKET = "employee-photos";
+
+/** §1: enrolment and scan must agree byte-for-byte or distances are meaningless. */
+const DESCRIPTOR_MODEL = "faceapi-rn34-128d-v1";
+
+/**
+ * Statuses at which a person may be recorded at the gate. `absconding` and
+ * `on_long_leave` ARE allowed on purpose — someone who turns up is a fact HR
+ * needs, flagged for review, not an event to refuse. The excluded four are
+ * "this person has no business punching": not joined, suspended, gone.
+ */
+const PUNCHABLE_STATUSES: ReadonlySet<string> = new Set([
+  "active",
+  "on_probation",
+  "confirmed",
+  "on_notice",
+  "rehired",
+  "on_long_leave",
+  "absconding",
+]);
+const REVIEW_STATUSES: ReadonlySet<string> = new Set(["on_long_leave", "absconding", "on_notice"]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Request contract
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PunchItem = z
+  .object({
+    /** uuidv4 minted at capture on the tablet; the dedup key end to end (§8). */
+    clientEventId: common.idempotencyKey,
+    /** Device wall clock at capture. Metadata for an online punch (INV-1); `punched_at` for a replay. */
+    capturedAt: common.instant.optional(),
+    descriptor: z
+      .array(z.number().finite())
+      .length(DESCRIPTOR_DIM, `Expected ${DESCRIPTOR_DIM} floats.`),
+    /** JPEG, base64 (bare or data-URL). Optional; a storage failure never loses the punch. */
+    photoBase64: z.string().max(MAX_PHOTO_BASE64_CHARS).optional(),
+    /** When the item entered the offline queue. */
+    queuedAt: common.instant.optional(),
+    /**
+     * Where the tablet was, from `navigator.geolocation`. OPTIONAL, and its absence
+     * is never a refusal: a wall-mounted kiosk may have no fix at all, and a
+     * refused permission is an expected outcome rather than a violation.
+     *
+     * PER ITEM, not per request, because an offline queue can be flushed from
+     * somewhere other than where it was filled — a phone carried indoors and
+     * synced later would otherwise stamp every queued punch with the location of
+     * the sync. Each scan carries the fix that was taken WITH it.
+     *
+     * This existed on `attendance-self-punch` from the start and was simply
+     * missing here, so every gate punch landed with a blank location while web
+     * punches carried coordinates.
+     */
+    geo: z
+      .object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        accuracyMetres: z.number().nonnegative().max(100_000).optional(),
+      })
+      .strict()
+      .optional(),
+    mode: z.literal("face"),
+  })
+  .strict();
+
+const BatchBody = z
+  .object({ queue: z.array(PunchItem).min(1).max(MAX_BATCH_ITEMS) })
+  .strict();
+
+/** Batch first: a body carrying `queue` must never be tried against the single schema. */
+const PunchBody = z.union([BatchBody, PunchItem]);
+
+type PunchItemInput = z.infer<typeof PunchItem>;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Response contract — an ALLOW-LIST, enforced at runtime
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The only keys that may ever reach a kiosk (spec-kiosk §11, test T-09).
+ * `pickWhitelisted` is applied to every result on the way out, so adding a field
+ * to an internal type cannot leak it — a new key has to be added HERE, which is
+ * a reviewed security decision.
+ *
+ * Never present, by construction: descriptor, distance, threshold, confidence,
+ * salary, phone, email, address, Aadhaar/PAN/bank, DOB, designation, department,
+ * manager, leave, any other employee, any history beyond this punch.
+ */
+export const ALLOWED_RESPONSE_FIELDS = [
+  "matched",
+  "displayName",
+  "employeeCode",
+  "photoUrl",
+  "punchKind",
+  "istTime",
+  "guardConfirmOptions",
+  /** Machine code only, batch items only: lets the queue mark an item failed vs done (§8.1). */
+  "error",
+] as const;
+
+export type PunchKind = "in" | "out" | "scan";
+
+interface GuardConfirmOption {
+  employeeCode: string;
+  displayName: string;
+  photoUrl: string | null;
+}
+
+interface PunchResult {
+  matched: boolean;
+  displayName?: string;
+  employeeCode?: string;
+  photoUrl?: string | null;
+  punchKind?: PunchKind;
+  istTime?: string;
+  guardConfirmOptions?: GuardConfirmOption[];
+  error?: string;
+}
+
+/** Strip anything not on the allow-list. The last line of defence for T-09. */
+export function pickWhitelisted(result: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of ALLOWED_RESPONSE_FIELDS) {
+    if (result[key] !== undefined) out[key] = result[key];
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Small helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Postgres array literal. Sent as text and cast, so no client type inference is involved. */
+function toPgRealArray(values: readonly number[]): string {
+  return `{${values.map((v) => (Object.is(v, -0) ? 0 : v)).join(",")}}`;
+}
+
+function l2Norm(values: readonly number[]): number {
+  let sum = 0;
+  for (const v of values) sum += v * v;
+  return Math.sqrt(sum);
+}
+
+/** Unit-vector Euclidean distance → [0,1] confidence (migration 012: `1 − d / max_d`). */
+function confidenceFor(distance: number): number {
+  return 1 - distance / MAX_UNIT_DISTANCE;
+}
+
+function decodeBase64Jpeg(value: string): Uint8Array {
+  const comma = value.indexOf(",");
+  const cleaned = (comma >= 0 && value.slice(0, comma).includes("base64") ? value.slice(comma + 1) : value)
+    .replace(/\s+/g, "");
+  let binary: string;
+  try {
+    binary = atob(cleaned);
+  } catch {
+    throw unprocessable(
+      [{ pointer: "/photoBase64", code: "invalid_base64", detail: "Photo is not valid base64." }],
+      "The capture photo could not be decoded.",
+      "KIOSK_PHOTO_HASH_MISMATCH",
+    );
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Storage put, done BEFORE the transaction (spec-kiosk §4.4: "Steps 15–20 in one
+ * transaction except Storage put; orphan objects swept nightly"). A failure here
+ * is logged and swallowed: losing a photo is a degraded punch, losing the punch
+ * is a person who cannot prove they came to work (INV-9).
+ */
+async function putPhoto(path: string, bytes: Uint8Array, log: Logger): Promise<string | null> {
+  const { error } = await serviceClient()
+    .storage.from(PUNCH_PHOTO_BUCKET)
+    .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
+  if (error !== null) {
+    log.warn("punch photo upload failed; punch proceeds without it", { path, err: error.message });
+    return null;
+  }
+  return path;
+}
+
+/** 120-second signed URL for a reference photo. Null when the employee has none. */
+async function signReferencePhoto(photoPath: string | null): Promise<string | null> {
+  if (photoPath === null || photoPath === "") return null;
+  const { data, error } = await serviceClient()
+    .storage.from(EMPLOYEE_PHOTO_BUCKET)
+    .createSignedUrl(photoPath, REFERENCE_PHOTO_TTL_SECONDS);
+  if (error !== null || data === null) return null;
+  return data.signedUrl;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1:N match
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface CandidateRow {
+  template_id: string;
+  employee_id: string;
+  model_version: string;
+  employee_code: string;
+  display_name: string;
+  photo_path: string | null;
+  employment_status: string;
+  distance: string;
+  candidate_set_size: number;
+}
+
+interface Candidate {
+  templateId: string;
+  employeeId: string;
+  modelVersion: string;
+  employeeCode: string;
+  displayName: string;
+  photoPath: string | null;
+  employmentStatus: string;
+  distance: number;
+}
+
+/**
+ * Exact sequential 1:N scan over every ACTIVE, consented, un-purged template.
+ * Returns the three nearest plus the true size of the candidate set.
+ *
+ * The consent join is the DPDP Act gate: a withdrawn consent removes the person
+ * from the search space immediately, without waiting for the ≤7-day purge job.
+ *
+ * `count(*) OVER ()` is evaluated after GROUP BY and before LIMIT, so it is the
+ * real N — the number the `face_match_log` row has to record.
+ */
+async function findCandidates(
+  client: Sql,
+  descriptor: readonly number[],
+): Promise<{ candidates: Candidate[]; candidateSetSize: number }> {
+  const rows = await client<CandidateRow[]>`
+    WITH probe AS (SELECT ${toPgRealArray(descriptor)}::real[] AS d)
+    SELECT t.id                        AS template_id,
+           t.employee_id               AS employee_id,
+           t.model_version             AS model_version,
+           e.employee_code             AS employee_code,
+           e.display_name              AS display_name,
+           e.photo_path                AS photo_path,
+           e.employment_status::text   AS employment_status,
+           sqrt(sum(power(x.a::double precision - x.b::double precision, 2)))::numeric(8,5) AS distance,
+           (count(*) OVER ())::integer AS candidate_set_size
+      FROM probe p
+      CROSS JOIN secure.face_templates t
+      JOIN public.employees e
+        ON e.id = t.employee_id
+       AND e.deleted_at IS NULL
+      JOIN secure.biometric_consents c
+        ON c.id = t.consent_id
+       AND c.granted
+       AND c.withdrawn_at IS NULL
+      CROSS JOIN LATERAL unnest(t.descriptor, p.d) AS x(a, b)
+     WHERE t.is_active
+       AND t.purged_at IS NULL
+       AND t.descriptor_dim = ${DESCRIPTOR_DIM}
+     GROUP BY t.id, t.employee_id, t.model_version, e.employee_code, e.display_name,
+              e.photo_path, e.employment_status
+     ORDER BY distance ASC
+     LIMIT 3
+  `;
+  const list = rows as unknown as CandidateRow[];
+  return {
+    candidateSetSize: list[0]?.candidate_set_size ?? 0,
+    candidates: list.map((r) => ({
+      templateId: r.template_id,
+      employeeId: r.employee_id,
+      modelVersion: r.model_version,
+      employeeCode: r.employee_code,
+      displayName: r.display_name,
+      photoPath: r.photo_path,
+      employmentStatus: r.employment_status,
+      distance: Number(r.distance),
+    })),
+  };
+}
+
+interface Thresholds {
+  minConfidence: number;
+  minMargin: number;
+  debounceSeconds: number;
+}
+
+/**
+ * Thresholds for THIS decision: the device floor (`kiosk_devices.min_match_confidence`)
+ * and the matched employee's attendance policy. The strictest of the two wins —
+ * a device hardened for a badly-lit gate must not be loosened by a policy row.
+ */
+async function resolveThresholds(
+  client: Sql,
+  employeeId: string,
+  deviceMinConfidence: number,
+): Promise<Thresholds> {
+  const rows = await client`
+    SELECT ap.punch_debounce_seconds,
+           ap.min_confidence_for_auto_accept,
+           ap.min_margin_for_auto_accept
+      FROM public.attendance_policies ap
+     WHERE ap.id = public.resolve_policy('attendance_policy', ${employeeId}::uuid, util.ist_today())
+       AND ap.deleted_at IS NULL
+     LIMIT 1
+  `;
+  const row = firstRow(rows as unknown as Record<string, unknown>[]);
+  const policyMinConfidence = row === null ? DEFAULT_MIN_CONFIDENCE : Number(row.min_confidence_for_auto_accept);
+  const policyMinMargin = row === null ? DEFAULT_MIN_MARGIN : Number(row.min_margin_for_auto_accept);
+  const debounce = row === null ? DEFAULT_DEBOUNCE_SECONDS : Number(row.punch_debounce_seconds);
+  return {
+    minConfidence: Math.max(deviceMinConfidence, policyMinConfidence),
+    minMargin: policyMinMargin,
+    debounceSeconds: Number.isFinite(debounce) ? debounce : DEFAULT_DEBOUNCE_SECONDS,
+  };
+}
+
+/**
+ * The business date the `trg_attendance_punches__business_date` trigger will
+ * choose, asked of the SAME database functions the trigger uses. Needed only to
+ * name the photo folder, which has to exist before the insert.
+ *
+ * The insert's `RETURNING effective_date` is compared against this and a
+ * mismatch is logged — so drift is visible rather than silent. A
+ * `public.punch_effective_date(uuid, timestamptz)` helper would remove the
+ * duplication entirely; see the DB-gap note.
+ */
+async function predictEffectiveDate(
+  client: Sql,
+  employeeId: string,
+  punchedAtOverride: string | null,
+): Promise<string> {
+  const rows = await client`
+    WITH t AS (SELECT COALESCE(${punchedAtOverride}::timestamptz, now()) AS ts)
+    SELECT COALESCE(
+             (SELECT (util.ist_date(t.ts) - 1)
+                FROM public.shifts s
+               WHERE s.id = public.resolve_shift_for_date(${employeeId}::uuid, util.ist_date(t.ts) - 1)
+                 AND COALESCE(s.crosses_midnight, false)
+                 AND util.ist_time(t.ts) < COALESCE(s.day_cutover_time, TIME '05:00')),
+             util.ist_date(t.ts)
+           )::text AS effective_date
+      FROM t
+  `;
+  const row = firstRow(rows as unknown as { effective_date: string }[]);
+  return row?.effective_date ?? "";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// One punch, end to end
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface ProcessInput {
+  item: PunchItemInput;
+  deviceAuth: DeviceAuth;
+  operator: OperatorSession | null;
+  ctxBase: Omit<RequestContext, "reason">;
+  isReplay: boolean;
+  log: Logger;
+  client: Sql;
+}
+
+/**
+ * Lifecycle steps 9–10 for a single scan, and the whole of spec-kiosk §4.4
+ * steps 7–20 for it.
+ */
+async function processPunch(input: ProcessInput): Promise<PunchResult> {
+  const { item, deviceAuth, operator, ctxBase, isReplay, log, client } = input;
+  const device = deviceAuth.device;
+
+  // §4.4 step 7 — descriptor sanity. A non-unit descriptor means the tablet
+  // skipped L2 normalisation, and every distance computed from it is a lie.
+  const norm = l2Norm(item.descriptor);
+  if (Math.abs(norm - 1) > DESCRIPTOR_NORM_TOLERANCE) {
+    throw unprocessable(
+      [{ pointer: "/descriptor", code: "not_normalised", detail: "Descriptor must be L2-normalised." }],
+      "The face descriptor is not unit length.",
+      "KIOSK_DESCRIPTOR_INVALID",
+    );
+  }
+
+  // §4.4 step 9 — decode once, before any DB work, so an unusable photo fails
+  // the same way on every path instead of after a match has been logged.
+  const photoBytes = item.photoBase64 === undefined ? null : decodeBase64Jpeg(item.photoBase64);
+
+  // INV-1 / KS-4. Online: the server clock is truth and `punched_at` stays
+  // `now()`. Replay: keep the ORIGINAL capture instant, corrected by the
+  // measured skew, and never let it land in the future (`ck_ap__not_future`).
+  let punchedAtOverride: string | null = null;
+  if (isReplay && item.capturedAt !== undefined) {
+    const captured = parseFlexibleInstant(item.capturedAt);
+    if (captured !== null) {
+      const skew = deviceAuth.clockSkewSeconds;
+      const correctedMs = captured.getTime() -
+        (Math.abs(skew) <= OFFLINE_SKEW_TRUST_SECONDS ? 0 : skew * 1000);
+      const serverMs = nowMs();
+      punchedAtOverride = toIso(correctedMs > serverMs ? serverMs : correctedMs);
+    }
+  }
+
+  // §4.4 step 10 — 1:N.
+  const { candidates, candidateSetSize } = await findCandidates(client, item.descriptor);
+  const best = candidates[0];
+  const runnerUp = candidates[1];
+
+  const thresholds = best === undefined
+    ? { minConfidence: Math.max(device.minMatchConfidence, DEFAULT_MIN_CONFIDENCE), minMargin: DEFAULT_MIN_MARGIN, debounceSeconds: DEFAULT_DEBOUNCE_SECONDS }
+    : await resolveThresholds(client, best.employeeId, device.minMatchConfidence);
+
+  const bestDistance = best?.distance ?? null;
+  const bestConfidence = bestDistance === null ? null : confidenceFor(bestDistance);
+  const margin = bestDistance !== null && runnerUp !== undefined ? runnerUp.distance - bestDistance : null;
+  const marginOk = margin === null || margin >= thresholds.minMargin;
+  const accepted = best !== undefined &&
+    bestConfidence !== null &&
+    bestConfidence >= thresholds.minConfidence &&
+    marginOk;
+
+  // Top-3 distances stay SERVER-SIDE (§4.2: "Raw distances NOT returned").
+  const candidateScores = candidates.map((c, i) => ({
+    rank: i + 1,
+    employee_id: c.employeeId,
+    template_id: c.templateId,
+    distance: Number(c.distance.toFixed(5)),
+  }));
+
+  const matchLogId = crypto.randomUUID();
+  const ctx: RequestContext = { ...ctxBase, reason: null };
+
+  // ── Not accepted: log the attempt, offer the guard the top 3, write no punch ──
+  if (!accepted) {
+    const offerCandidates = best !== undefined && bestDistance !== null &&
+      bestDistance <= GUARD_CONFIRM_MAX_DISTANCE;
+    const outcome = offerCandidates ? "ambiguous" : "no_match";
+
+    // §4.4 step 10: an unmatched capture is still stored, under `unmatched/`, so
+    // an admin can resolve it later (§8.1 `unresolved_offline_punch`).
+    const photoPath = photoBytes === null
+      ? null
+      : await putPhoto(`unmatched/${matchLogId}.jpg`, photoBytes, log);
+
+    await withContext(ctx, async (tx) => {
+      await insertMatchLog(tx, {
+        id: matchLogId,
+        attemptedAtOverride: punchedAtOverride,
+        deviceId: device.id,
+        operatorId: operator?.operatorId ?? null,
+        candidateSetSize,
+        outcome,
+        matchedEmployeeId: null,
+        bestDistance,
+        bestConfidence,
+        runnerUpEmployeeId: runnerUp?.employeeId ?? null,
+        runnerUpDistance: runnerUp?.distance ?? null,
+        margin,
+        candidateScores,
+        thresholdUsed: thresholds.minConfidence,
+        modelVersion: best?.modelVersion ?? DESCRIPTOR_MODEL,
+        capturePhotoPath: photoPath,
+        latencyMs: log.elapsedMs(),
+        producedPunchId: null,
+        ip: ctx.ip ?? null,
+        appVersion: device.storedAppVersion,
+        errorDetail: null,
+      });
+    });
+
+    log.info("scan not auto-accepted", {
+      outcome,
+      candidate_set_size: candidateSetSize,
+      offered: offerCandidates ? candidates.length : 0,
+    });
+
+    const guardConfirmOptions: GuardConfirmOption[] = offerCandidates
+      ? await Promise.all(
+        candidates.map(async (c) => ({
+          employeeCode: c.employeeCode,
+          displayName: c.displayName,
+          photoUrl: await signReferencePhoto(c.photoPath),
+        })),
+      )
+      : [];
+
+    return { matched: false, guardConfirmOptions };
+  }
+
+  const matched = best as Candidate;
+
+  // §4.4 step 11 — the identity exists, but is it allowed through the gate?
+  // The attempt is already recorded before the refusal (INV-4).
+  if (!PUNCHABLE_STATUSES.has(matched.employmentStatus)) {
+    await withContext(ctx, async (tx) => {
+      await insertMatchLog(tx, {
+        id: matchLogId,
+        attemptedAtOverride: punchedAtOverride,
+        deviceId: device.id,
+        operatorId: operator?.operatorId ?? null,
+        candidateSetSize,
+        outcome: "matched",
+        matchedEmployeeId: matched.employeeId,
+        bestDistance,
+        bestConfidence,
+        runnerUpEmployeeId: runnerUp?.employeeId ?? null,
+        runnerUpDistance: runnerUp?.distance ?? null,
+        margin,
+        candidateScores,
+        thresholdUsed: thresholds.minConfidence,
+        modelVersion: matched.modelVersion,
+        capturePhotoPath: null,
+        latencyMs: log.elapsedMs(),
+        producedPunchId: null,
+        ip: ctx.ip ?? null,
+        appVersion: device.storedAppVersion,
+        errorDetail: `employment_status=${matched.employmentStatus}`,
+      });
+    });
+    throw forbidden("This person is not authorised to punch at this kiosk.", "KIOSK_EMPLOYEE_INACTIVE");
+  }
+
+  // §4.4 step 15 — Storage put first, so the path is known before the insert.
+  const punchId = crypto.randomUUID();
+  const predictedDate = await predictEffectiveDate(client, matched.employeeId, punchedAtOverride);
+  const photoPath = photoBytes === null
+    ? null
+    : await putPhoto(`${predictedDate}/${punchId}.jpg`, photoBytes, log);
+
+  // WHERE the scan happened, judged against the device's fence (its own
+  // `allowed_geofence` if set, else its location) by the SAME function the web
+  // punch uses — `_shared/geofence.ts`, so "inside the venue" cannot mean two
+  // different things depending on which door somebody came through.
+  //
+  // A punch outside the fence is RECORDED and FLAGGED, never refused: attendance
+  // is a fact, and deleting the evidence would remove exactly the case the fence
+  // exists to surface. No coordinates, or no fence configured, yields NULL — "not
+  // evaluated", which is not the same as "outside".
+  const geofence = evaluateGeofence(item.geo, device.geofence);
+
+  // §5.3: a guard scanning themselves is 100 % review, always.
+  const selfOperated = operator !== null && operator.employeeId === matched.employeeId;
+  const needsReview = isReplay ||
+    (bestDistance !== null && bestDistance > REVIEW_DISTANCE) ||
+    selfOperated ||
+    // Outside the fence, or a fix too coarse to tell — a human decides, the gate
+    // does not. `accuracyTooCoarse` matters more at a gate than on a phone: an
+    // indoor tablet on wifi can report a ±2 km fix that no 300 m fence can judge.
+    geofence.geofenceOk === false ||
+    geofence.accuracyTooCoarse ||
+    REVIEW_STATUSES.has(matched.employmentStatus);
+
+  // ── Steps 12, 16, 19, 20: ONE transaction ──────────────────────────────────
+  try {
+    const written = await withContext(ctx, async (tx) => {
+      // §4.4 step 12 — debounce. A duplicate is still WRITTEN (INV-4), voided at
+      // insert with `duplicate_of_punch_id` set, so the gate event exists and the
+      // day computation ignores it. `is_voided = true` at INSERT is legal: the
+      // append-only trigger fires on UPDATE/DELETE only.
+      const recent = await tx`
+        SELECT p.id, p.punched_at
+          FROM public.attendance_punches p
+         WHERE p.employee_id = ${matched.employeeId}::uuid
+           AND p.is_voided = false
+           AND p.punched_at <= COALESCE(${punchedAtOverride}::timestamptz, now())
+           AND p.punched_at >  COALESCE(${punchedAtOverride}::timestamptz, now())
+                               - make_interval(secs => ${thresholds.debounceSeconds}::double precision)
+         ORDER BY p.punched_at DESC
+         LIMIT 1
+      `;
+      const duplicateOf = firstRow(recent as unknown as { id: string; punched_at: Date | string }[]);
+
+      // `ck_ap__void_fields` demands `voided_by` on a voided row, and the only
+      // person on the scene is the guard. On a `require_operator = false` device
+      // there is nobody to attribute the suppression to, so the duplicate is
+      // written LIVE and flagged for review instead of voided — INV-4 is kept
+      // either way, and a CHECK violation would have lost the event entirely.
+      const voidAttribution = operator?.profileId ?? null;
+      const isDuplicate = duplicateOf !== null && voidAttribution !== null;
+      if (duplicateOf !== null && voidAttribution === null) {
+        log.warn("debounced scan kept live: no operator to attribute the void to", {
+          duplicate_of: duplicateOf.id,
+        });
+      }
+
+      const matchLog = await insertMatchLog(tx, {
+        id: matchLogId,
+        attemptedAtOverride: punchedAtOverride,
+        deviceId: device.id,
+        operatorId: operator?.operatorId ?? null,
+        candidateSetSize,
+        outcome: isDuplicate ? "duplicate_suppressed" : "matched",
+        matchedEmployeeId: matched.employeeId,
+        bestDistance,
+        bestConfidence,
+        runnerUpEmployeeId: runnerUp?.employeeId ?? null,
+        runnerUpDistance: runnerUp?.distance ?? null,
+        margin,
+        candidateScores,
+        thresholdUsed: thresholds.minConfidence,
+        modelVersion: matched.modelVersion,
+        capturePhotoPath: photoPath,
+        latencyMs: log.elapsedMs(),
+        producedPunchId: punchId,
+        ip: ctx.ip ?? null,
+        appVersion: device.storedAppVersion,
+        errorDetail: null,
+      });
+
+      // §4.4 step 16. `direction` stays 'undetermined' — the kiosk never decides
+      // in/out; `compute_attendance_day` derives it (migration 016 header).
+      // `business_date` is left NULL so the night-shift trigger owns it.
+      // `idempotency_key` is the client's event id: migration 050 §4 turns a
+      // replay into SQLSTATE 23505 via `attendance_punch_keys`.
+      const insertedRows = await tx`
+        INSERT INTO public.attendance_punches (
+          id, employee_id, punched_at, direction, source,
+          kiosk_device_id, operator_id, face_match_log_id,
+          match_confidence, match_distance, photo_path,
+          lat, lng, location_accuracy_m, geofence_ok,
+          ip, user_agent, device_id,
+          is_offline_replay, queued_at, device_clock_skew_seconds,
+          needs_review, is_voided, voided_by, voided_at, void_reason,
+          duplicate_of_punch_id, recorded_by, request_id, idempotency_key
+        ) VALUES (
+          ${punchId}::uuid,
+          ${matched.employeeId}::uuid,
+          COALESCE(${punchedAtOverride}::timestamptz, now()),
+          'undetermined'::public.punch_direction,
+          'kiosk_face'::public.punch_source,
+          ${device.id}::uuid,
+          ${operator?.operatorId ?? null}::uuid,
+          ${matchLog}::uuid,
+          ${bestConfidence === null ? null : Number(bestConfidence.toFixed(5))}::numeric,
+          ${bestDistance === null ? null : Number(bestDistance.toFixed(5))}::numeric,
+          ${photoPath}::text,
+          ${item.geo?.latitude ?? null}::numeric,
+          ${item.geo?.longitude ?? null}::numeric,
+          ${item.geo?.accuracyMetres ?? null}::numeric,
+          ${geofence.geofenceOk}::boolean,
+          ${ctx.ip ?? null}::inet,
+          ${ctx.ua ?? null}::text,
+          ${device.deviceCode}::text,
+          ${isReplay}::boolean,
+          ${item.queuedAt ?? null}::timestamptz,
+          ${deviceAuth.clockSkewSeconds}::integer,
+          ${needsReview || duplicateOf !== null}::boolean,
+          ${isDuplicate}::boolean,
+          ${isDuplicate ? voidAttribution : null}::uuid,
+          CASE WHEN ${isDuplicate}::boolean THEN now() ELSE NULL END,
+          ${isDuplicate ? "debounce: duplicate scan inside the policy debounce window" : null}::text,
+          ${duplicateOf?.id ?? null}::uuid,
+          ${operator?.profileId ?? null}::uuid,
+          ${ctx.requestId}::uuid,
+          ${item.clientEventId}::text
+        )
+        RETURNING id, punched_at, effective_date::text AS effective_date
+      `;
+      const punch = firstRow(
+        insertedRows as unknown as {
+          id: string;
+          punched_at: Date | string;
+          effective_date: string;
+        }[],
+      );
+      if (punch === null) {
+        throw new Error("punch insert returned no row");
+      }
+
+      // Ordinal → display kind. For a debounced punch the reference instant is
+      // the ORIGINAL punch, so the guard sees the same word twice ("Checked in")
+      // instead of a phantom check-out.
+      const reference = isDuplicate && duplicateOf !== null ? duplicateOf.punched_at : punch.punched_at;
+      const priorRows = await tx`
+        SELECT count(*)::integer AS prior
+          FROM public.attendance_punches q
+         WHERE q.employee_id = ${matched.employeeId}::uuid
+           AND q.effective_date = ${punch.effective_date}::date
+           AND q.is_voided = false
+           AND q.punched_at < ${toIso(reference)}::timestamptz
+           AND q.id <> ${punchId}::uuid
+      `;
+      const prior = firstRow(priorRows as unknown as { prior: number }[])?.prior ?? 0;
+
+      // Telemetry. Migration 050 §6 narrowed `trg_kiosk_devices__audit` to the
+      // config columns, so this writes NO audit row and needs no reason.
+      await tx`
+        UPDATE public.kiosk_devices
+           SET last_punch_at      = now(),
+               clock_skew_seconds = ${deviceAuth.clockSkewSeconds}::integer
+         WHERE id = ${device.id}::uuid
+           AND deleted_at IS NULL
+      `;
+
+      return { punch, prior, isDuplicate };
+    });
+
+    if (written.punch.effective_date !== predictedDate) {
+      // Cosmetic only — the object and `photo_path` agree, so the storage policy
+      // still resolves; the folder just is not the business date. Visible on
+      // purpose: it means the prediction above has drifted from the trigger.
+      log.warn("photo folder does not match the trigger's effective_date", {
+        predicted: predictedDate,
+        actual: written.punch.effective_date,
+      });
+    }
+
+    const punchKind: PunchKind = written.prior === 0 ? "in" : written.prior === 1 ? "out" : "scan";
+    log.info("punch recorded", {
+      punch_id: written.punch.id,
+      duplicate: written.isDuplicate,
+      needs_review: needsReview || written.isDuplicate,
+      offline_replay: isReplay,
+      candidate_set_size: candidateSetSize,
+    });
+
+    return {
+      matched: true,
+      displayName: matched.displayName,
+      employeeCode: matched.employeeCode,
+      photoUrl: await signReferencePhoto(matched.photoPath),
+      punchKind,
+      istTime: istTime(written.punch.punched_at),
+    };
+  } catch (err) {
+    // Migration 050 §4: `attendance_punch_keys` PK (employee_id, idempotency_key)
+    // is the permanent, cross-partition replay guard — it outlives the 24-hour
+    // idempotency store, so an overnight queue replay lands here. It is a
+    // SUCCESS for the client, not a 500: answer with the original punch.
+    if (isUniqueViolation(err)) {
+      log.info("punch already recorded for this client event id", {
+        client_event_id: item.clientEventId,
+      });
+      return await replayedPunchResult(client, matched, {
+        clientEventId: item.clientEventId,
+        punchedAtOverride,
+        deviceId: device.id,
+      });
+    }
+    throw err;
+  }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "23505";
+}
+
+interface ReplayLookup {
+  clientEventId: string;
+  punchedAtOverride: string | null;
+  deviceId: string;
+}
+
+/**
+ * Rebuild the ORIGINAL answer for a punch that already exists.
+ *
+ * Two indexes can raise 23505 here, and both mean "this scan is already
+ * recorded": `attendance_punch_keys` (the client event id — migration 050 §4)
+ * and `uq_attendance_punches__emp_instant_device` (same employee, same instant,
+ * same device — the guard for a client that forgot to send a key). The key
+ * lookup is tried first because it is exact; the instant lookup is the fallback
+ * so the second case still answers with the real punch instead of a guess.
+ */
+async function replayedPunchResult(
+  client: Sql,
+  matched: Candidate,
+  lookup: ReplayLookup,
+): Promise<PunchResult> {
+  const byKey = await client`
+    SELECT p.punched_at,
+           (SELECT count(*)::integer
+              FROM public.attendance_punches q
+             WHERE q.employee_id = p.employee_id
+               AND q.effective_date = p.effective_date
+               AND q.is_voided = false
+               AND q.punched_at < p.punched_at) AS prior
+      FROM public.attendance_punch_keys k
+      JOIN public.attendance_punches p
+        ON p.id = k.punch_id AND p.punched_at = k.punched_at
+     WHERE k.employee_id = ${matched.employeeId}::uuid
+       AND k.idempotency_key = ${lookup.clientEventId}
+     LIMIT 1
+  `;
+  let row = firstRow(byKey as unknown as { punched_at: Date | string; prior: number }[]);
+
+  if (row === null) {
+    const byInstant = await client`
+      SELECT p.punched_at,
+             (SELECT count(*)::integer
+                FROM public.attendance_punches q
+               WHERE q.employee_id = p.employee_id
+                 AND q.effective_date = p.effective_date
+                 AND q.is_voided = false
+                 AND q.punched_at < p.punched_at) AS prior
+        FROM public.attendance_punches p
+       WHERE p.employee_id = ${matched.employeeId}::uuid
+         AND p.kiosk_device_id = ${lookup.deviceId}::uuid
+         AND p.is_voided = false
+         AND p.punched_at = COALESCE(${lookup.punchedAtOverride}::timestamptz, p.punched_at)
+       ORDER BY p.punched_at DESC
+       LIMIT 1
+    `;
+    row = firstRow(byInstant as unknown as { punched_at: Date | string; prior: number }[]);
+  }
+
+  const prior = row?.prior ?? 0;
+  return {
+    matched: true,
+    displayName: matched.displayName,
+    employeeCode: matched.employeeCode,
+    photoUrl: await signReferencePhoto(matched.photoPath),
+    punchKind: prior === 0 ? "in" : prior === 1 ? "out" : "scan",
+    istTime: istTime(row?.punched_at ?? nowIso()),
+  };
+}
+
+interface MatchLogInput {
+  id: string;
+  attemptedAtOverride: string | null;
+  deviceId: string;
+  operatorId: string | null;
+  candidateSetSize: number;
+  outcome: string;
+  matchedEmployeeId: string | null;
+  bestDistance: number | null;
+  bestConfidence: number | null;
+  runnerUpEmployeeId: string | null;
+  runnerUpDistance: number | null;
+  margin: number | null;
+  candidateScores: unknown;
+  thresholdUsed: number;
+  modelVersion: string;
+  capturePhotoPath: string | null;
+  latencyMs: number;
+  producedPunchId: string | null;
+  ip: string | null;
+  appVersion: string | null;
+  errorDetail: string | null;
+}
+
+/**
+ * `secure.face_match_log` — the row that makes a disputed punch defensible.
+ * `threshold_used` is pinned here so a later threshold change cannot rewrite
+ * history, and `candidate_scores` never leaves the server.
+ */
+async function insertMatchLog(tx: Sql, input: MatchLogInput): Promise<string> {
+  const round = (v: number | null): number | null => (v === null ? null : Number(v.toFixed(5)));
+  const rows = await tx`
+    INSERT INTO secure.face_match_log (
+      id, attempted_at, kiosk_device_id, operator_id, candidate_set_size, outcome,
+      matched_employee_id, best_distance, best_confidence,
+      runner_up_employee_id, runner_up_distance, margin, candidate_scores,
+      threshold_used, model_version, capture_photo_path, latency_ms,
+      produced_punch_id, ip, app_version, error_detail
+    ) VALUES (
+      ${input.id}::uuid,
+      COALESCE(${input.attemptedAtOverride}::timestamptz, now()),
+      ${input.deviceId}::uuid,
+      ${input.operatorId}::uuid,
+      ${input.candidateSetSize}::integer,
+      ${input.outcome}::text,
+      ${input.matchedEmployeeId}::uuid,
+      ${round(input.bestDistance)}::numeric,
+      ${round(input.bestConfidence)}::numeric,
+      ${input.runnerUpEmployeeId}::uuid,
+      ${round(input.runnerUpDistance)}::numeric,
+      ${round(input.margin)}::numeric,
+      ${JSON.stringify(input.candidateScores)}::jsonb,
+      ${round(input.thresholdUsed)}::numeric,
+      ${input.modelVersion}::text,
+      ${input.capturePhotoPath}::text,
+      ${Math.trunc(input.latencyMs)}::integer,
+      ${input.producedPunchId}::uuid,
+      ${input.ip}::inet,
+      ${input.appVersion}::text,
+      ${input.errorDetail}::text
+    )
+    RETURNING id
+  `;
+  return (rows as unknown as { id: string }[])[0]?.id as string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Handler — the 12-step lifecycle
+// ═══════════════════════════════════════════════════════════════════════════════
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  // ── STEP 1 · OPTIONS / CORS ─────────────────────────────────────────────────
+  const preflight = handlePreflight(req, ALLOWED_METHODS);
+  if (preflight !== null) return preflight;
+  const cors = corsHeaders(req);
+
+  // ── STEP 2 · Method allowlist ───────────────────────────────────────────────
+  if (req.method !== "POST") return methodNotAllowed(ALLOWED_METHODS).toResponse(cors);
+
+  // ── STEP 3 · request_id + timer ─────────────────────────────────────────────
+  const requestId = requestIdFrom(req);
+  const log = createLogger({ fn: FN_NAME, requestId });
+  const instance = new URL(req.url).pathname;
+
+  let status = 500;
+  let idempotencyKey: string | null = null;
+
+  try {
+    assertOriginAllowed(req);
+
+    // ── STEP 4 · Auth (model D+O) ─────────────────────────────────────────────
+    // Raw bytes first: the HMAC covers exactly what was sent, so decoding and
+    // re-serialising would break the signature.
+    const rawBody = await readRawBody(req, { maxBytes: MAX_BODY_BYTES });
+    const decoded = decodeJson(rawBody);
+    const client = sqlHandle();
+    const deviceAuth = await verifyDevice(req, rawBody, client);
+    const device = deviceAuth.device;
+
+    // ── STEP 5 · Authority ────────────────────────────────────────────────────
+    // A tablet holds no capability: `verifyDevice` already refused an unpaired,
+    // suspended or off-network device. The remaining authority is human — an OPEN
+    // guard session, re-read from `kiosk_operators` on every request so
+    // deactivating a guard takes effect on the next scan.
+    const operator = device.requireOperator
+      ? await requireOperatorSession(req, deviceAuth, client)
+      : await requireOperatorSession(req, deviceAuth, client).catch(() => null);
+
+    const deviceLog = log.child({
+      device_id: device.id,
+      device_code: device.deviceCode,
+      operator_id: operator?.operatorId ?? null,
+      clock_skew_seconds: deviceAuth.clockSkewSeconds,
+    });
+
+    // ── STEP 6 · Rate limit ───────────────────────────────────────────────────
+    // One token for the request now (`kiosk.rate_scans_per_minute = 40`), the
+    // rest of a batch charged after validation tells us how many scans it holds.
+    // Outside any transaction on purpose: a refused call still spends its token.
+    const bucketKey = limitKey(FN_NAME, device.id);
+    if (!(await tryTake(RATE_LIMITS.kioskPunch, bucketKey, client))) {
+      throw tooMany(1_500, "Too many scans from this kiosk. Wait and retry.", "KIOSK_RATE_LIMITED");
+    }
+
+    // ── STEP 7 · Validate ─────────────────────────────────────────────────────
+    const parsed = parse(PunchBody, decoded, "punch body");
+    const isBatch = "queue" in parsed;
+    const items: PunchItemInput[] = isBatch ? parsed.queue : [parsed];
+
+    for (let i = 1; i < items.length; i++) {
+      if (!(await tryTake(RATE_LIMITS.kioskPunch, bucketKey, client))) {
+        throw tooMany(
+          1_500,
+          "This offline batch is larger than the kiosk's remaining scan allowance. Retry in smaller batches.",
+          "KIOSK_RATE_LIMITED",
+        );
+      }
+    }
+
+    // Duplicate client event ids inside one batch are a tablet bug, and the
+    // second one would 23505 against the first in the same request.
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (seen.has(item.clientEventId)) {
+        throw unprocessable(
+          [{ pointer: "/queue", code: "duplicate", detail: "clientEventId repeats inside the batch." }],
+          "Each queued scan needs its own clientEventId.",
+          "KIOSK_BATCH_DUPLICATE_EVENT_ID",
+        );
+      }
+      seen.add(item.clientEventId);
+    }
+
+    // ── STEP 8 · Idempotency claim ────────────────────────────────────────────
+    // Request level: a retried POST replays the stored answer. Item level: the
+    // permanent guard is `attendance_punch_keys` (migration 050 §4), which is why
+    // an overnight queue replay is still safe after this 24-hour claim expires.
+    idempotencyKey = idempotencyKeyFrom(req) ??
+      (isBatch ? `${FN_NAME}:${device.id}:${deviceAuth.nonce}` : (items[0] as PunchItemInput).clientEventId);
+    const hash = await requestHash(FN_NAME, rawBody, device.id);
+    const claimed = await claim({ key: idempotencyKey, fnName: FN_NAME, requestHash: hash }, client);
+    if (claimed.state === "replay") {
+      status = claimed.status;
+      deviceLog.info("idempotent replay", { key: idempotencyKey });
+      return replayResponse(claimed, { ...cors, "x-request-id": requestId });
+    }
+
+    // ── STEPS 9–10 · set_context + one transaction per scan, audit inside it ──
+    const ctxBase: Omit<RequestContext, "reason"> = {
+      actorId: null, // a kiosk is not a person; the operator is provenance, not the actor
+      actorRole: null,
+      source: "kiosk",
+      sourceRoute: FN_NAME,
+      requestId,
+      ip: clientIpFrom(req),
+      ua: userAgentFrom(req),
+      deviceId: device.id,
+    };
+
+    let responseBody: unknown;
+    if (!isBatch) {
+      const result = await processPunch({
+        item: items[0] as PunchItemInput,
+        deviceAuth,
+        operator,
+        ctxBase,
+        isReplay: false,
+        log: deviceLog,
+        client,
+      });
+      responseBody = pickWhitelisted(result as unknown as Record<string, unknown>);
+    } else {
+      // Per item, in its own transaction: one bad scan in a queue of five must
+      // not roll back the four that were fine, and the client needs a per-item
+      // verdict to clear its IndexedDB queue (§8.1).
+      const results: Record<string, unknown>[] = [];
+      for (const item of items) {
+        try {
+          const result = await processPunch({
+            item,
+            deviceAuth,
+            operator,
+            ctxBase,
+            isReplay: true,
+            log: deviceLog,
+            client,
+          });
+          results.push(pickWhitelisted(result as unknown as Record<string, unknown>));
+        } catch (itemErr) {
+          const problem = toProblem(itemErr, requestId);
+          if (problem.isServerFault) {
+            // Never mark a queued item "done" on our own failure — let the
+            // tablet keep it and retry (§4.5: any 5xx enqueues locally).
+            throw itemErr;
+          }
+          deviceLog.warn("queued scan refused", {
+            client_event_id: item.clientEventId,
+            code: problem.code,
+          });
+          results.push(pickWhitelisted({
+            matched: false,
+            guardConfirmOptions: [],
+            error: problem.code ?? "KIOSK_INTERNAL",
+          }));
+        }
+      }
+      responseBody = { results };
+    }
+
+    status = 200;
+
+    // ── STEP 11 · Store the response under the idempotency key ────────────────
+    await store(idempotencyKey, status, responseBody, client);
+    return ok(responseBody, { status, headers: cors, requestId });
+  } catch (err) {
+    const problem = toProblem(err, requestId).withContext({ requestId, instance });
+    status = problem.status;
+
+    if (idempotencyKey !== null) {
+      try {
+        // 5xx is not a deterministic answer: free the key so the tablet's retry
+        // is processed for real rather than replaying our failure.
+        if (status >= 500) await release(idempotencyKey);
+        else await store(idempotencyKey, status, problem.problem);
+      } catch (storeErr) {
+        log.warn("could not finalise idempotency key", { key: idempotencyKey, err: storeErr });
+      }
+    }
+
+    if (problem.isServerFault) log.error("unhandled failure", { err, code: problem.code });
+    else log.warn("request refused", { code: problem.code, status });
+    return problem.toResponse(cors);
+  } finally {
+    // ── STEP 12 · One structured log line per invocation ──────────────────────
+    log.finish(status, { idempotency_key: idempotencyKey });
+  }
+});
+
+/** Exported for `supabase/tests` and the kiosk SDK — one contract, one source. */
+export { BatchBody, PunchBody, PunchItem };

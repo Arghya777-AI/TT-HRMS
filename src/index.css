@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tamarind Tree HRMS — design tokens.
+ * Brand anchors: terracotta #CE8F6F · gold #B99665 · plum #564147 · navy #121F38,
+ * on warm cream neutrals. Serif display (Unna) for headings, Poppins for UI.
+ * Every colour a component uses is a variable here — no hex literal in TSX (P6/P12).
+ */
+
+@layer base {
+  :root {
+    /* Fixed brand identity (referenced by both themes) */
+    --brand-terracotta: 20 49% 62%;
+    --brand-gold: 35 37% 56%;
+    --brand-plum: 343 14% 30%;
+    --brand-navy: 220 51% 15%;
+    --brand-cream: 35 33% 96%;
+
+    /* --- Light theme --- */
+    --background: 35 33% 96%;
+    --foreground: 340 15% 15%;
+
+    --card: 35 40% 99%;
+    --card-foreground: 340 15% 15%;
+
+    --popover: 35 40% 99%;
+    --popover-foreground: 340 15% 15%;
+
+    --primary: 20 45% 45%;
+    --primary-foreground: 35 40% 98%;
+
+    --secondary: 35 26% 90%;
+    --secondary-foreground: 340 15% 20%;
+
+    --muted: 35 24% 92%;
+    --muted-foreground: 30 8% 42%;
+
+    --accent: 35 30% 88%;
+    --accent-foreground: 340 15% 18%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 145 42% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 35 85% 45%;
+    --warning-foreground: 30 40% 12%;
+
+    --info: 220 51% 32%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 35 20% 85%;
+    --input: 35 20% 84%;
+    --ring: 20 45% 45%;
+
+    --radius: 0.625rem;
+
+    /* Categorical chart palette (see src/lib/chartTheme.ts) */
+    --chart-1: 20 49% 55%;
+    --chart-2: 35 45% 50%;
+    --chart-3: 220 40% 40%;
+    --chart-4: 343 22% 42%;
+    --chart-5: 150 30% 40%;
+    --chart-6: 190 35% 42%;
+    --chart-7: 10 45% 62%;
+    --chart-8: 45 40% 55%;
+
+    /* Sidebar — navy heritage surface */
+    --sidebar-background: 220 45% 13%;
+    --sidebar-foreground: 35 25% 88%;
+    --sidebar-primary: 20 49% 62%;
+    --sidebar-primary-foreground: 220 45% 10%;
+    --sidebar-accent: 220 30% 20%;
+    --sidebar-accent-foreground: 35 25% 90%;
+    --sidebar-border: 220 30% 22%;
+    --sidebar-ring: 20 49% 62%;
+  }
+
+  .dark {
+    --brand-cream: 35 20% 90%;
+
+    --background: 340 12% 8%;
+    --foreground: 35 25% 90%;
+
+    --card: 340 10% 11%;
+    --card-foreground: 35 25% 90%;
+
+    --popover: 340 10% 11%;
+    --popover-foreground: 35 25% 90%;
+
+    --primary: 20 55% 58%;
+    --primary-foreground: 340 20% 10%;
+
+    --secondary: 340 8% 18%;
+    --secondary-foreground: 35 25% 90%;
+
+    --muted: 340 8% 18%;
+    --muted-foreground: 35 12% 60%;
+
+    --accent: 340 8% 20%;
+    --accent-foreground: 35 25% 92%;
+
+    --destructive: 0 60% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 145 45% 45%;
+    --success-foreground: 145 40% 8%;
+
+    --warning: 38 80% 55%;
+    --warning-foreground: 35 40% 10%;
+
+    --info: 210 60% 60%;
+    --info-foreground: 220 45% 10%;
+
+    --border: 340 8% 20%;
+    --input: 340 8% 22%;
+    --ring: 20 55% 58%;
+
+    --chart-1: 20 55% 62%;
+    --chart-2: 35 50% 58%;
+    --chart-3: 210 55% 60%;
+    --chart-4: 343 30% 60%;
+    --chart-5: 150 35% 52%;
+    --chart-6: 190 40% 52%;
+    --chart-7: 10 55% 68%;
+    --chart-8: 45 48% 62%;
+
+    --sidebar-background: 220 45% 9%;
+    --sidebar-foreground: 35 22% 85%;
+    --sidebar-primary: 20 55% 60%;
+    --sidebar-primary-foreground: 220 45% 8%;
+    --sidebar-accent: 220 30% 16%;
+    --sidebar-accent-foreground: 35 22% 88%;
+    --sidebar-border: 220 25% 18%;
+    --sidebar-ring: 20 55% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+  /* Tabular figures everywhere numbers are compared (registers, KPIs, tables). */
+  .tabular-nums,
+  th,
+  td.num,
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  /* Respect reduced-motion for the kiosk scan animation. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Masked sensitive value styling (P4). */
+  .masked {
+    letter-spacing: 0.12em;
+    font-variant-numeric: tabular-nums;
+  }
+}

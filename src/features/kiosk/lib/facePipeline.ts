@@ -15,9 +15,68 @@
 
 type FaceApi = typeof import("@vladmandic/face-api");
 
+/**
+ * The three tfjs calls this file needs, declared structurally.
+ *
+ * `@vladmandic/face-api` re-exports tfjs as `faceapi.tf`, but its bundled type
+ * definitions do not surface the backend-selection API even though the runtime has
+ * it. The alternatives were `any` (banned repo-wide) or `@ts-ignore` (banned), both
+ * of which would erase checking on far more than the three names actually in use.
+ * A named interface plus one `as unknown as` cast keeps the rest of `faceapi` fully
+ * typed and states exactly what is being assumed about the runtime.
+ *
+ * If a future face-api ships these types, this interface becomes redundant rather
+ * than wrong — the cast still resolves to a compatible shape.
+ */
+interface TfBackendApi {
+  setBackend(name: string): Promise<boolean>;
+  ready(): Promise<void>;
+  getBackend(): string;
+}
+
 let faceapiPromise: Promise<FaceApi> | null = null;
 
-/** Load the library and its three nets exactly once. */
+/**
+ * Which backend the last load actually settled on, for the kiosk's speed line.
+ * `null` until `loadFaceModels` has run.
+ */
+let activeBackend: string | null = null;
+export function faceBackend(): string | null {
+  return activeBackend;
+}
+
+/**
+ * Load the library and its three nets exactly once — then CHOOSE A BACKEND and
+ * WARM IT UP before anybody shows a face.
+ *
+ * WHY THE WARM-UP EXISTS — it is the "sometimes it takes ages" complaint
+ * ---------------------------------------------------------------------
+ * TensorFlow.js selects its backend lazily and compiles WebGL shader programs on
+ * FIRST USE, per kernel. So the first inference of a session pays for backend
+ * initialisation plus a dozen shader compilations — seconds on a mid-range phone —
+ * while every later inference runs in a fraction of that. Nothing was wrong on the
+ * slow scans and nothing was fixed on the fast ones: the first person to look at
+ * the camera simply paid a cost that had to be paid once.
+ *
+ * The fix is to pay it during load, while the guard is still reading the screen and
+ * the weights are downloading anyway. `loadFaceModels` is already called at MOUNT
+ * (Kiosk.page and SelfPunchCard both warm the engine before the button is tapped),
+ * so this moves the cost to a moment where nobody is waiting on a face.
+ *
+ * WHY THE BACKEND IS SET EXPLICITLY
+ * --------------------------------
+ * It was never set at all — the library was imported and the nets loaded, and
+ * whatever tfjs picked was what ran. This asks for `webgl` first, because the
+ * descriptor net is convolutional and the GPU does it several times faster than the
+ * CPU path the old measurements in this file were taken against. It DEGRADES
+ * QUIETLY: a locked-down webview, a blocklisted GPU driver or a machine with no
+ * WebGL at all falls back to whatever tfjs had chosen, which still works — just
+ * slower. A gate that refuses to scan because a phone has no GPU would be a much
+ * worse product than a gate that takes 500 ms.
+ *
+ * The warm-up frame is a 64×64 blank canvas: large enough that the real kernels
+ * compile, small enough to be nearly free, and it holds no image of anybody.
+ */
 export function loadFaceModels(modelBase = "/models/v1"): Promise<FaceApi> {
   faceapiPromise ??= (async () => {
     const faceapi = await import("@vladmandic/face-api");
@@ -26,6 +85,43 @@ export function loadFaceModels(modelBase = "/models/v1"): Promise<FaceApi> {
       faceapi.nets.faceLandmark68TinyNet.loadFromUri(modelBase),
       faceapi.nets.faceRecognitionNet.loadFromUri(modelBase),
     ]);
+
+    // Backend first: warming up on the CPU backend and then switching would throw
+    // the compiled programs away and re-pay the cost on the first real face.
+    const tf = faceapi.tf as unknown as TfBackendApi;
+    try {
+      await tf.setBackend("webgl");
+      await tf.ready();
+    } catch {
+      // No WebGL here. Whatever tfjs already selected stays, and the gate still
+      // works — see the note above on degrading quietly.
+    }
+    try {
+      activeBackend = tf.getBackend();
+    } catch {
+      activeBackend = null;
+    }
+
+    // Warm-up. Failure is not fatal: it is an optimisation, and a browser that
+    // refuses a 64×64 canvas will still run the real frames.
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext("2d");
+      if (ctx !== null) {
+        ctx.fillStyle = "#808080";
+        ctx.fillRect(0, 0, 64, 64);
+        await faceapi
+          .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 128 }))
+          .withFaceLandmarks(true)
+          .withFaceDescriptor();
+      }
+    } catch {
+      // Nothing to report: no face in a grey square is the expected outcome. The
+      // point was to compile the kernels, which happens either way.
+    }
+
     return faceapi;
   })();
   return faceapiPromise;

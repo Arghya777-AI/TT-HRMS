@@ -331,6 +331,12 @@ export default function TemplatePurgePage() {
             label={t("admin.kiosk.purge.action.version")}
             variant="outline"
             minLength={PURGE_REASON_MIN_LENGTH}
+            // THE ONE PLACE THE WORDS STILL MATTER. Erasing a biometric is
+            // irreversible and the CIRCUMSTANCE cannot be derived from the action:
+            // a DPDP erasure request, a departure, or a mistake are the same
+            // operation and very different records. Everything routine now fires
+            // without a prompt; this deliberately does not.
+            requireTypedReason
             disabled={blockedBecause !== null}
             {...(blockedBecause !== null ? { disabledHint: t(blockedBecause) } : {})}
             title={t("admin.kiosk.purge.version.title", {
@@ -674,6 +680,12 @@ export default function TemplatePurgePage() {
                     variant="destructive"
                     size="default"
                     minLength={PURGE_REASON_MIN_LENGTH}
+            // THE ONE PLACE THE WORDS STILL MATTER. Erasing a biometric is
+            // irreversible and the CIRCUMSTANCE cannot be derived from the action:
+            // a DPDP erasure request, a departure, or a mistake are the same
+            // operation and very different records. Everything routine now fires
+            // without a prompt; this deliberately does not.
+            requireTypedReason
                     disabled={blockedBecause !== null || purge.isPending}
                     {...(blockedBecause !== null ? { disabledHint: t(blockedBecause) } : {})}
                     title={t("admin.kiosk.purge.all.title", {

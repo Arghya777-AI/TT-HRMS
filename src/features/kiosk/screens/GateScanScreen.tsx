@@ -32,6 +32,7 @@ import {
   type KioskDeviceState,
   type PunchOutcome,
 } from "../lib/deviceAuth";
+import { faceBackend } from "../lib/facePipeline";
 import {
   GATE_TRACK_INPUT_SIZE,
   LatencyTracker,
@@ -427,8 +428,13 @@ export function GateScanScreen({
                 median: latency.medianMs,
               })} ${t("kiosk.gate.speed.samples", { n: latency.samples })}`}
           </span>
+          {/* The backend is the single biggest factor in how fast a scan feels, and
+              it is decided by the device, not by us — a phone with a blocklisted GPU
+              silently falls back to the CPU path. Showing it turns "the gate is slow
+              today" into an answerable question. */}
           <span className="ml-auto shrink-0 text-neutral-500">
             {t("kiosk.gate.speed.detector", { size: GATE_TRACK_INPUT_SIZE })}
+            {faceBackend() === null ? "" : ` · ${faceBackend() ?? ""}`}
           </span>
         </p>
         {/*

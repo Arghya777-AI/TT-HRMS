@@ -2,15 +2,24 @@
  * _shared/cors.ts — explicit origin allowlist. NEVER `*`.
  *
  * spec-architecture §4: "`cors.ts` (explicit allowlist, never `*`, preflight
- * 600s)". Three origins exist and no more:
- *   - https://hr.thetamarindtree.in     the app (Vercel, prod branch `main`)
+ * 600s)". The origins that exist, and no more:
+ *   - https://hr.thetamarindtree.in     the app on its custom domain
  *   - https://kiosk.thetamarindtree.in  the kiosk host (same bundle, own CSP + camera policy)
- *   - http://localhost:5173             Vite dev
+ *   - https://tt-hrms.vercel.app        the live Vercel production host
+ *   - http://localhost:5173             Vite dev (any loopback port, see below)
  *
- * Vercel PREVIEW deployments are deliberately absent: a wildcard
- * `*.vercel.app` would let any Vercel tenant's page drive these functions with a
- * user's cookies. Previews point at a Supabase branch project with its own
- * function deployment and its own allowlist (§9 environments).
+ * `tt-hrms.vercel.app` is the host the app is ACTUALLY served from today; the two
+ * `thetamarindtree.in` names are the intended custom domains and are not pointed at
+ * anything yet. Until they are, omitting the Vercel host means every function call
+ * from the deployed app fails its preflight — the app loads and then nothing works,
+ * which is a worse failure to diagnose than a page that does not load at all.
+ *
+ * STILL NO WILDCARD. `*.vercel.app` would let any Vercel tenant's page drive these
+ * functions with a user's session, and every preview deployment of every unrelated
+ * project on that shared domain would be trusted. One exact hostname is added; the
+ * rule is unchanged. Vercel PREVIEW deployments remain deliberately absent and point
+ * at a Supabase branch project with its own function deployment and its own
+ * allowlist (§9 environments).
  *
  * A request with NO `Origin` header is not a browser request (kiosk native
  * wrapper, pg_net cron, curl, server-to-server) — CORS does not apply and none
@@ -23,6 +32,7 @@ import { forbidden } from "./errors.ts";
 export const ALLOWED_ORIGINS: readonly string[] = [
   "https://hr.thetamarindtree.in",
   "https://kiosk.thetamarindtree.in",
+  "https://tt-hrms.vercel.app",
   "http://localhost:5173",
 ] as const;
 

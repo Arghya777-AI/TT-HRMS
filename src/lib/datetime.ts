@@ -221,6 +221,32 @@ export function fmtDurationFromHours(hours: number | null | undefined): string {
   return fmtDurationHm(hours * 60);
 }
 
+/**
+ * MINUTES FROM IST MIDNIGHT → an IST wall clock: 554 → '09:14', 1860 → '07:00 (+1d)'.
+ *
+ * Not a duration and not an instant. The analytics averages ("what time does this
+ * person usually arrive") are a MEAN OF MINUTES computed from the day view's own
+ * `first_in_hm` / `last_out_hm` strings, so there is no timestamp left to format —
+ * and routing the mean back through a `Date` would re-derive a wall clock in the
+ * host zone, which is the whole reason this module exists.
+ *
+ * The day tag is not decoration: `dayClockMinutes` adds 1440 when a shift's last
+ * scan precedes its first (this venue runs 19:00–07:00), so a mean departure past
+ * midnight is a real and common value. Printed bare it would read '07:00' beside a
+ * '19:05' mean arrival — leaving eleven hours before arriving.
+ */
+export function fmtIstMinutesOfDay(minutes: number | null | undefined): string {
+  if (minutes == null || Number.isNaN(minutes)) return "—";
+  const total = Math.round(minutes);
+  // Floor, not truncate: a negative value (which should not occur, but a mean of
+  // corrupt rows could produce one) must borrow a day rather than mirror the clock.
+  const dayOffset = Math.floor(total / 1440);
+  const inDay = total - dayOffset * 1440;
+  const clock = `${pad2(Math.floor(inDay / 60))}:${pad2(inDay % 60)}`;
+  if (dayOffset === 0) return clock;
+  return `${clock} (${dayOffset > 0 ? "+" : "-"}${Math.abs(dayOffset)}d)`;
+}
+
 /** '09:05:33' — live IST wall clock with seconds, for the shell top bar. */
 export function nowIstClock(now: Instant = new Date()): string {
   const p = istParts(now);

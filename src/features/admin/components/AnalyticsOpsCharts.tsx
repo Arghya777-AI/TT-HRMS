@@ -23,6 +23,18 @@
  *     the page; a stacked bar's HEIGHT is the visual sum of segments that are
  *     each their own server column, and the caption says so.
  *   * A missing value is a GAP (null), never a zero — `connectNulls` is off.
+ *
+ * DRILL-THROUGH (`onSelect`, added for the analytics dashboard)
+ * -------------------------------------------------------------
+ * A chart on a drill-through surface has to answer "and what is behind this
+ * bar". `onSelect` is handed the point's STABLE ID (`ChartPoint.id`, falling
+ * back to its label) rather than its position, so a re-ordered or re-filtered
+ * series can never open the wrong department.
+ *
+ * A click on an SVG rectangle is unreachable by keyboard, so the same id is
+ * offered as a real `<button>` in the table fallback every figure already
+ * carries. That is the accessible path, and it exists for free because the
+ * fallback was there first.
  */
 import { useMemo, type ReactNode } from "react";
 import {
@@ -54,16 +66,40 @@ export interface ChartSeries {
   /** Stable identity — the server column name. Colour binds to this. */
   readonly key: string;
   readonly label: string;
+  /**
+   * Overrides the figure's formatter for this series alone. Needed when a
+   * denominator (a day COUNT) sits beside the average it divided (MINUTES) —
+   * '31' and '7:50' in one table, each read the way its own unit is read.
+   */
+  readonly format?: ValueFormatter;
 }
 
 export interface ChartPoint {
   /** Category label, ALREADY formatted by @/lib/datetime. */
   readonly x: string;
+  /**
+   * Stable identity for a drill-through — an IST date, a department name, an id.
+   * Defaults to `x`. Set it whenever the label is a formatted or truncated form
+   * of something the destination needs verbatim.
+   */
+  readonly id?: string;
   /** series key → server value. `null` renders a gap, never a zero. */
   readonly values: Readonly<Record<string, number | null>>;
 }
 
+/** What a click on this point opens. See the header. */
+export type PointSelect = (id: string) => void;
+
+/** The drill-through pair: what to do, and how to name it for a screen reader. */
+export interface SelectSpec {
+  readonly onSelect: PointSelect;
+  /** `(label) => "Filter the dashboard to Banquet"`. Interpolated by the caller. */
+  readonly selectLabel: (label: string) => string;
+}
+
 export type ValueFormatter = (value: number | null) => string;
+
+const pointId = (point: ChartPoint): string => point.id ?? point.x;
 
 function toRows(
   points: readonly ChartPoint[],
@@ -104,11 +140,13 @@ function DataTable({
   points,
   format,
   xHeader,
+  select,
 }: {
   series: readonly ChartSeries[];
   points: readonly ChartPoint[];
   format: ValueFormatter;
   xHeader: string;
+  select?: SelectSpec;
 }) {
   return (
     <details className="mt-3 text-sm">
@@ -129,11 +167,29 @@ function DataTable({
           </TableHeader>
           <TableBody>
             {points.map((p) => (
-              <TableRow key={p.x}>
-                <TableCell className="font-medium">{p.x}</TableCell>
+              <TableRow key={pointId(p)}>
+                <TableCell className="font-medium">
+                  {/* The keyboard route to the same drill-through the mark offers. */}
+                  {select === undefined ? (
+                    p.x
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded underline decoration-dotted underline-offset-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={select.selectLabel(p.x)}
+                      onClick={() => {
+                        select.onSelect(pointId(p));
+                      }}
+                    >
+                      {p.x}
+                    </button>
+                  )}
+                </TableCell>
                 {series.map((s) => (
                   <TableCell key={s.key} className="num text-right">
-                    {p.values[s.key] == null ? dash(null) : format(p.values[s.key] ?? null)}
+                    {p.values[s.key] == null
+                      ? dash(null)
+                      : (s.format ?? format)(p.values[s.key] ?? null)}
                   </TableCell>
                 ))}
               </TableRow>
@@ -152,6 +208,7 @@ interface FigureProps {
   points: readonly ChartPoint[];
   format: ValueFormatter;
   xHeader: string;
+  select?: SelectSpec;
   children: ReactNode;
   className?: string;
 }
@@ -163,6 +220,7 @@ function ChartFigure({
   points,
   format,
   xHeader,
+  select,
   children,
   className,
 }: FigureProps) {
@@ -175,7 +233,13 @@ function ChartFigure({
       </div>
       <Legend series={series} />
       <figcaption className="mt-2 text-xs text-muted-foreground">{caption}</figcaption>
-      <DataTable series={series} points={points} format={format} xHeader={xHeader} />
+      <DataTable
+        series={series}
+        points={points}
+        format={format}
+        xHeader={xHeader}
+        {...(select ? { select } : {})}
+      />
     </figure>
   );
 }
@@ -203,7 +267,9 @@ function TooltipCard({
             />
             <dt className="text-xs text-muted-foreground">{s.label}</dt>
             <dd className="num ml-auto text-xs">
-              {point.values[s.key] == null ? dash(null) : format(point.values[s.key] ?? null)}
+              {point.values[s.key] == null
+                ? dash(null)
+                : (s.format ?? format)(point.values[s.key] ?? null)}
             </dd>
           </div>
         ))}
@@ -323,6 +389,8 @@ export interface TrendLinesProps {
   yWidth?: number;
   /** Fix the Y domain top, e.g. 100 for a percentage. */
   yMax?: number;
+  /** Clicking anywhere in a column opens that point. See the header. */
+  select?: SelectSpec;
 }
 
 export function TrendLinesChart({
@@ -335,6 +403,7 @@ export function TrendLinesChart({
   xHeader,
   yWidth = 64,
   yMax,
+  select,
 }: TrendLinesProps) {
   // Sliced inside a memo: a fresh array identity every render would defeat the
   // memoised row/lookup build below.
@@ -351,9 +420,27 @@ export function TrendLinesChart({
       points={points}
       format={format}
       xHeader={xHeader}
+      {...(select ? { select } : {})}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rows} margin={{ top: 12, right: 16, bottom: 4, left: 8 }} accessibilityLayer>
+        <LineChart
+          data={rows}
+          margin={{ top: 12, right: 16, bottom: 4, left: 8 }}
+          accessibilityLayer
+          {...(select
+            ? {
+                className: "cursor-pointer",
+                // The whole column, not the 3px dot: recharts hands back the
+                // index of the point the cursor is nearest, which is the only
+                // hit area a finger on a tablet can be expected to find.
+                onClick: (state: { activeTooltipIndex?: number }) => {
+                  const hit = state.activeTooltipIndex;
+                  const point = hit === undefined ? undefined : points[hit];
+                  if (point !== undefined) select.onSelect(pointId(point));
+                },
+              }
+            : {})}
+        >
           <CartesianGrid stroke={GRID} strokeWidth={1} vertical={false} />
           <XAxis
             dataKey="x"
@@ -414,12 +501,21 @@ export interface RankedBarsProps {
   caption: string;
   /** The one measure. A single series needs no legend. */
   measure: ChartSeries;
+  /**
+   * A second column shown in the fallback table but NEVER drawn — the
+   * denominator an average was taken over ("days with a scan"). A mean whose
+   * denominator is invisible is the classic way a two-day department outranks a
+   * whole floor, so a ranked AVERAGE should always pass one.
+   */
+  context?: ChartSeries;
   /** Already ordered by the server read; this component does not re-rank. */
   points: readonly ChartPoint[];
   format: ValueFormatter;
   tickFormat?: ValueFormatter;
   xHeader: string;
   labelWidth?: number;
+  /** Clicking a bar opens that category. See the header. */
+  select?: SelectSpec;
 }
 
 /**
@@ -431,13 +527,20 @@ export function RankedBarsChart({
   title,
   caption,
   measure,
+  context,
   points,
   format,
   tickFormat,
   xHeader,
   labelWidth = 168,
+  select,
 }: RankedBarsProps) {
   const series = useMemo(() => [measure], [measure]);
+  // Drawn series vs tabulated series: the denominator is a column, never a bar.
+  const columns = useMemo(
+    () => (context === undefined ? series : [...series, context]),
+    [series, context],
+  );
   const rows = useMemo(() => toRows(points, series), [points, series]);
   const byX = useMemo(() => new Map(points.map((p) => [p.x, p])), [points]);
   const ticks = tickFormat ?? format;
@@ -490,13 +593,31 @@ export function RankedBarsChart({
                 radius={[0, 4, 4, 0]}
                 maxBarSize={22}
                 isAnimationActive={false}
+                {...(select
+                  ? {
+                      className: "cursor-pointer",
+                      // Index into OUR array, not into recharts' reshaped row:
+                      // `points` and `rows` are built in the same order, and the
+                      // id travels rather than the position.
+                      onClick: (_bar: unknown, index: number) => {
+                        const point = points[index];
+                        if (point !== undefined) select.onSelect(pointId(point));
+                      },
+                    }
+                  : {})}
               />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
       <figcaption className="mt-2 text-xs text-muted-foreground">{caption}</figcaption>
-      <DataTable series={series} points={points} format={format} xHeader={xHeader} />
+      <DataTable
+        series={columns}
+        points={points}
+        format={format}
+        xHeader={xHeader}
+        {...(select ? { select } : {})}
+      />
     </figure>
   );
 }

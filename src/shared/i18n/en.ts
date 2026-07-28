@@ -24,6 +24,9 @@ import { keysAuthFaceFn } from "./keys/auth-face-fn";
 import { keysSigninActivity } from "./keys/signin-activity";
 import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
 import { keysRolesIst } from "./keys/roles-ist";
+import { keysAnalytics } from "./keys/analytics";
+import { keysAnalyticsPlanned } from "./keys/analytics-planned";
+import { keysAnalyticsOverview } from "./keys/analytics-overview";
 
 // Per-screen catalogues, each owned by exactly one author (see keys/*.ts).
 export const en = {
@@ -46,6 +49,9 @@ export const en = {
   ...keysSigninActivity,
   ...keysAdminFaceEnrol,
   ...keysRolesIst,
+  ...keysAnalytics,
+  ...keysAnalyticsPlanned,
+  ...keysAnalyticsOverview,
   // App
   "app.name": "Tamarind Tree HRMS",
   "app.loading": "Loading…",

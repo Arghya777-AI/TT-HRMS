@@ -255,6 +255,8 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   // §14 Analytics
   ["/admin/analytics", "Analytics", "A", "admin-analytics", BarChart3, "Twelve headline measures with drill-through."],
   ["/admin/analytics/attendance", "Attendance Analytics", "A", "admin-analytics", BarChart3, "Punctuality, hours, exceptions and trends."],
+  ["/admin/analytics/employees", "Employee Analytics", "A", "admin-analytics", Users, "One row per employee for the period: averages, lateness, leave and overtime."],
+  ["/admin/analytics/employees/:employeeCode", "Employee Analytics Detail", "A", "admin-analytics", UserRound, "One person's period: average in and out, hours, leave, exceptions and every day."],
   ["/admin/analytics/workforce", "Workforce Analytics", "A", "admin-analytics", BarChart3, "Headcount, attrition, tenure and diversity."],
   ["/admin/analytics/payroll", "Payroll & Cost Analytics", "A/S", "admin-analytics", BarChart3, "Cost per department, per event, over time."],
   ["/admin/analytics/leave", "Leave Analytics", "A", "admin-analytics", BarChart3, "Utilisation, liability and seasonality."],

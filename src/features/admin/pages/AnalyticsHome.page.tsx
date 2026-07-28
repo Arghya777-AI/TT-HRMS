@@ -26,6 +26,7 @@ import { dash, formatPercent } from "@/lib/format";
 import { fmtCivilDate } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { CountTile, type CountState } from "../components/CountTile";
+import { AnalyticsOverview } from "../components/AnalyticsOverview";
 import { Notice } from "../components/Notice";
 import { unavailableHint } from "../command-vocab";
 import {
@@ -163,6 +164,15 @@ export default function AnalyticsHomePage() {
         title={t("admin.analytics.home.title")}
         subtitle={t("admin.analytics.home.subtitle")}
       />
+
+      {/*
+        The filtered, aggregated view sits ABOVE the directory below it. They answer
+        different questions and are deliberately not merged: this block aggregates and
+        says so; the directory below is counts-only, each one over the same relation
+        its destination screen reads, which is why its tiles can never disagree with
+        the screens they open.
+      */}
+      <AnalyticsOverview />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {/* Punctuality is a percentage, not a count: its own tile. */}

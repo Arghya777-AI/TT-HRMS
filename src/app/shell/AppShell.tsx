@@ -37,6 +37,7 @@ import { ModeToggle } from "@/components/theme/mode-toggle";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { BRAND } from "@/config/brand";
+import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
 import {
   AI_FAB,
@@ -216,13 +217,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         >
           <div className="flex h-14 items-center gap-2 border-b px-3">
+            {/* The real monogram, not the "TT" square that used to stand in for it.
+                `decorative` because the trading name is rendered beside it — a screen
+                reader should not hear the brand twice. */}
             <Link to="/me" className="flex items-center gap-2 overflow-hidden" aria-label={t("app.name")}>
-              <span
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand-terracotta font-display text-sm font-bold text-white"
-                aria-hidden
-              >
-                TT
-              </span>
+              <BrandLogo variant="mark" decorative className="h-8 w-8 shrink-0" />
               <span className={cn("truncate font-display text-sm font-semibold", collapsed && "lg:hidden", "hidden lg:inline")}>
                 {BRAND.tradingName}
               </span>
@@ -244,12 +243,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             {/* Mobile brand (rail is hidden below md) */}
             <Link to="/me" className="md:hidden" aria-label={t("app.name")}>
-              <span
-                className="grid h-8 w-8 place-items-center rounded-md bg-brand-terracotta font-display text-sm font-bold text-white"
-                aria-hidden
-              >
-                TT
-              </span>
+              <BrandLogo variant="mark" decorative className="h-8 w-8" />
             </Link>
 
             <button

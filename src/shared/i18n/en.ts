@@ -165,6 +165,13 @@ export const en = {
   "auth.login.failed": "Sign-in failed",
   "auth.login.genericError": "That identifier or password didn't work. Try again.",
   "auth.login.noSignup": "Accounts are created by HR — there is no public sign-up.",
+  /*
+    The sign-in footer. It says the system is built in-house and names NO vendor,
+    agency or framework — an explicit instruction, and the honest line: somebody
+    signing in to see their own attendance and salary can tell who is accountable for
+    it, and nobody outside the company is implied to be holding their data.
+  */
+  "auth.builtInHouse": "An internal system, designed and maintained in-house.",
   "auth.login.forgot": "Forgot password?",
   "auth.forgot.title": "Forgot password",
   "auth.forgot.hint": "Enter your work email. If it exists, a reset link is on its way.",

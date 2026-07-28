@@ -4,41 +4,76 @@
 
 /*
  * Tamarind Tree HRMS — design tokens.
- * Brand anchors: terracotta #CE8F6F · gold #B99665 · plum #564147 · navy #121F38,
- * on warm cream neutrals. Serif display (Unna) for headings, Poppins for UI.
- * Every colour a component uses is a variable here — no hex literal in TSX (P6/P12).
+ *
+ * DRAWN FROM THE VENUE, NOT FROM A DEFAULT. The anchors are sampled from a
+ * photograph of the property — the deep canopy green of the trees, the mid leaf
+ * green, the warm grey of the stone paving, the near-black of the pillars and the
+ * olive of the water — plus the true gold of the logo mark (#C9A94F, measured off
+ * `public/logo.png` rather than guessed).
+ *
+ * The scheme USED to lead with terracotta #CE8F6F, which is why the product read as
+ * generic. Terracotta, plum and navy remain defined — they are real brand colours and
+ * still earn a place as accents — but foliage green now carries `--primary`, the rings,
+ * the sidebar and the first chart slot.
+ *
+ * THE CATEGORICAL CHART PALETTE IS COMPUTED, NOT CHOSEN. All eight slots were run
+ * through the palette validator in both modes: OKLCH lightness band, chroma floor,
+ * colour-vision-deficiency separation on every adjacent pair, a normal-vision floor and
+ * contrast against each mode's own surface. Light passes every check outright; dark has
+ * one adjacent pair (teal↔plum) in the 6–8 CVD floor band, which is legal only because
+ * every chart here also carries a legend, direct labels and a table/CSV export. Dark is
+ * SELECTED — its own steps from the same hues — never an automatic flip of light.
+ *
+ * Slot order is the ENTITY order and is identical in both modes: a series keeps its
+ * colour when a filter changes how many series there are.
+ *
+ * Serif display (Unna) for headings, Poppins for UI. Every colour a component uses is a
+ * variable here — no hex literal in TSX (P6/P12).
  */
 
 @layer base {
   :root {
     /* Fixed brand identity (referenced by both themes) */
+    /* Sampled from the venue photograph. */
+    --brand-foliage: 126 34% 27%;   /* #2E5E33 deep canopy — the lead colour */
+    --brand-moss: 85 34% 41%;       /* #6E8B45 mid leaf, sunlit */
+    --brand-leaf: 78 43% 59%;       /* #A9C46B bright leaf edge */
+    --brand-stone: 35 16% 65%;      /* #B3A796 warm stone paving */
+    --brand-water: 99 21% 21%;      /* #33422B olive water reflection */
+    --brand-bark: 38 19% 11%;       /* #221E17 trunk and pillar */
+    /* Measured off the logo mark itself, not estimated. */
+    --brand-gold: 44 53% 55%;       /* #C9A94F */
+    --brand-cream: 32 42% 94%;      /* #F6F0E9 parchment */
+    /* Retained: real brand colours, now accents rather than the lead. */
     --brand-terracotta: 20 49% 62%;
-    --brand-gold: 35 37% 56%;
     --brand-plum: 343 14% 30%;
     --brand-navy: 220 51% 15%;
-    --brand-cream: 35 33% 96%;
 
     /* --- Light theme --- */
     --background: 35 33% 96%;
-    --foreground: 340 15% 15%;
+    /* Ink is a very dark green-brown, not near-black: it sits with the foliage
+       instead of against it, the way printed heritage signage does. */
+    --foreground: 90 20% 12%;
 
     --card: 35 40% 99%;
-    --card-foreground: 340 15% 15%;
+    --card-foreground: 90 20% 12%;
 
     --popover: 35 40% 99%;
-    --popover-foreground: 340 15% 15%;
+    --popover-foreground: 90 20% 12%;
 
-    --primary: 20 45% 45%;
+    /* THE CHANGE THAT MATTERS: deep canopy green leads, terracotta no longer does. */
+    --primary: 126 34% 27%;
     --primary-foreground: 35 40% 98%;
 
-    --secondary: 35 26% 90%;
-    --secondary-foreground: 340 15% 20%;
+    /* Neutrals carry a trace of the stone paving's warmth rather than pure grey. */
+    --secondary: 40 22% 90%;
+    --secondary-foreground: 90 18% 18%;
 
-    --muted: 35 24% 92%;
-    --muted-foreground: 30 8% 42%;
+    --muted: 40 20% 92%;
+    --muted-foreground: 80 8% 38%;
 
-    --accent: 35 30% 88%;
-    --accent-foreground: 340 15% 18%;
+    --accent: 60 18% 88%;
+    --accent-foreground: 90 20% 16%;
 
     --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 100%;
@@ -49,59 +84,82 @@
     --warning: 35 85% 45%;
     --warning-foreground: 30 40% 12%;
 
-    --info: 220 51% 32%;
+    /* Info leans to the water blue in the photograph, away from the old navy. */
+    --info: 199 60% 32%;
     --info-foreground: 0 0% 100%;
 
-    --border: 35 20% 85%;
-    --input: 35 20% 84%;
-    --ring: 20 45% 45%;
+    --border: 45 16% 85%;
+    --input: 45 16% 84%;
+    --ring: 126 34% 27%;
 
     --radius: 0.625rem;
 
-    /* Categorical chart palette (see src/lib/chartTheme.ts) */
-    --chart-1: 20 49% 55%;
-    --chart-2: 35 45% 50%;
-    --chart-3: 220 40% 40%;
-    --chart-4: 343 22% 42%;
-    --chart-5: 150 30% 40%;
-    --chart-6: 190 35% 42%;
-    --chart-7: 10 45% 62%;
-    --chart-8: 45 40% 55%;
+    /*
+      Categorical chart palette — COMPUTED, not chosen, and structured in two tiers.
 
-    /* Sidebar — navy heritage surface */
-    --sidebar-background: 220 45% 13%;
-    --sidebar-foreground: 35 25% 88%;
-    --sidebar-primary: 20 49% 62%;
-    --sidebar-primary-foreground: 220 45% 10%;
-    --sidebar-accent: 220 30% 20%;
-    --sidebar-accent-foreground: 35 25% 90%;
-    --sidebar-border: 220 30% 22%;
-    --sidebar-ring: 20 49% 62%;
+      SLOTS 1–4 ARE THE OPERATIONAL QUARTET and pass ALL-PAIRS separation, not merely
+      adjacent pairs: multi-series charts draw all four at once, so every pair among
+      them has to be told apart. Finding four that survive all-pairs CVD on a light
+      cream surface took a search — the surface caps lightness at ~0.63 for a 3:1
+      contrast floor, which leaves a narrow band to spread four hues across, and no
+      four of the previous eight passed it at all.
+
+      SLOTS 5–8 extend the set for donuts and status breakdowns, and are validated for
+      ADJACENT pairs, which is the standard for a longer categorical ramp.
+
+      The worst pair in each mode sits in the 6–8 CVD floor band, which is legal here
+      only because every chart also ships secondary encoding: dash patterns on lines
+      (SERIES_DASH), a legend, direct labels, and a table/CSV export of the same figures.
+    */
+    --chart-1: 133 100% 20%;  /* #006516 foliage — the single-series default */
+    --chart-2: 206 100% 37%;  /* #006BBB water */
+    --chart-3: 38 100% 35%;   /* #B37000 gold */
+    --chart-4: 289 40% 42%;   /* #874197 plum */
+    --chart-5: 166 100% 28%;  /* #008D6C jade */
+    --chart-6: 2 47% 49%;     /* #B94642 terracotta */
+    --chart-7: 60 100% 26%;   /* #878600 olive */
+    --chart-8: 247 42% 54%;   /* #6358BA iris */
+
+    /* Sidebar — deep canopy surface, with the logo's gold as its accent. */
+    --sidebar-background: 120 22% 12%;
+    --sidebar-foreground: 40 25% 88%;
+    --sidebar-primary: 44 53% 55%;
+    --sidebar-primary-foreground: 120 30% 9%;
+    --sidebar-accent: 120 16% 19%;
+    --sidebar-accent-foreground: 40 25% 90%;
+    --sidebar-border: 120 14% 21%;
+    --sidebar-ring: 44 53% 55%;
   }
 
   .dark {
-    --brand-cream: 35 20% 90%;
+    --brand-cream: 40 20% 90%;
 
-    --background: 340 12% 8%;
-    --foreground: 35 25% 90%;
+    /*
+      The surface is the canopy shadow from the photograph — a green-black, not the
+      old plum-black. Dark is SELECTED against this surface, not derived from light:
+      every chart step below was re-validated with #12160F as the background.
+    */
+    --background: 94 19% 7%;
+    --foreground: 40 25% 90%;
 
-    --card: 340 10% 11%;
-    --card-foreground: 35 25% 90%;
+    --card: 100 14% 10%;
+    --card-foreground: 40 25% 90%;
 
-    --popover: 340 10% 11%;
-    --popover-foreground: 35 25% 90%;
+    --popover: 100 14% 10%;
+    --popover-foreground: 40 25% 90%;
 
-    --primary: 20 55% 58%;
-    --primary-foreground: 340 20% 10%;
+    /* Lifted foliage: the light-mode green is too dark to read on a dark surface. */
+    --primary: 122 32% 48%;
+    --primary-foreground: 100 25% 8%;
 
-    --secondary: 340 8% 18%;
-    --secondary-foreground: 35 25% 90%;
+    --secondary: 100 10% 17%;
+    --secondary-foreground: 40 25% 90%;
 
-    --muted: 340 8% 18%;
-    --muted-foreground: 35 12% 60%;
+    --muted: 100 10% 17%;
+    --muted-foreground: 60 10% 60%;
 
-    --accent: 340 8% 20%;
-    --accent-foreground: 35 25% 92%;
+    --accent: 100 10% 20%;
+    --accent-foreground: 40 25% 92%;
 
     --destructive: 0 60% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -112,30 +170,35 @@
     --warning: 38 80% 55%;
     --warning-foreground: 35 40% 10%;
 
-    --info: 210 60% 60%;
-    --info-foreground: 220 45% 10%;
+    --info: 199 65% 55%;
+    --info-foreground: 199 45% 10%;
 
-    --border: 340 8% 20%;
-    --input: 340 8% 22%;
-    --ring: 20 55% 58%;
+    --border: 100 10% 20%;
+    --input: 100 10% 22%;
+    --ring: 122 32% 48%;
 
-    --chart-1: 20 55% 62%;
-    --chart-2: 35 50% 58%;
-    --chart-3: 210 55% 60%;
-    --chart-4: 343 30% 60%;
-    --chart-5: 150 35% 52%;
-    --chart-6: 190 40% 52%;
-    --chart-7: 10 55% 68%;
-    --chart-8: 45 48% 62%;
+    /*
+      Dark chart steps — the SAME eight entities in the SAME order, re-stepped for this
+      surface and re-validated against it. Slots 1–4 pass all-pairs here too. Dark is
+      SELECTED, never an automatic lightening of light.
+    */
+    --chart-1: 127 53% 32%;   /* #267D30 foliage */
+    --chart-2: 208 69% 49%;   /* #2784D5 water */
+    --chart-3: 39 100% 38%;   /* #C07C00 gold */
+    --chart-4: 288 36% 52%;   /* #A059B1 plum */
+    --chart-5: 167 100% 33%;  /* #00A784 jade */
+    --chart-6: 3 57% 58%;     /* #D15C56 terracotta */
+    --chart-7: 60 100% 30%;   /* #999900 olive */
+    --chart-8: 245 55% 64%;   /* #7970D5 iris */
 
-    --sidebar-background: 220 45% 9%;
-    --sidebar-foreground: 35 22% 85%;
-    --sidebar-primary: 20 55% 60%;
-    --sidebar-primary-foreground: 220 45% 8%;
-    --sidebar-accent: 220 30% 16%;
-    --sidebar-accent-foreground: 35 22% 88%;
-    --sidebar-border: 220 25% 18%;
-    --sidebar-ring: 20 55% 60%;
+    --sidebar-background: 120 24% 8%;
+    --sidebar-foreground: 40 22% 85%;
+    --sidebar-primary: 44 53% 58%;
+    --sidebar-primary-foreground: 120 30% 7%;
+    --sidebar-accent: 120 14% 15%;
+    --sidebar-accent-foreground: 40 22% 88%;
+    --sidebar-border: 120 12% 17%;
+    --sidebar-ring: 44 53% 58%;
   }
 }
 

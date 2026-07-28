@@ -70,11 +70,19 @@ export default {
         },
         // Brand anchors, available as utilities (bg-brand-terracotta, text-brand-navy…)
         brand: {
-          terracotta: "hsl(var(--brand-terracotta))",
+          // Sampled from the venue photograph — see the header of src/index.css.
+          foliage: "hsl(var(--brand-foliage))",
+          moss: "hsl(var(--brand-moss))",
+          leaf: "hsl(var(--brand-leaf))",
+          stone: "hsl(var(--brand-stone))",
+          water: "hsl(var(--brand-water))",
+          bark: "hsl(var(--brand-bark))",
           gold: "hsl(var(--brand-gold))",
+          cream: "hsl(var(--brand-cream))",
+          // Retained as accents; they no longer lead the scheme.
+          terracotta: "hsl(var(--brand-terracotta))",
           plum: "hsl(var(--brand-plum))",
           navy: "hsl(var(--brand-navy))",
-          cream: "hsl(var(--brand-cream))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

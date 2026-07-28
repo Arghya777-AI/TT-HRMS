@@ -121,7 +121,7 @@ export function SalaryStructureTable({ rows, masked }: SalaryStructureTableProps
             {pinned.map((row) => (
               <TableRow
                 key={row.key}
-                className={`hover:bg-transparent ${row.emphasis ? "bg-brand-cream/70 dark:bg-muted" : ""}`}
+                className={`hover:bg-transparent ${row.emphasis ? "bg-secondary/70 dark:bg-muted" : ""}`}
               >
                 <TableCell className="font-semibold">{row.label}</TableCell>
                 <TableCell className="hidden lg:table-cell" />
@@ -156,7 +156,7 @@ export function SalaryStructureTable({ rows, masked }: SalaryStructureTableProps
           <li
             key={row.key}
             className={`flex items-center justify-between gap-3 p-4 ${
-              row.emphasis ? "bg-brand-cream/60 dark:bg-muted" : "bg-muted/50"
+              row.emphasis ? "bg-secondary/60 dark:bg-muted" : "bg-muted/50"
             }`}
           >
             <p className="font-semibold">{row.label}</p>

@@ -11,8 +11,8 @@
  * olive of the water — plus the true gold of the logo mark (#C9A94F, measured off
  * `public/logo.png` rather than guessed).
  *
- * The scheme USED to lead with terracotta #CE8F6F, which is why the product read as
- * generic. Terracotta, plum and navy remain defined — they are real brand colours and
+ * The scheme USED to lead with terracotta #CE8F6F on a warm cream page, which is why
+ * the product read as generic — the beige surface mattered more than the accent did. Terracotta, plum and navy remain defined — they are real brand colours and
  * still earn a place as accents — but foliage green now carries `--primary`, the rings,
  * the sidebar and the first chart slot.
  *
@@ -50,30 +50,45 @@
     --brand-navy: 220 51% 15%;
 
     /* --- Light theme --- */
-    --background: 35 33% 96%;
+    /*
+      THE SURFACE IS COOL STONE, NOT WARM CREAM — and this is the token that decides
+      whether the product looks like itself.
+
+      It was `35 33% 96%` (#F8F5F1): a warm beige at a third saturation. Recolouring the
+      ACCENT to green changed almost nothing, because the background is the largest
+      surface on every screen and a warm beige page reads as a warm beige product no
+      matter what colour the buttons are.
+
+      #EFF1EE is the grey of the paving in the venue photograph — the flagstones by the
+      water, which are a cool stone with a green cast picked up from the canopy. Low
+      saturation on purpose: at 11% it reads as stone rather than as a green tint, and it
+      lets the foliage greens and the gold be the only saturated things on the page.
+    */
+    --background: 100 11% 94%;
     /* Ink is a very dark green-brown, not near-black: it sits with the foliage
        instead of against it, the way printed heritage signage does. */
-    --foreground: 90 20% 12%;
+    --foreground: 100 18% 12%;
 
-    --card: 35 40% 99%;
-    --card-foreground: 90 20% 12%;
+    /* Cards are near-white so they lift off the stone instead of blending into it. */
+    --card: 100 20% 99%;
+    --card-foreground: 100 18% 12%;
 
-    --popover: 35 40% 99%;
-    --popover-foreground: 90 20% 12%;
+    --popover: 100 20% 99%;
+    --popover-foreground: 100 18% 12%;
 
     /* THE CHANGE THAT MATTERS: deep canopy green leads, terracotta no longer does. */
     --primary: 126 34% 27%;
     --primary-foreground: 35 40% 98%;
 
-    /* Neutrals carry a trace of the stone paving's warmth rather than pure grey. */
-    --secondary: 40 22% 90%;
-    --secondary-foreground: 90 18% 18%;
+    /* The neutrals are steps of the same stone, so nothing on the page is beige. */
+    --secondary: 100 12% 90%;
+    --secondary-foreground: 100 18% 18%;
 
-    --muted: 40 20% 92%;
-    --muted-foreground: 80 8% 38%;
+    --muted: 100 10% 92%;
+    --muted-foreground: 100 8% 38%;
 
-    --accent: 60 18% 88%;
-    --accent-foreground: 90 20% 16%;
+    --accent: 100 12% 88%;
+    --accent-foreground: 100 18% 16%;
 
     --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 100%;
@@ -88,8 +103,8 @@
     --info: 199 60% 32%;
     --info-foreground: 0 0% 100%;
 
-    --border: 45 16% 85%;
-    --input: 45 16% 84%;
+    --border: 100 10% 85%;
+    --input: 100 10% 84%;
     --ring: 126 34% 27%;
 
     --radius: 0.625rem;

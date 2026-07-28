@@ -74,7 +74,10 @@ export function AuthLayout({
       </aside>
 
       {/* ── The form column ────────────────────────────────────────────────── */}
-      <main className="flex min-h-dvh flex-col bg-gradient-to-b from-brand-cream to-background px-4 py-8 dark:from-background dark:to-background">
+      {/* Stone, not cream: `from-brand-cream` left a beige wash down this column, which
+          was the very thing that made the product read as generic. The gradient now runs
+          between two steps of the same stone the rest of the app uses. */}
+      <main className="flex min-h-dvh flex-col bg-gradient-to-b from-muted to-background px-4 py-8 dark:from-background dark:to-background">
         <div className="flex justify-end">
           <ModeToggle />
         </div>

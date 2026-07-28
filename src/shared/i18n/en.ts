@@ -133,7 +133,15 @@ export const en = {
   "shell.nav.admin.settings": "Settings",
 
   // Shell — AI FAB
-  "shell.fab.askTT": "Ask TT",
+  /*
+    "Regal Lab AI Assistant" — the client's name for it. The key keeps its old id so
+    every call site does not have to change; only the words a person reads did.
+
+    The route is still phase P2 and still has no page module, so this button leads to the
+    "not switched on" stub. Renaming it does not implement it, and the stub says so
+    rather than letting the name imply a working assistant.
+  */
+  "shell.fab.askTT": "Regal Lab AI Assistant",
 
   // Guards / errors
   "guard.checkingSession": "Checking your session…",

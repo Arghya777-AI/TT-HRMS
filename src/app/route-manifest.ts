@@ -105,7 +105,10 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/settings/notifications", title: "Notification preferences", hint: "Choose channels; some notices can't be switched off.", cap: "me.view", domain: "settings", phase: "P1", icon: Cog },
   { path: "/me/settings/security", title: "Security", hint: "Password, passkeys, face-enrolment status and sessions.", cap: "me.view", domain: "settings", phase: "P1", icon: Fingerprint },
   { path: "/me/activity", title: "My activity", hint: "Every change to your record, who made it and why, and who read it.", cap: "me.view", domain: "settings", phase: "P1", icon: ShieldCheck },
-  { path: "/me/ask", title: "Ask TT", hint: "Ask about your own attendance, leave and pay — with charts.", cap: "me.view", domain: "ai", phase: "P2", icon: Sparkles },
+  // Named "Regal Lab AI Assistant" at the client's request. STILL phase P2 and still
+  // absent from PAGE_REGISTRY, so this renders the "not switched on" stub — the naming
+  // and the hint describe what it is FOR, they do not make it answer anything.
+  { path: "/me/ask", title: "Regal Lab AI Assistant", hint: "Ask about your own attendance, leave and pay. Three panels — attendance, leave and pay — each with its own charts, and every answer downloadable as Excel or PDF with the infographics included.", cap: "me.view", domain: "ai", phase: "P2", icon: Sparkles },
 ];
 
 /* ── Manager (spec-manager route table) ───────────────────────────────────── */

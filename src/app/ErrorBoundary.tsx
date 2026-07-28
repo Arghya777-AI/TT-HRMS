@@ -38,15 +38,47 @@ function isStaleChunkError(error: Error): boolean {
 }
 
 /**
- * ONE reload, ever, per tab.
+ * ONE reload PER BUILD, not one reload ever.
  *
- * `sessionStorage` rather than a field on the component: the reload destroys the
- * component, so anything held in memory is gone by the time the guard is needed.
- * Without it, an error that merely LOOKS like a stale chunk — a genuinely offline
- * device, a CDN outage, a blocked request — would reload, fail, reload, and pin the
- * gate in a loop that is far worse than the blank screen it was meant to fix.
+ * This used to store a bare "1" and refuse to reload a second time for the life of the
+ * tab. That is correct protection against the wrong thing. It stops the loop that
+ * matters — an offline device or a CDN outage reloading forever — but it also means the
+ * SECOND deploy while a tab is open is unrecoverable: the flag is already set, so the
+ * tab shows "Failed to fetch dynamically imported module" and stays there. On a day with
+ * six deploys, every tab open since the first one is stuck.
+ *
+ * So the flag now records WHICH BUILD reloaded, and the test is "have I already reloaded
+ * for this build?" rather than "have I ever reloaded?":
+ *
+ *   reload happened, tab came back on a NEW build, new stale chunk  -> reload again
+ *   reload happened, tab came back on the SAME build                -> stop, show the card
+ *
+ * The second line is the loop guard, and it is strictly stronger than a counter: if
+ * reloading does not change the build then reloading cannot possibly help, whatever the
+ * reason, and the honest thing is to say so.
+ *
+ * `sessionStorage` rather than a field on the component, because the reload destroys the
+ * component — anything held in memory is gone by the time the guard is needed.
  */
-const RELOAD_FLAG = "tt-hrms:chunk-reloaded";
+const RELOAD_FLAG = "tt-hrms:chunk-reloaded-build";
+
+/**
+ * A tag identifying the build this document was served with — no build-time config and
+ * no clock needed.
+ *
+ * Vite emits the entry as `/assets/index-<contenthash>.js`, so the entry script's own URL
+ * IS the build identity: a deploy that changes any code changes that hash. Reading it off
+ * the DOM means the tag is whatever this page actually loaded, which is exactly the thing
+ * a reload is trying to change.
+ *
+ * Falls back to a constant when no hashed module script is present (the dev server, or a
+ * future non-hashed build). A constant degrades to the OLD behaviour — one reload per tab
+ * — which is the safe direction to fail in.
+ */
+function buildTag(): string {
+  const entry = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/"]');
+  return entry?.getAttribute("src") ?? "unhashed";
+}
 
 interface Props {
   children: ReactNode;
@@ -67,10 +99,15 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error("[tt-hrms] render error", error, info.componentStack);
 
     if (!isStaleChunkError(error)) return;
+    const tag = buildTag();
     let alreadyTried = true;
     try {
-      alreadyTried = sessionStorage.getItem(RELOAD_FLAG) === "1";
-      if (!alreadyTried) sessionStorage.setItem(RELOAD_FLAG, "1");
+      // "Already tried" now means "already reloaded FOR THIS BUILD". A tab that
+      // reloaded, came back on a newer build, and then met another stale chunk gets a
+      // fresh reload; a tab that reloads back into the same build does not, because
+      // reloading demonstrably is not helping.
+      alreadyTried = sessionStorage.getItem(RELOAD_FLAG) === tag;
+      if (!alreadyTried) sessionStorage.setItem(RELOAD_FLAG, tag);
     } catch {
       // Private mode or a locked-down webview can refuse sessionStorage entirely.
       // Without the guard a reload could loop, so do nothing and let the error card

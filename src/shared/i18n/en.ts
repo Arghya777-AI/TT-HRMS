@@ -182,6 +182,28 @@ export const en = {
     it, and nobody outside the company is implied to be holding their data.
   */
   /* ── First-login onboarding pack (migration 083) ────────────────────────── */
+  /* ── HR's onboarding queue (migration 084) ─────────────────────────────── */
+  "onboarding.queue.title": "First-login onboarding",
+  "onboarding.queue.chasing": "{n} joiner(s) have not started their form yet.",
+  "onboarding.queue.allDone": "Everyone has started or finished their joining form.",
+  "onboarding.queue.empty": "Nobody in your scope yet.",
+  "onboarding.state.notStarted": "Not started",
+  "onboarding.state.awaitingReview": "Awaiting your check",
+  "onboarding.state.waived": "Waived",
+  "onboarding.state.reviewed": "Checked",
+  "onboarding.col.person": "Employee",
+  "onboarding.col.joined": "Joined",
+  "onboarding.col.state": "Onboarding",
+  "onboarding.col.outstanding": "Documents",
+  "onboarding.noneOutstanding": "Nothing outstanding",
+  "onboarding.docsOutstanding": "{n} still missing",
+  "onboarding.markReviewed": "Mark checked",
+  "onboarding.waive": "Waive",
+  /* The reason becomes the audit record, so the prompt says what it is for and what the
+     server will still insist on. */
+  "onboarding.waivePrompt":
+    "Why is this joiner being waived? At least 10 characters — this is recorded against their file. An Aadhaar or PAN number is still required and cannot be waived.",
+  "onboarding.adminOnly": "Admins only",
   "onboarding.step": "What HR still needs from you",
   "onboarding.required": "Required — {done} of {total} done",
   "onboarding.recommended": "Recommended",

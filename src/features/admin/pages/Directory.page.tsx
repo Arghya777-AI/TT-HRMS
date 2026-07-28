@@ -39,6 +39,7 @@ import { t } from "@/shared/i18n/en";
 import { SelectField, TextField } from "../components/Field";
 import { PersonCell } from "../components/PersonCell";
 import { useRefOptions } from "../hooks/useMasters";
+import { OnboardingQueuePanel } from "@/features/onboarding/components/OnboardingQueuePanel";
 import {
   DIRECTORY_PAGE_SIZE,
   flattenDirectory,
@@ -393,6 +394,10 @@ export default function DirectoryPage() {
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground">{t("admin.people.footnote")}</p>
+      {/* Who still owes their joining paperwork — the question HR asks while
+          already looking at the directory. */}
+      <OnboardingQueuePanel />
+
     </div>
   );
 }

@@ -62,12 +62,15 @@ export function FaceLoginSwitch({ row, audience, hideTitle = false, className }:
   const self = audience === "self";
 
   /**
-   * Every reason this will not work today, in the order a reader can act on them.
-   * An empty list means face sign-in is genuinely usable.
+   * Everything a reader needs to know about whether this will actually work, in the
+   * order they can act on it. An empty list means face sign-in is usable as-is.
+   *
+   * Privilege is a NOTE, not a blocker: such an account may sign in by face, at a
+   * stricter match. It used to be refused outright and the copy said so.
    */
   const blockers: string[] = [];
   if (row.is_privileged) {
-    blockers.push(self ? t("faceLogin.block.privilegedSelf") : t("faceLogin.block.privileged"));
+    blockers.push(self ? t("faceLogin.note.privilegedSelf") : t("faceLogin.note.privileged"));
   }
   if (!row.has_live_template) {
     blockers.push(

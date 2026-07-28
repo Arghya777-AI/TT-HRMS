@@ -399,20 +399,30 @@ function FaceLoginRoster() {
       width: "14rem",
       hideBelow: "md",
       /*
-        Three states, not two. "Switch on but no template" and "switch on, privileged,
-        so refused anyway" both look like working face sign-in if the column only says
-        yes/no — and an admin acting on that would be wrong.
+        The enrolment state ALWAYS shows, with the privileged note added beneath it when
+        it applies. It used to show the privileged label INSTEAD, which hid whether the
+        person was enrolled at all — and now that a privileged account CAN sign in by
+        face, at a stricter match, that omission would mislead an admin trying to work
+        out why somebody cannot get in.
       */
-      render: (row) =>
-        row.is_privileged ? (
-          <span className="text-sm text-muted-foreground">{t("faceLogin.admin.privileged")}</span>
-        ) : row.has_live_template ? (
-          <span className="text-sm">{t("faceLogin.admin.template.live")}</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">
-            {row.has_enrolled ? t("faceLogin.admin.template.gone") : t("faceLogin.admin.template.none")}
-          </span>
-        ),
+      render: (row) => (
+        <div className="min-w-0">
+          {row.has_live_template ? (
+            <span className="text-sm">{t("faceLogin.admin.template.live")}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {row.has_enrolled
+                ? t("faceLogin.admin.template.gone")
+                : t("faceLogin.admin.template.none")}
+            </span>
+          )}
+          {row.is_privileged ? (
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {t("faceLogin.admin.privileged")}
+            </span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "action",

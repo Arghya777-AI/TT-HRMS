@@ -29,11 +29,21 @@
  *      require that the nearest template IS the claimed employee's. That is
  *      strictly stronger than a bare 1:1 distance test, because it also refuses
  *      when somebody else is nearer than the person you claim to be.
- *   2. NEVER A PRIVILEGED ACCOUNT. Any profile holding `manager`, `admin` or
- *      `super_admin` is refused, with the same generic message as "no template" —
- *      so the refusal is not an oracle for "this account is privileged". An
- *      employee session is RLS-scoped to their own row; an admin session is not,
- *      and a photograph must never be able to open one.
+ *   2. A PRIVILEGED ACCOUNT IS HELD TO A HIGHER BAR, NOT REFUSED. Any profile holding
+ *      `manager`, `admin` or `super_admin` used to be refused outright, with the same
+ *      generic message as "no template" so the refusal was not an oracle. The owner
+ *      asked for it to work for their own account, which is theirs to decide, so the
+ *      check was RAISED rather than removed: such an account needs 0.80 confidence and
+ *      0.12 margin — against 0.62 and 0.06 for an employee — the same pair
+ *      `kiosk-face-signin` already requires of an admin opening a gate session.
+ *
+ *      The reasoning behind the old refusal still stands and is worth stating: an
+ *      employee session is RLS-scoped to their own row, an admin session is not, and a
+ *      photograph opening one is a materially worse outcome. What protects against that
+ *      here is the MARGIN — doubling it demands the runner-up be clearly further away,
+ *      which is the measure a lookalike or a photograph actually fails. Also, per-person
+ *      `employees.allow_face_login` still gates it, so any admin can switch it off for a
+ *      privileged holder, and the holder can switch it off for themselves.
  *   3. THE STRICTEST DOCUMENTED ACCEPT BAND. spec-kiosk §3.3 gives the kiosk
  *      T_accept = 0.45 and marks an accepted match beyond T_review = 0.38 as
  *      band `low` → human review. A login cannot be reviewed after the fact —
@@ -189,6 +199,25 @@ const MAX_UNIT_DISTANCE = 2;
 /** `attendance_policies` DB defaults (migration 014), used when no policy resolves. */
 const DEFAULT_MIN_CONFIDENCE = 0.62;
 const DEFAULT_MIN_MARGIN = 0.06;
+
+/*
+  FLOORS FOR A PRIVILEGED ACCOUNT — manager, admin or super_admin.
+
+  These accounts USED TO BE REFUSED this door outright, and the reasoning was sound: a
+  privileged session is the one worth stealing, so a face is a poor thing to hang it on.
+  The owner has asked twice for it to work for their own account, which is their call to
+  make, so the answer is not to delete the check but to raise the bar it enforces.
+
+  The numbers are not new. They are the same pair `kiosk-face-signin` already uses to let
+  an admin open a gate session by face, so the two doors agree about what "sure enough for
+  an admin" means rather than each inventing a threshold.
+
+  0.80 confidence is well above the 0.62 a plain employee needs; 0.12 margin is double the
+  0.06 floor, which is what actually protects against a lookalike — it demands that the
+  runner-up be clearly further away, not merely further.
+*/
+const PRIVILEGED_MIN_CONFIDENCE = 0.80;
+const PRIVILEGED_MIN_MARGIN = 0.12;
 
 /**
  * spec-kiosk §3.3 `T_review = 0.38`. At the gate an accepted match beyond this
@@ -559,13 +588,13 @@ function assertFaceEligible(account: AccountRow): string {
     confirm the account exists and hand an attacker a probe for which accounts are
     worth attacking. The person who turned the switch off already knows they did; the
     screen that owns the switch says so in words, where the reader is authenticated.
+
+    `is_privileged` is NO LONGER a refusal. It now selects the stricter thresholds in
+    `resolveThresholds` instead — see PRIVILEGED_MIN_CONFIDENCE. The switch is still the
+    gate: a privileged holder who has not enabled face sign-in is refused like anybody
+    else, and an admin can turn it off for them.
   */
-  if (
-    account.is_privileged ||
-    !account.has_face_template ||
-    !account.allow_face_login ||
-    account.employee_id === null
-  ) {
+  if (!account.has_face_template || !account.allow_face_login || account.employee_id === null) {
     faceUnavailable();
   }
   return account.employee_id;
@@ -639,6 +668,7 @@ async function resolveThresholds(
   client: Sql,
   employeeId: string,
   loginMaxDistance: number,
+  isPrivileged: boolean,
 ): Promise<Thresholds> {
   const rows = await client`
     SELECT ap.min_confidence_for_auto_accept,
@@ -659,6 +689,9 @@ async function resolveThresholds(
     minConfidence: Math.max(
       Number.isFinite(policyMinConfidence) ? policyMinConfidence : DEFAULT_MIN_CONFIDENCE,
       confidenceFor(loginMaxDistance),
+      // A privileged account raises the floor and can never lower it: it joins the
+      // same Math.max as everything else, so a loose policy row cannot talk it down.
+      isPrivileged ? PRIVILEGED_MIN_CONFIDENCE : 0,
     ),
     // The SAME `Math.max` rule as the confidence above, and for the same reason:
     // `min_margin_for_auto_accept` is `ck_ap__confidence`-bounded to [0,1], so a
@@ -671,6 +704,7 @@ async function resolveThresholds(
     minMargin: Math.max(
       Number.isFinite(policyMinMargin) ? policyMinMargin : DEFAULT_MIN_MARGIN,
       DEFAULT_MIN_MARGIN,
+      isPrivileged ? PRIVILEGED_MIN_MARGIN : 0,
     ),
   };
 }
@@ -829,8 +863,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // ── STEP 5 · Authority ────────────────────────────────────────────────────
     // Not applicable pre-auth. Capabilities are re-derived from the DB on the
     // FIRST authenticated call after the session exists, never here. The one
-    // authority question asked at this stage is the inverse: an account with
-    // elevated access may NOT use this door (`assertFaceEligible`).
+    // authority question asked at this stage is the inverse, and it no longer refuses:
+    // an account with elevated access may use this door, but only at the stricter
+    // thresholds in `resolveThresholds` (PRIVILEGED_MIN_CONFIDENCE / _MARGIN).
 
     // ── STEP 6 · Rate limit, per IP ───────────────────────────────────────────
     // FIRST, before the flag read and before the body is parsed, and outside any
@@ -1041,7 +1076,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Thresholds are resolved BEFORE the gates below so that every
     // `face_match_log` row — including a refusal — can pin the threshold that
     // was in force at the moment of the decision (`threshold_used` is NOT NULL).
-    const thresholds = await resolveThresholds(client, employeeId, config.loginMaxDistance);
+    const thresholds = await resolveThresholds(
+      client,
+      employeeId,
+      config.loginMaxDistance,
+      account.is_privileged,
+    );
 
     /** One place that writes the evidence row, whatever the outcome (INV-4). */
     const logAttempt = async (

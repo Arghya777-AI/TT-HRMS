@@ -23,14 +23,16 @@ export const keysFaceLogin = {
 
   // ── Why an enabled switch may still not sign you in ───────────────────────
   /**
-   * The one a reader cannot discover any other way: `face-login` refuses privileged
-   * accounts and returns the SAME generic message as "no template", so the sign-in
-   * screen can never explain it. This is the only place it can be said.
+   * NOT a blocker any more — a condition. A privileged account may now sign in by face
+   * but is held to 0.80 confidence and 0.12 margin, against 0.62 and 0.06 for an
+   * employee. The sign-in screen returns one generic refusal for every failure so it
+   * cannot be used as an oracle, which is why the stricter bar has to be explained
+   * HERE, to a reader who is already authenticated.
    */
-  "faceLogin.block.privilegedSelf":
-    "Your account holds a manager, admin or super-admin role, and face sign-in is not offered to privileged accounts — a stolen face would open too much. Use your password or a passkey.",
-  "faceLogin.block.privileged":
-    "This account holds a manager, admin or super-admin role. Face sign-in is not offered to privileged accounts, whatever this switch says.",
+  "faceLogin.note.privilegedSelf":
+    "Your account holds a manager, admin or super-admin role, so face sign-in holds you to a stricter match than an employee — a clearer look at the camera, in reasonable light. Your password and passkey keep working.",
+  "faceLogin.note.privileged":
+    "This account holds a manager, admin or super-admin role, so face sign-in requires a stricter match than it does for an employee.",
   "faceLogin.block.notEnrolledSelf":
     "You have not enrolled a face yet. Ask HR to start enrolment, then this will begin working.",
   "faceLogin.block.notEnrolled":
@@ -56,7 +58,7 @@ export const keysFaceLogin = {
   "faceLogin.admin.col.state": "Face sign-in",
   "faceLogin.admin.col.enrolled": "Enrolled",
   "faceLogin.admin.col.action": "",
-  "faceLogin.admin.privileged": "Privileged account — refused regardless",
+  "faceLogin.admin.privileged": "Privileged — stricter match required",
   "faceLogin.admin.template.live": "Face enrolled and active",
   "faceLogin.admin.template.gone": "Enrolled, but no active template",
   "faceLogin.admin.template.none": "Not enrolled",

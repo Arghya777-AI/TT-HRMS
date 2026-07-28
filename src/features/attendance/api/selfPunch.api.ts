@@ -23,8 +23,9 @@
  * derives IN/OUT afterwards (first scan of the business date is the arrival, the
  * last is the departure — §3.1). So there is no column that says "your next
  * punch is an OUT". `fetchSelfPunchState` reads the punch log the employee can
- * already see on their own timeline and reports the parity of it, so the button
- * can say which direction the employee is about to record. That prediction is
+ * already see on their own timeline and asks the server which day is in progress,
+ * so the button can say which direction the employee is about to record: the first
+ * scan of that day is an arrival, every later one a departure. That prediction is
  * NEVER shown as the outcome: `selfPunch()` returns the server's `direction` and
  * that is what the confirmation renders.
  *
@@ -51,7 +52,7 @@
  */
 import { z } from "zod";
 import { invokeEdgeFn, TTApiError } from "@/shared/api/invoke";
-import { dbUuid, selectOne } from "@/shared/api/query";
+import { dbDate, dbUuid, rpcOne, selectOne } from "@/shared/api/query";
 import { addIstDays, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { toPunchGeo, type SignInGeo } from "@/features/auth/lib/geolocation";
@@ -106,61 +107,127 @@ export type NextDirection = "in" | "out";
 
 export interface SelfPunchState {
   /**
-   * The business date the open punches are filed under, or `null` when nothing
-   * has been recorded across the two dates read. NOT necessarily today: a night
-   * shift's 01:00 scan is filed under the previous business date by the
-   * `set_punch_business_date` trigger, which is why two dates are read.
+   * The business date a scan made RIGHT NOW would be filed under — the server's
+   * answer, from `my_punch_business_date()`. Usually today; the previous date for
+   * somebody working a shift that crosses midnight, before its cutover. `null`
+   * only when the caller has no employee row at all.
    */
   businessDate: string | null;
   /** Punches on that business date, duplicates and voids already excluded. */
   punchCount: number;
-  /** The most recent punch instant, for "last scan 09:14" under the button. */
+  /** The most recent punch instant on that date, for "last scan 09:14". */
   lastPunchAt: string | null;
-  /** Even count (including zero) → the next scan is an arrival. */
+  /** Nothing recorded yet on that date → arrival. Otherwise → departure. */
   next: NextDirection;
+}
+
+/**
+ * THE RULE, in one place: the first scan of the business day is the arrival, and
+ * every scan after it is a departure — right up to the end of the day.
+ *
+ * It matches how the engine reads a day (§3.1: first scan in, last scan out, the
+ * ones between move neither), which is why the button and the recorded attendance
+ * now agree. It is NOT parity: `count % 2` would offer "Punch in" again on the
+ * third scan, and a day with three scans has one arrival, not two.
+ */
+export function nextDirectionAfter(countedOnBusinessDate: number): NextDirection {
+  return countedOnBusinessDate === 0 ? "in" : "out";
 }
 
 /**
  * Predict the direction from the employee's own punch log.
  *
- * Two reads, both already used elsewhere on this screen family:
- *   1. `v_attendance_punch_detail` for yesterday + today (voided rows are
- *      excluded by the view itself).
- *   2. `attendance_punches.duplicate_of_punch_id` for the resolved business
- *      date — the two scans inside 120 s that the engine collapses (§3.1) are
- *      ONE event, and counting the swallowed one would flip the label. The
- *      timeline already strikes them through for the same reason.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE TWO BUGS THIS FUNCTION USED TO HAVE, BOTH VISIBLE IN ONE SCREENSHOT
+ * ─────────────────────────────────────────────────────────────────────────────
+ * At 00:37, on a day with nothing recorded, the card offered "Punch out" and said
+ * "5 recorded against 28-Jul". Reported as: the day has just started, why is it
+ * saying punch out.
+ *
+ * 1. IT PICKED THE BUSINESS DATE OFF THE LATEST PUNCH IT COULD SEE. Reading a
+ *    two-day window, the latest punch just after midnight is last night's, so the
+ *    card adopted YESTERDAY as the current day and counted yesterday's scans.
+ *
+ *    Note that "just use today" is also wrong: `set_punch_business_date` really
+ *    does file an early-morning scan under the previous day when that day's shift
+ *    crosses midnight, and this venue has two such shifts with an employee on one
+ *    of them. That employee at 00:37 is mid-shift and must be offered "Punch out".
+ *
+ *    So the date comes from `my_punch_business_date()` (migration 085) — the same
+ *    function the INSERT trigger calls. The label and the row that gets stored
+ *    cannot disagree, because there is one rule and both sides ask it.
+ *
+ * 2. IT USED PARITY. `count % 2` alternates in/out/in/out, so a third scan in one
+ *    day offered "Punch in" again. The rule — and the engine's own reading of a day
+ *    (§3.1: first scan is the arrival, last is the departure, the ones between move
+ *    neither) — is that only the FIRST scan is an arrival. Anything after it is a
+ *    departure, right up to the end of the day.
+ *
+ * Three reads, all already used on this screen family:
+ *   1. `my_punch_business_date()` — which day is in progress.
+ *   2. `v_attendance_punch_detail` for yesterday + that date (voided rows are
+ *      excluded by the view itself; yesterday is still fetched because the business
+ *      date may legitimately BE yesterday).
+ *   3. `attendance_punches.duplicate_of_punch_id` — two scans inside 120 s are ONE
+ *      event to the engine (§3.1), and counting the swallowed one would turn a
+ *      first scan into a second. The timeline strikes them through for the same
+ *      reason.
  */
 export async function fetchSelfPunchState(
   employeeId: string,
   signal?: AbortSignal,
 ): Promise<SelfPunchState> {
-  const today = istToday();
-  const punches = await fetchPunchesInRange(
-    employeeId,
-    { from: addIstDays(today, -1), to: today },
-    signal,
-  );
-  const latest: AttendancePunch | undefined = punches[punches.length - 1];
-  if (latest === undefined) {
-    return { businessDate: null, punchCount: 0, lastPunchAt: null, next: "in" };
+  const [serverDate, punches] = await Promise.all([
+    // Falls back to the plain IST date if the call fails: a wrong-by-one-day count
+    // is better than a card that cannot render, and for every day-shift employee
+    // — which is everybody but one — the fallback IS the answer.
+    fetchPunchBusinessDate(employeeId, signal).catch(() => istToday()),
+    fetchPunchesInRange(employeeId, { from: addIstDays(istToday(), -1), to: istToday() }, signal),
+  ]);
+  const businessDate = serverDate;
+
+  const onDate = punches.filter((punch) => punch.effective_date === businessDate);
+  if (onDate.length === 0) {
+    // Nothing on the day in progress. `punches` may well be non-empty — last night's
+    // scans are in the window — but reporting those as "last scan" while the count
+    // reads zero is how the old bug looked on screen. The day is genuinely empty.
+    return { businessDate, punchCount: 0, lastPunchAt: null, next: nextDirectionAfter(0) };
   }
 
-  const businessDate = latest.effective_date;
-  const onDate = punches.filter((punch) => punch.effective_date === businessDate);
   const duplicateFlags = await fetchPunchDuplicateFlags(employeeId, businessDate, signal);
   const collapsed = new Set(
     duplicateFlags.filter((flag) => flag.duplicate_of_punch_id !== null).map((flag) => flag.id),
   );
   const counted = onDate.filter((punch) => !collapsed.has(punch.id));
-  const last = counted[counted.length - 1] ?? latest;
+  // Every scan today was collapsed into an earlier event (possible only across the
+  // midnight boundary): the employee did scan, so show it, but it counts as nothing.
+  const last: AttendancePunch =
+    counted[counted.length - 1] ?? (onDate[onDate.length - 1] as AttendancePunch);
 
   return {
     businessDate,
     punchCount: counted.length,
     lastPunchAt: last.punched_at,
-    next: counted.length % 2 === 0 ? "in" : "out",
+    next: nextDirectionAfter(counted.length),
   };
+}
+
+/**
+ * Which business date a scan made now would be filed under, straight from the
+ * function the INSERT trigger uses. Argument-free for the caller's own employee;
+ * the id is passed explicitly because this card is always rendered for `employeeId`.
+ */
+export async function fetchPunchBusinessDate(
+  employeeId: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const date = await rpcOne(
+    "my_punch_business_date",
+    { p_employee_id: employeeId },
+    dbDate,
+    signal ? { signal } : undefined,
+  );
+  return date ?? istToday();
 }
 
 // -----------------------------------------------------------------------------

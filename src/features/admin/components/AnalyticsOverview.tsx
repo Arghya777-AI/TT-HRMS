@@ -44,6 +44,7 @@ import {
 import { AlertTriangle, Download, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KpiTile } from "@/shared/ui/KpiTile";
+import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DonutChart } from "@/shared/ui/DonutChart";
@@ -67,7 +68,24 @@ import {
 } from "../hooks/useAnalytics";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
+import { liveStatusCopy, type AnalyticsLiveStatus } from "../analyticsLive";
 import type { DepartmentBreakdownRow } from "../analyticsAggregate";
+
+/**
+ * Tone per live status. `unavailable` is a WARNING, not neutral decoration: it means
+ * the socket is not delivering, so every figure below will quietly go stale while the
+ * screen sits open. That is the one state a reader has to be told about, and the old
+ * chip — which rendered only on `live` — said nothing at all in exactly that case.
+ *
+ * Labels come from `liveStatusCopy` rather than being written again here, so the chip
+ * and the hook's own documented copy cannot drift apart.
+ */
+const LIVE_CHIP: Readonly<Record<AnalyticsLiveStatus, StatusChipEntry>> = {
+  live: { label: t(liveStatusCopy("live").label), tone: "success" },
+  connecting: { label: t(liveStatusCopy("connecting").label), tone: "info" },
+  unavailable: { label: t(liveStatusCopy("unavailable").label), tone: "warn" },
+  off: { label: t(liveStatusCopy("off").label), tone: "neutral" },
+};
 
 /** Minutes → a clock face. `avgLastOutMinutes` can exceed 1440 on a night shift. */
 function clockOf(minutes: number | null): string {
@@ -231,13 +249,17 @@ export function AnalyticsOverview() {
         <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
           {t("admin.analytics.overview.periodTitle")}
           {/* Whether the figures are updating themselves is a property of the
-              screen a reader is entitled to see, not an implementation detail. */}
-          {live.status === "live" ? (
-            <span className="inline-flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
-              <span className="size-2 rounded-full bg-success" aria-hidden />
-              {t("admin.analytics.overview.liveOn")}
-            </span>
-          ) : null}
+              screen a reader is entitled to see, not an implementation detail — and
+              that cuts BOTH ways. Rendering only on `live` left the degraded cases
+              silent, so a dashboard whose socket had dropped looked exactly like one
+              that was live and simply had nothing to report. Every status is named,
+              and `title` carries the hint the copy already provides. */}
+          <span
+            className="text-xs font-normal"
+            title={t(liveStatusCopy(live.status).hint)}
+          >
+            <StatusChip status={live.status} map={LIVE_CHIP} />
+          </span>
         </h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => void download("csv")}>
@@ -436,11 +458,18 @@ export function AnalyticsOverview() {
 
         Ordered as an HR head reads: who is here, who is arriving and leaving, what
         it costs, and what is out of compliance.
+
+        `showFilterBar={false}`: each panel renders its own bar when it is the whole
+        screen, and the bar at the top of THIS section already writes the same four
+        search params. Four bars over one URL state is one control drawn four times —
+        change the third and the other three move without the reader touching them.
+        Nothing is lost by suppressing them: a dimension a panel cannot honour is
+        declared in its own provenance caveats, not by the absence of a control.
       */}
-      <WorkforcePanel />
+      <WorkforcePanel showFilterBar={false} />
       <MovementPanel />
-      <LeaveCostPanel />
-      <CompliancePanel />
+      <LeaveCostPanel showFilterBar={false} />
+      <CompliancePanel showFilterBar={false} />
     </section>
   );
 }

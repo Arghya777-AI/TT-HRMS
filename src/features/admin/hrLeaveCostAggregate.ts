@@ -455,8 +455,12 @@ export function aggregateLeaveTaken(rows: readonly LeaveCalendarDayRow[]): Leave
     addToSplit(type.acc, row);
 
     // Keyed on the id, with the unassigned bucket given an explicit sentinel key so
-    // "no department" is one bucket rather than one per row.
-    const deptKey = row.department_id ?? " unassigned";
+    // "no department" is one bucket rather than one per row. NUL cannot appear in a
+    // uuid, so the sentinel cannot collide with a real key. Written as the ESCAPE and
+    // never as a literal NUL byte: a raw NUL makes the whole file binary to file(1)
+    // and to plain grep, and a silent no-match is how a defined symbol comes to look
+    // undefined during a review.
+    const deptKey = row.department_id ?? "\u0000unassigned";
     let dept = byDept.get(deptKey);
     if (dept === undefined) {
       dept = { id: row.department_id, name: row.department_name, acc: newSplit() };
@@ -1129,8 +1133,8 @@ export function aggregatePayrollCost(
     if (!payPeriods.has(row.pay_period_id)) payPeriods.set(row.pay_period_id, month);
     // The matview's own `department_key` sentinel is not projected through every
     // caller, so the unassigned bucket gets an explicit key here instead.
-    const deptKey = row.department_id ?? " unassigned";
-    const cellKey = `${month} ${deptKey}`;
+    const deptKey = row.department_id ?? "\u0000unassigned";
+    const cellKey = `${month}\u0000${deptKey}`;
 
     addTotals(grand, row);
     if (refreshedAt === null || row.refreshed_at > refreshedAt) refreshedAt = row.refreshed_at;

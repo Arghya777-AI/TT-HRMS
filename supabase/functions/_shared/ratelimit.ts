@@ -53,6 +53,28 @@ export const RATE_LIMITS = {
   reveal: { bucket: "reveal", capacity: 20, refillPerMinute: 20 },
   /** Long-running admin jobs: payroll run, recompute, import. */
   heavyJob: { bucket: "heavy_job", capacity: 4, refillPerMinute: 2 },
+  /**
+   * Reverse geocoding a punch coordinate, PER USER. A punch-log page holds ~50
+   * rows but only a handful of DISTINCT places (one gate, one office), and every
+   * repeat is a cache hit that never reaches this bucket, so 30 is generous for a
+   * human paging through the log and low enough that one admin cannot drain the
+   * provider quota for everybody.
+   */
+  reverseGeocode: { bucket: "reverse_geocode", capacity: 30, refillPerMinute: 30 },
+  /**
+   * The OpenStreetMap Nominatim usage policy's hard ceiling: ONE request per
+   * second for the whole deployment — not per user, not per isolate.
+   *
+   * `capacity: 1` with `refillPerMinute: 60` is exactly that: one token, refilled
+   * one per second, with NO burst allowance. Because the bucket lives in Postgres
+   * (`app.rate_limit_buckets`), every edge isolate in every region shares the one
+   * counter, which is the only way this limit can be true — an in-process limiter
+   * would permit one request per second PER ISOLATE.
+   *
+   * Keyed on the provider name, never on the caller: the policy is about our
+   * traffic to them.
+   */
+  nominatim: { bucket: "nominatim", capacity: 1, refillPerMinute: 60 },
 } as const satisfies Record<string, RateLimitSpec>;
 
 /** Build a bucket key. `null`/`undefined` parts collapse to `anon` so a key is never empty. */

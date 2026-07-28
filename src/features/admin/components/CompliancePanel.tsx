@@ -396,9 +396,19 @@ export interface CompliancePanelProps {
    * into it inherits the exact question being asked.
    */
   readonly filters?: AnalyticsFilters;
+  /**
+   * Render this panel's own filter bar. FALSE when embedded under a surface that
+   * already renders one over the same URL filters — see `WorkforcePanelProps`. Every
+   * dimension a section cannot reach is already declared by `scopeFor` and printed
+   * in that section's caveats, so the honesty does not live in the bar.
+   */
+  readonly showFilterBar?: boolean;
 }
 
-export function CompliancePanel({ filters: override }: CompliancePanelProps = {}) {
+export function CompliancePanel({
+  filters: override,
+  showFilterBar = true,
+}: CompliancePanelProps = {}) {
   const navigate = useNavigate();
   const { filters: urlFilters } = useAnalyticsFilters();
   const filters = override ?? urlFilters;
@@ -484,12 +494,14 @@ export function CompliancePanel({ filters: override }: CompliancePanelProps = {}
           on `attendance_punches`, and nothing on this panel is at scan grain. The
           other three dimensions reach at least one relation each, and the ones
           they cannot reach say so in that section's own caveats. */}
-      <AnalyticsFilterBar
-        departments={options.data?.departments ?? []}
-        locations={options.data?.locations ?? []}
-        optionsLoading={options.isLoading}
-        hide={["source"]}
-      />
+      {showFilterBar ? (
+        <AnalyticsFilterBar
+          departments={options.data?.departments ?? []}
+          locations={options.data?.locations ?? []}
+          optionsLoading={options.isLoading}
+          hide={["source"]}
+        />
+      ) : null}
 
       <div className="mb-3 mt-5">
         <h2 className="font-display text-lg font-semibold">{t("admin.hrcomp.title")}</h2>

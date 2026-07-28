@@ -141,7 +141,23 @@ function toBarPoints(buckets: readonly HeadcountBucket[]): ChartPoint[] {
   }));
 }
 
-export function WorkforcePanel() {
+export interface WorkforcePanelProps {
+  /**
+   * Render this panel's own filter bar. FALSE when the panel is embedded under a
+   * surface that already renders one over the same URL filters — four bars writing
+   * the same four search params is not four controls, it is one control drawn four
+   * times, and a reader who changes the third one has no way to know the other
+   * three moved with it.
+   *
+   * Suppressing the bar loses nothing but the duplicate: the dimensions this panel
+   * cannot honour are declared in `provenance.caveats` and printed above the
+   * figures either way, so a `source` the host bar offers still says out loud that
+   * it narrowed nothing here.
+   */
+  readonly showFilterBar?: boolean;
+}
+
+export function WorkforcePanel({ showFilterBar = true }: WorkforcePanelProps = {}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { filters } = useAnalyticsFilters();
@@ -271,12 +287,14 @@ export function WorkforcePanel() {
     <section className="mb-8">
       {/* `employee` and `source` are hidden rather than ignored: a headcount of
           one person is not a measure, and punch source is a per-scan column. */}
-      <AnalyticsFilterBar
-        departments={options.data?.departments ?? []}
-        locations={options.data?.locations ?? []}
-        optionsLoading={options.isLoading}
-        hide={["employee", "source"]}
-      />
+      {showFilterBar ? (
+        <AnalyticsFilterBar
+          departments={options.data?.departments ?? []}
+          locations={options.data?.locations ?? []}
+          optionsLoading={options.isLoading}
+          hide={["employee", "source"]}
+        />
+      ) : null}
 
       <div className="mb-2 mt-5 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-display text-lg font-semibold">{t("admin.hrwf.title")}</h2>

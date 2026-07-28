@@ -162,7 +162,18 @@ const paiseFormat = (value: number | null): string => formatPaise(value);
 const paiseTick = (value: number | null): string => formatPaise(value, { paise: false });
 const dayFormat = (value: number | null): string => formatDays(value);
 
-export function LeaveCostPanel() {
+export interface LeaveCostPanelProps {
+  /**
+   * Render this panel's own filter bar. FALSE when embedded under a surface that
+   * already renders one over the same URL filters — see `WorkforcePanelProps`. The
+   * `locationNotApplicable` note below is produced from `filters.locationId`
+   * regardless of which bar set it, so a host bar that DOES offer location still
+   * gets told here that this panel narrowed nothing by it.
+   */
+  readonly showFilterBar?: boolean;
+}
+
+export function LeaveCostPanel({ showFilterBar = true }: LeaveCostPanelProps = {}) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { filters } = useAnalyticsFilters();
@@ -330,13 +341,15 @@ export function LeaveCostPanel() {
           carries a location column, and punch source is a per-scan column on
           attendance_punches. Offering a control that narrows nothing is how a reader
           comes to believe a figure is scoped when it is not. */}
-      <AnalyticsFilterBar
-        departments={options.data?.departments ?? []}
-        locations={options.data?.locations ?? []}
-        optionsLoading={options.isLoading}
-        {...(employeeName === undefined ? {} : { employeeName })}
-        hide={["location", "source"]}
-      />
+      {showFilterBar ? (
+        <AnalyticsFilterBar
+          departments={options.data?.departments ?? []}
+          locations={options.data?.locations ?? []}
+          optionsLoading={options.isLoading}
+          {...(employeeName === undefined ? {} : { employeeName })}
+          hide={["location", "source"]}
+        />
+      ) : null}
 
       <div className="mb-3 mt-5">
         <h2 className="font-display text-lg font-semibold">{t("hr.leavecost.title")}</h2>

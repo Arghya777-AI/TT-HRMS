@@ -407,8 +407,11 @@ export function groupMovementByDepartment(
   for (const row of rows) {
     if (row.as_of_date < period.from || row.as_of_date > period.to) continue;
     // Keyed on the id, with a sentinel for unassigned: two departments can share
-    // a name, and merging them under one bar would misattribute every exit.
-    const key = row.department_id ?? " unassigned";
+    // a name, and merging them under one bar would misattribute every exit. The
+    // sentinel is the NUL ESCAPE, never a literal NUL byte — a raw one makes this
+    // file binary to file(1) and to plain grep, whose silent no-match is how a
+    // defined symbol comes to look undefined during a review.
+    const key = row.department_id ?? "\u0000unassigned";
     const acc = groups.get(key) ?? {
       departmentId: row.department_id,
       departmentName: row.department_name,

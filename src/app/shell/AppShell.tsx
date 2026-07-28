@@ -300,7 +300,26 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <main className="flex-1 pb-20 md:pb-0">{children}</main>
+          {/*
+            THE BOTTOM PADDING CLEARS THE FLOATING BUTTON, and it is not cosmetic.
+
+            The AI button is `fixed` at `bottom-6` with `h-14`, so it occupies the last
+            ~80 px of the viewport on the right. `md:pb-0` meant a page's own content ran
+            all the way to the bottom edge underneath it — and on Add Employee that put
+            the SAVE BUTTON under the floating one, where it could not be clicked.
+
+            It was always latent; renaming the button from "Ask TT" to "Regal Lab AI
+            Assistant" made it about three times wider and turned a near miss into a
+            direct hit.
+
+            Sized from the button rather than guessed: 24 px offset + 56 px tall = 80 px,
+            so `pb-24` (96 px) clears it with room. On small screens the button sits at
+            `bottom-[88px]` to clear the mobile tab bar, so its top edge is 144 px up and
+            the padding has to be larger again. Reserving the space in the SHELL fixes
+            every page at once — the alternative is remembering to pad sixty pages, and
+            the sixty-first would be wrong.
+          */}
+          <main className="flex-1 pb-40 md:pb-24">{children}</main>
         </div>
 
         {/* Mobile bottom bar — 4 slots + More */}

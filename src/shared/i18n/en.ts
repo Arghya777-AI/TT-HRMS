@@ -181,6 +181,21 @@ export const en = {
     signing in to see their own attendance and salary can tell who is accountable for
     it, and nobody outside the company is implied to be holding their data.
   */
+  /* ── First-login onboarding pack (migration 083) ────────────────────────── */
+  "onboarding.step": "What HR still needs from you",
+  "onboarding.required": "Required — {done} of {total} done",
+  "onboarding.recommended": "Recommended",
+  "onboarding.recommendedHint": "Helpful to have, but these will not hold you up.",
+  "onboarding.nothingRequired":
+    "Nothing further is needed from you. Your name and phone number were the only requirements.",
+  "onboarding.upload": "Upload documents",
+  "onboarding.submit": "Submit and continue",
+  /* Names what is missing, including the two things that are always required and are not
+     rows on the checklist — a name and a reachable phone. */
+  "onboarding.stillNeeded": "Still needed before you can continue: {items}.",
+  "onboarding.failed": "That could not be submitted. Try again.",
+  "onboarding.reviewNote":
+    "You get full access as soon as you submit. HR will check what you have sent afterwards and will come back to you only if something needs correcting.",
   "auth.builtInHouse": "An internal system, designed and maintained in-house.",
   "auth.login.forgot": "Forgot password?",
   "auth.forgot.title": "Forgot password",

@@ -34,8 +34,9 @@ import { nowInstantIso } from "@/lib/datetime";
 import { passwordIssues } from "@/shared/auth/password";
 import { t } from "@/shared/i18n/en";
 import { AuthLayout } from "./AuthLayout";
+import { OnboardingChecklist } from "@/features/onboarding/components/OnboardingChecklist";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 export default function FirstRun() {
   const navigate = useNavigate();
@@ -125,11 +126,20 @@ export default function FirstRun() {
     <AuthLayout
       title={t("auth.firstRun.title")}
       description={
-        step === 1 ? t("auth.firstRun.step1") : step === 2 ? t("auth.firstRun.step2") : t("auth.firstRun.step3")
+        step === 1
+          ? t("auth.firstRun.step1")
+          : step === 2
+            ? t("auth.firstRun.step2")
+            : step === 3
+              ? t("auth.firstRun.step3")
+              : t("onboarding.step")
       }
     >
       <ol className="mb-5 flex items-center gap-2 text-xs text-muted-foreground" aria-label="Progress">
-        {([1, 2, 3] as const).map((n) => (
+        {/* FOUR dots, not three. A fourth step was added (the HR-configured paperwork) and
+            leaving this at three made the indicator lie: somebody on the last step saw a
+            filled "3 of 3" and then another screen. */}
+        {([1, 2, 3, 4] as const).map((n) => (
           <li key={n} className="flex flex-1 items-center gap-2">
             <span
               className={
@@ -229,12 +239,21 @@ export default function FirstRun() {
               </p>
             </div>
           </div>
-          <Button className="w-full" onClick={() => void finish()} disabled={busy}>
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          {/* Onwards to the paperwork rather than straight out: the gate holds until
+              `submit_onboarding` has accepted, so finishing here would only bounce them
+              back. */}
+          <Button className="w-full" onClick={() => setStep(4)} disabled={busy}>
             {t("auth.firstRun.finish")}
           </Button>
         </div>
       ) : null}
+
+      {/*
+        STEP 4 — the HR-configured pack. It is last because everything before it is fixed
+        (a password, a phone, how the gate works) while this step's contents are whatever HR
+        configured for this employment type, and may be nothing at all.
+      */}
+      {step === 4 ? <OnboardingChecklist onSubmitted={() => void finish()} /> : null}
     </AuthLayout>
   );
 }

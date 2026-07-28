@@ -52,7 +52,20 @@ export function FirstRunGate({ children }: { children: ReactNode }) {
   // No employee row yet (HR hasn't linked the record): don't trap the user in a
   // wizard whose second step has nothing to confirm.
   if (employee && (employee.mustChangePassword || employee.profileConfirmedAt === null)) {
-    if (location.pathname !== "/first-run") return <Navigate to="/first-run" replace />;
+    /*
+      `/me/documents` IS ALLOWED THROUGH, and that is not a hole.
+
+      The onboarding form asks for documents — Aadhaar, PAN, bank proof, a photograph — and
+      uploading them happens on the documents screen. A gate that let the joiner see the
+      checklist but not reach the place to satisfy it would be a dead end: the only way out
+      would be to sign out. So the two screens the wizard needs are reachable and nothing
+      else is.
+
+      This gate was never the security boundary in any case — RLS is, and it does not care
+      which route somebody is on. See the fail-open note above.
+    */
+    const allowed = location.pathname === "/first-run" || location.pathname === "/me/documents";
+    if (!allowed) return <Navigate to="/first-run" replace />;
   }
   return <>{children}</>;
 }

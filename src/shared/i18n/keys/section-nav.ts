@@ -7,6 +7,7 @@
  * name per screen, defined once.
  */
 export const keysSectionNav = {
+  "admin.sectionNav.analytics": "Dashboard and analytics screens",
   "admin.sectionNav.org": "Organisation screens",
   "admin.sectionNav.time": "Time and attendance policy screens",
   "admin.sectionNav.payroll": "Payroll screens",

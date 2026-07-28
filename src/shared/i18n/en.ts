@@ -121,7 +121,12 @@ export const en = {
   "shell.nav.admin.leave": "Leave",
   "shell.nav.admin.payroll": "Payroll",
   "shell.nav.admin.documents": "Documents",
-  "shell.nav.admin.analytics": "Analytics",
+  // "Dashboard", not "Analytics". The client asked for "a dashboard tab under
+  // Admin" and then could not find it: the dashboard was built, mounted and
+  // deployed at /admin/analytics, but every label on the way to it said
+  // "Analytics" — so the one word they were scanning for appeared nowhere in the
+  // navigation. A feature nobody can find is a feature that was not delivered.
+  "shell.nav.admin.analytics": "Dashboard",
   "shell.nav.admin.audit": "Audit",
   "shell.nav.admin.settings": "Settings",
 
@@ -6979,8 +6984,11 @@ export const en = {
 
 
   // §14 Analytics — home (/admin/analytics)
-  "admin.analytics.home.title": "Analytics",
-  "admin.analytics.home.subtitle": "One headline measure per screen, each opening the screen that owns it.",
+  "admin.analytics.home.title": "Dashboard",
+  // The subtitle described the measure DIRECTORY, which is now the second half of
+  // this page — so it read as though the live dashboard above it was not there.
+  "admin.analytics.home.subtitle":
+    "Live headcount and attendance, filtered by any period, department or employee — then a headline measure per screen, each opening the screen that owns it.",
   "admin.analytics.home.workforce.label": "Employees on roll",
   "admin.analytics.home.workforce.hint": "Counted in the employee directory right now.",
   "admin.analytics.home.workforce.source": "the employee directory",

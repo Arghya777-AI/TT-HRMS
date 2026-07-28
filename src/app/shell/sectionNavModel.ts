@@ -20,6 +20,11 @@ import type { MessageKey } from "@/shared/i18n/en";
  * would put two strips on one page. Sections not listed here simply get none.
  */
 export const SECTION_NAV_LABEL: Readonly<Record<string, MessageKey>> = {
+  // Analytics FIRST, and it was the omission that mattered most: fourteen screens
+  // behind one rail row, including the dashboard itself, with no tabs at all. The
+  // client asked where the dashboard was while looking straight at the section that
+  // contains it.
+  "admin-analytics": "admin.sectionNav.analytics",
   "admin-org": "admin.sectionNav.org",
   "admin-time": "admin.sectionNav.time",
   "admin-payroll": "admin.sectionNav.payroll",

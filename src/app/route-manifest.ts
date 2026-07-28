@@ -253,7 +253,7 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   ["/admin/audit/entity/:type/:id", "Entity History", "A", "admin-audit", ShieldCheck, "Everything ever done to one record."],
   ["/admin/audit/user/:userId", "User Activity Trail", "A", "admin-audit", ShieldCheck, "Everything one actor has done."],
   // §14 Analytics
-  ["/admin/analytics", "Analytics", "A", "admin-analytics", BarChart3, "Twelve headline measures with drill-through."],
+  ["/admin/analytics", "Dashboard", "A", "admin-analytics", BarChart3, "Live today, then any period: headcount, attendance, leave, cost and compliance."],
   ["/admin/analytics/attendance", "Attendance Analytics", "A", "admin-analytics", BarChart3, "Punctuality, hours, exceptions and trends."],
   ["/admin/analytics/employees", "Employee Analytics", "A", "admin-analytics", Users, "One row per employee for the period: averages, lateness, leave and overtime."],
   ["/admin/analytics/employees/:employeeCode", "Employee Analytics Detail", "A", "admin-analytics", UserRound, "One person's period: average in and out, hours, leave, exceptions and every day."],

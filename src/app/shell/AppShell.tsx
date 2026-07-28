@@ -42,7 +42,7 @@ import {
   AI_FAB,
   FOOTER_ITEMS,
   MOBILE_ITEMS,
-  NAV_GROUPS,
+  navGroupsFor,
   type NavItem,
 } from "./nav-model";
 import { IstClock } from "./IstClock";
@@ -123,7 +123,9 @@ function NavGroups({
 }) {
   const { caps } = useAuth();
   // Entitlement-derived: an unentitled group is absent, never a disabled teaser.
-  const groups = NAV_GROUPS.filter((g) => caps.has(g.cap));
+  // Admin-first for an admin — see `navGroupsFor`. The `caps` filter still decides
+  // which groups exist for this reader; the helper only decides their order.
+  const groups = navGroupsFor((cap) => caps.has(cap)).filter((g) => caps.has(g.cap));
 
   return (
     <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-2 py-3">

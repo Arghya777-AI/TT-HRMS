@@ -139,6 +139,31 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   { titleKey: "shell.nav.group.admin", cap: "admin.access", items: ADMIN_ITEMS },
 ];
 
+/**
+ * The groups in the order THIS reader needs them.
+ *
+ * WHY THIS IS NOT JUST A FIXED ARRAY ANY MORE
+ *
+ * MY WORK holds thirteen entries and TEAM six. In a 1000 px viewport the ADMIN group
+ * begins around "People" and the remaining eight rows — including the Dashboard —
+ * are below the fold, reachable only by scrolling the rail. The client asked where
+ * the dashboard tab was while the answer was nineteen rows above it, off screen.
+ *
+ * So for somebody holding `admin.access`, ADMIN comes FIRST. It is the work they
+ * opened the product to do; self-service is the thing they visit occasionally, not
+ * the thing that should occupy the first screenful. Everyone else is unaffected —
+ * an employee still sees MY WORK first, because for them that IS the product.
+ *
+ * Membership is unchanged: this reorders groups, it never adds or removes one, and
+ * the `cap` filter in `AppShell` still decides which a reader sees at all.
+ */
+export function navGroupsFor(has: (cap: NavItem["cap"]) => boolean): readonly NavGroup[] {
+  if (!has("admin.access")) return NAV_GROUPS;
+  const admin = NAV_GROUPS.filter((g) => g.cap === "admin.access");
+  const rest = NAV_GROUPS.filter((g) => g.cap !== "admin.access");
+  return [...admin, ...rest];
+}
+
 /** Footer items (rail bottom / More sheet tail). */
 export const FOOTER_ITEMS: readonly NavItem[] = [
   { labelKey: "shell.nav.holidays", to: "/me/holidays", icon: CalendarDays, cap: "me.view" },

@@ -221,6 +221,26 @@
   * {
     @apply border-border;
   }
+  /*
+    NATIVE CONTROLS FOLLOW THE THEME.
+
+    Checkboxes and radios across the admin forms are real `<input type="checkbox">`
+    elements — deliberately, for keyboard and screen-reader behaviour that is hard to
+    match with a div. But without `accent-color` a browser paints them its OWN blue,
+    so a form full of ticked boxes was the one place in the product still showing a
+    colour from nobody's palette: bright blue on a stone-and-foliage page, right next
+    to a green Save button.
+
+    One declaration covers every checkbox, radio, range and progress element in the
+    app, including any added later, which is why it belongs here and not on a
+    component.
+  */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  progress {
+    accent-color: hsl(var(--primary));
+  }
   html {
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;

@@ -227,6 +227,37 @@ export default function Employee360Page() {
               })}
               actions={
                 <div className="flex flex-wrap items-center gap-2">
+                  {/*
+                    SAVE AT THE TOP AS WELL AS THE BOTTOM.
+
+                    The record is long — identity, employment, statutory, timekeeping — and
+                    the only Save was the sticky bar at the foot of the page. Somebody who
+                    ticks a box in the first section has to travel to the other end of the
+                    form to commit it, and the fields they just changed leave the screen on
+                    the way.
+
+                    It is the SAME handler and the same disabled state as the bottom bar, not
+                    a second save path: two buttons that could disagree about whether a save
+                    is in flight is how you get a double submit. It appears only when
+                    something is actually dirty, so the header does not carry a button that
+                    does nothing, and it leads with the pending count for the same reason the
+                    bottom bar does — "2 changes" is the fact that makes the button
+                    meaningful.
+                  */}
+                  {isDirty ? (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        {t("admin.p360.pending", { n: String(dirtyFields.length) })}
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={discard} disabled={update.isPending}>
+                        {t("admin.p360.discard")}
+                      </Button>
+                      <Button size="sm" onClick={attemptSave} disabled={update.isPending}>
+                        <Save className="mr-2 size-4" aria-hidden />
+                        {update.isPending ? t("admin.p360.saving") : t("admin.p360.save")}
+                      </Button>
+                    </>
+                  ) : null}
                   <StatusChip status={row.employment_status} map={STATUS_CHIP} />
                   {/*
                     ENROL FACE, from the employee you are already looking at.

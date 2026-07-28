@@ -750,7 +750,15 @@ export const NEW_EMPLOYEE_DEFAULTS: Readonly<Record<string, string>> = {
   notice_period_days: "30",
   blood_group: "unknown",
   nationality: "Indian",
-  punch_mode: "multi_punch",
+  /*
+    single_punch, not multi_punch.
+
+    The old default meant every new hire started on the model that deducts interior gaps as
+    unpaid breaks — the one that reported a 14-hour day as five minutes worked and marked it
+    Absent. The venue runs first-scan-to-last-scan, so a new employee should start there;
+    an admin can still switch anybody to in/out pairs deliberately.
+  */
+  punch_mode: "single_punch",
   payment_mode: "bank_transfer",
   is_ot_eligible: "true",
   is_shift_worker: "true",

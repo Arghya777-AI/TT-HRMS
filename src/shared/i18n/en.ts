@@ -4569,7 +4569,7 @@ export const en = {
   "admin.people.help.attendancePolicy": "Grace, break deduction, half-day and absent thresholds.",
   "admin.people.help.payPeriod": "Which monthly cycle their payroll is computed in.",
   "admin.people.help.punchMode":
-    "Single punch treats one scan as the whole day. Multi punch takes the first scan of the IST day as arrival and the last as departure.",
+    "First scan to last scan: the day runs from their first scan to their last, and scans in between do not shorten it. In/out pairs: scans are read as pairs and every gap between them is unpaid — correct for staff who genuinely clock out and back in, but a single midday scan can then cut a day to minutes.",
   "admin.people.help.regulariseFrom": "Days before this date cannot be corrected, even by request.",
   "admin.people.help.isShiftWorker": "Rostered against events rather than a fixed daily shift.",
   "admin.people.help.isOtEligible": "Only then are extra hours computed as overtime rather than ignored.",
@@ -4618,8 +4618,19 @@ export const en = {
   "admin.people.marital.divorced": "Divorced",
   "admin.people.marital.widowed": "Widowed",
   "admin.people.marital.separated": "Separated",
-  "admin.people.punchMode.single_punch": "Single punch — one scan is the day",
-  "admin.people.punchMode.multi_punch": "Multi punch — first scan in, last scan out",
+  /*
+    RELABELLED, because both were misleading and one was simply backwards.
+
+    "Multi punch — first scan in, last scan out" described what SINGLE punch does. Multi
+    punch reads scans as in/out PAIRS and deducts every gap between them, which is how a
+    day with scans at 07:36, 07:38, 14:18, 22:12 and 22:15 came out as five minutes worked
+    instead of 13h 39m. An admin reading the old label would have picked the mode that did
+    the opposite of what it promised.
+
+    The names now say what the engine does, verified against it rather than inferred.
+  */
+  "admin.people.punchMode.single_punch": "First scan to last scan",
+  "admin.people.punchMode.multi_punch": "In/out pairs — gaps between are unpaid",
   "admin.people.paymentMode.bank_transfer": "Bank transfer",
   "admin.people.paymentMode.cash": "Cash",
   "admin.people.paymentMode.cheque": "Cheque",

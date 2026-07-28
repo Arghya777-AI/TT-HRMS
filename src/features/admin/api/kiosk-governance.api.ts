@@ -94,6 +94,20 @@ export const abusePunchSchema = z.object({
   duplicate_of_punch_id: dbUuidNullable,
   operator_note: z.string().nullable(),
   reason: z.string().nullable(),
+  /*
+    WHERE THE SCAN HAPPENED. This queue is where an admin decides whether a punch
+    was abuse, and location is often the deciding fact — a replayed offline scan
+    from a coordinate two kilometres from the gate reads very differently from one
+    at the gate. Reading these from `attendance_punches` directly, which is where
+    they have always been written.
+
+    `location_accuracy_m` is not optional garnish: judging a punch as suspicious
+    on a coordinate that was a 2 km network estimate is exactly the mistake this
+    column prevents.
+  */
+  lat: dbNumericNullable,
+  lng: dbNumericNullable,
+  location_accuracy_m: dbNumericNullable,
 });
 export type AbusePunch = z.infer<typeof abusePunchSchema>;
 
@@ -116,6 +130,9 @@ const ABUSE_COLUMNS = [
   "duplicate_of_punch_id",
   "operator_note",
   "reason",
+  "lat",
+  "lng",
+  "location_accuracy_m",
 ].join(",");
 
 /**

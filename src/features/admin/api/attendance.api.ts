@@ -343,6 +343,17 @@ export const punchRowSchema = z.object({
   photo_path: z.string().nullable(),
   lat: dbNumericNullable,
   lng: dbNumericNullable,
+  /**
+   * Metres of horizontal uncertainty the DEVICE reported. NULL means it reported
+   * none — which is not the same as "accurate", and `PunchLocation` says so rather
+   * than letting six decimal places of latitude imply a survey.
+   *
+   * Projected by migration 076. `PunchLocationColumns` requires this field
+   * precisely because leaving it optional let this schema — which had lat and lng
+   * and no accuracy — satisfy the component and render "accuracy not reported" on
+   * every row while typechecking clean.
+   */
+  location_accuracy_m: dbNumericNullable,
   geofence_ok: z.boolean().nullable(),
   is_offline_replay: z.boolean(),
   needs_review: z.boolean(),

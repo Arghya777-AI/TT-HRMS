@@ -25,9 +25,15 @@
  * for. Both views now exist with the same posture as the allow-list above
  * (`security_barrier`, self OR `app.is_manager_of` OR scoped admin), so:
  *
- *  - RECENT SCANS come from `v_team_punches` — the raw log, minus the gate
- *    capture photo, the geo/IP forensics and the face-match distances, which are
- *    not in the view. A window of business dates rather than only today, because
+ *  - RECENT SCANS come from `v_team_punches` — the raw log, minus the gate capture
+ *    photo, the IP/user-agent forensics and the face-match distances, which are
+ *    not in the view. The SCAN LOCATION is now in it (migration 077): the client
+ *    asked for the place a punch was taken to be visible wherever punches appear,
+ *    and a manager was the only reader who could not answer the question their own
+ *    reportee is most likely to ask them. The view's row predicate is unchanged, so
+ *    this is the same audience seeing one more column about the same people — and
+ *    the accuracy is shown with the coordinate, never without it.
+ *    A window of business dates rather than only today, because
  *    a single day's card is blank for anyone on a weekly off and a blank card
  *    reads as a broken gate. Voided scans are shown, struck through and
  *    labelled: the log is append-only evidence, and hiding a voided scan would
@@ -74,6 +80,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
+import { PunchLocation } from "@/shared/ui/PunchLocation";
 import { dash, formatNumber } from "@/lib/format";
 import {
   addIstDays,
@@ -238,6 +245,23 @@ export default function ReporteeProfilePage() {
       header: t("teamExtra.reportee.scans.col.gate"),
       hideBelow: "lg",
       render: (row) => dash(row.device_label),
+    },
+    {
+      /*
+        WHERE, for the manager who will actually be asked about it. Reached the
+        team screens in migration 077 — `v_team_punches` had never projected the
+        coordinate, so this was the one attendance surface that could not answer
+        "was my punch recorded from the right place?".
+
+        `showWhenAbsent={false}`: a manager reading a reportee's scans should see a
+        dash where no fix was taken, not a column of "No location recorded" that
+        reads as a list of things the person failed to do. Most gate scans have no
+        fix at all.
+      */
+      key: "lat",
+      header: t("punch.place.column"),
+      hideBelow: "lg",
+      render: (row) => <PunchLocation row={row} variant="inline" showWhenAbsent={false} />,
     },
     {
       key: "flags",

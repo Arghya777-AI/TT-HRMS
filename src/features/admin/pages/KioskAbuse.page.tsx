@@ -39,6 +39,7 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
+import { PunchLocation } from "@/shared/ui/PunchLocation";
 import {
   fmtDateTime,
   fmtMonthLong,
@@ -272,6 +273,23 @@ export default function KioskAbusePage() {
         const person = personOf(employeeId);
         return <PersonCell name={person.name} code={person.code} />;
       },
+    },
+    {
+      /*
+        WHERE. On a queue whose whole purpose is deciding whether a scan was
+        legitimate, the place is frequently the deciding fact — an offline replay
+        recorded at the gate is a clock problem; the same replay recorded two
+        kilometres away is something else entirely.
+
+        `showWhenAbsent` is left on: for THIS queue a missing fix is itself a
+        signal worth seeing, unlike an employee's own timeline where it would read
+        as an accusation.
+      */
+      key: "lat",
+      header: t("punch.place.column"),
+      width: "20rem",
+      hideBelow: "lg",
+      render: (row) => <PunchLocation row={row} variant="inline" />,
     },
     {
       key: "match_confidence",

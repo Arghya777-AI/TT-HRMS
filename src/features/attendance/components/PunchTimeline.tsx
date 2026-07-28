@@ -18,6 +18,7 @@
  */
 import type { ReactNode } from "react";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
+import { PunchLocation } from "@/shared/ui/PunchLocation";
 import { fmtTimeWithDayOffset } from "@/lib/datetime";
 import { dash } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
@@ -85,6 +86,23 @@ export function PunchTimeline({
       header: t("attendance.day.col.gate"),
       hideBelow: "md",
       render: (row) => dash(row.device_label),
+    },
+    {
+      /*
+        WHERE. An employee looking at their own day is the person most entitled to
+        see what location was recorded against them — and the person least likely
+        to be shown it, historically, because the coordinate was only ever exposed
+        on the admin log.
+
+        `showWhenAbsent={false}` here, unlike the admin log: most kiosk scans carry
+        no fix, and a column of "No location recorded" down somebody's own day
+        reads as an accusation that they failed to do something. A dash is the
+        honest neutral. The absence is still visible, just not shouted.
+      */
+      key: "lat",
+      header: t("punch.place.column"),
+      hideBelow: "lg",
+      render: (row) => <PunchLocation row={row} variant="inline" showWhenAbsent={false} />,
     },
     {
       key: "note",

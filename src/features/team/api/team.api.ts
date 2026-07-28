@@ -1297,9 +1297,26 @@ export const PUNCH_SOURCE_LABELS: Readonly<Record<PunchSource, string>> = {
  * no caller here formats an instant: `punched_at` is selected only so the list
  * can be ordered by the moment the gate recorded, to the second.
  *
- * `photo_path`, `lat`, `lng` and the match distances are not in this schema
- * because they are not in the view. That is the stronger guarantee: there is no
- * value in the browser to leak and no payload to inspect.
+ * `photo_path` and the MATCH DISTANCES are still not here, and that remains the
+ * stronger guarantee: no value in the browser to leak, no payload to inspect. A
+ * face-match score is a number a manager cannot act on and an employee cannot
+ * contest, so it stays out.
+ *
+ * LOCATION IS NOW HERE, AND THAT IS A DELIBERATE REVERSAL. This comment used to
+ * list `lat` and `lng` alongside them. The client asked for the place a punch was
+ * taken to be visible wherever punches are shown, and a manager was the one reader
+ * who could not answer the question their own reportee is most likely to ask them
+ * ("was my punch recorded from the right place?") — while an admin, reading a
+ * different view over the identical rows, could.
+ *
+ * What makes it defensible rather than a widening: `v_team_punches` scopes rows to
+ * self OR manager-of OR admin-within-scope in the database (migration 077 left that
+ * predicate untouched), so this exposes a manager to coordinates for the people
+ * they already see every other attendance fact about. It is not a new audience.
+ *
+ * `location_accuracy_m` is not optional here. It is selected with the coordinate
+ * every time, because a coordinate shown without it invites a manager to read a
+ * network estimate as a precise position.
  */
 export const teamPunchSchema = z.object({
   id: dbUuid,
@@ -1319,13 +1336,22 @@ export const teamPunchSchema = z.object({
   is_voided: z.boolean(),
   void_reason: z.string().nullable(),
   voided_at: dbTimestampNullable,
+  /** See the header: projected by migration 077, scoped by the view's own predicate. */
+  lat: dbNumericNullable,
+  lng: dbNumericNullable,
+  /** NULL = the device reported no accuracy, which is NOT "accurate". */
+  location_accuracy_m: dbNumericNullable,
 });
 export type TeamPunch = z.infer<typeof teamPunchSchema>;
 
 const TEAM_PUNCH_COLUMNS =
   "id, employee_id, employee_code, display_name, punched_at, ist_date, effective_date, " +
   "ist_time_hm, direction, source, device_label, needs_review, is_voided, void_reason, " +
-  "voided_at";
+  // Accuracy is listed with the coordinates and must stay with them: selecting
+  // lat/lng alone would satisfy PostgREST and then fail to compile against
+  // `PunchLocationColumns`, which requires the accuracy field precisely so that a
+  // coordinate can never be rendered without saying how much to believe it.
+  "voided_at, lat, lng, location_accuracy_m";
 
 /**
  * ONE predicate, used by the list and by its count — so "14 scans" is by

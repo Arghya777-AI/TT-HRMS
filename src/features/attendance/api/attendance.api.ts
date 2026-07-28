@@ -347,6 +347,14 @@ export const attendancePunchSchema = z.object({
   photo_path: z.string().nullable(),
   lat: dbNumericNullable,
   lng: dbNumericNullable,
+  /**
+   * Metres of horizontal uncertainty the device itself reported; NULL when it
+   * reported none, which is NOT the same as "accurate". Projected by migration 076
+   * — it had been written to `attendance_punches` since the first located punch but
+   * was missing from the view, so the UI could show a coordinate to six decimal
+   * places with no way to say how much of it to believe.
+   */
+  location_accuracy_m: dbNumericNullable,
   geofence_ok: z.boolean().nullable(),
   is_offline_replay: z.boolean().nullable(),
   needs_review: z.boolean().nullable(),

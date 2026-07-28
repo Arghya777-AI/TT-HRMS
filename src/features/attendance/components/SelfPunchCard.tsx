@@ -51,6 +51,7 @@
  * the confirmation shows the direction THE SERVER decided.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { PunchLocation } from "@/shared/ui/PunchLocation";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Loader2, MapPin, ScanFace } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -198,23 +199,57 @@ function recordedHeadline(outcome: PunchRecorded): string {
   }
 }
 
-function fenceLine(outcome: PunchRecorded): string {
-  if (!outcome.locationAttached) return t("me.punch.location.dropped");
-  if (outcome.geofenceOk === null) return t("me.punch.done.noFence");
-  return outcome.geofenceOk ? t("me.punch.done.insideFence") : t("me.punch.done.outsideFence");
+/**
+ * The location line under a recorded punch.
+ *
+ * THIS REPLACED A GEOFENCE VERDICT. The old line said one of three things —
+ * "inside the venue", "outside the venue", or "location not checked" — and the
+ * third was what every punch actually got, because the venue has no coordinates
+ * configured. So an employee finishing a punch read a sentence about a boundary
+ * that was never evaluated, sitting one word away from a sentence that accuses
+ * them of being somewhere they should not be.
+ *
+ * Now it names the place. When a fix was attached, `PunchLocation` renders the
+ * address, the coordinate and the accuracy — the same block the admin log shows,
+ * so the employee sees exactly what was recorded about them. When no fix was
+ * attached, that is still worth one sentence, because "no location was stored"
+ * is a fact an employee may need later.
+ */
+function LocationLine({ outcome }: { outcome: PunchRecorded }) {
+  if (!outcome.locationAttached || outcome.fix === null) {
+    return (
+      <p className="text-muted-foreground">{t("me.punch.location.dropped")}</p>
+    );
+  }
+  return (
+    <PunchLocation
+      row={{
+        lat: outcome.fix.latitude,
+        lng: outcome.fix.longitude,
+        location_accuracy_m: outcome.fix.accuracyMetres,
+      }}
+      variant="detail"
+      className="text-left"
+    />
+  );
 }
 
 /**
  * The review sentence, and only on the SERVER's say-so. `needsReview` covers
  * reasons the browser cannot see — the venue network, a missing liveness
  * attestation, an employment status under review — so it is reported, not
- * deduced. `me.punch.done.outsideFence` already says it for the one reason the
- * card can name, so that case is not said twice.
+ * deduced.
+ *
+ * IT NO LONGER SUPPRESSES ITSELF WHEN `geofenceOk === false`. That suppression
+ * existed because `me.punch.done.outsideFence` said the same thing one line
+ * above, and repeating it read badly. That sentence is gone — the location line
+ * now names the actual place instead of judging it — so the guard would have
+ * silently swallowed the ONE case it was written to tidy: a punch that the server
+ * flagged AND placed outside the fence would have told the employee nothing at
+ * all about being under review.
  */
 function reviewLine(outcome: PunchRecorded): string | null {
-  if (outcome.needsReview !== true) return null;
-  if (outcome.geofenceOk === false) return null;
-  return t("me.punch.done.review");
+  return outcome.needsReview === true ? t("me.punch.done.review") : null;
 }
 
 export interface SelfPunchCardProps {
@@ -586,7 +621,7 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
               {t("me.punch.done.who", { name: phase.outcome.employeeName })}
             </p>
           ) : null}
-          <p className="text-muted-foreground">{fenceLine(phase.outcome)}</p>
+          <LocationLine outcome={phase.outcome} />
           {reviewLine(phase.outcome) !== null ? (
             <p className="text-muted-foreground">{reviewLine(phase.outcome)}</p>
           ) : null}

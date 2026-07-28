@@ -39,6 +39,7 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { ReasonDialog } from "@/shared/ui/ReasonDialog";
+import { PunchLocation } from "@/shared/ui/PunchLocation";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
 import { addIstDays, fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
@@ -219,44 +220,29 @@ export default function PunchLogPage() {
           LOCATION. The coordinates were always being captured — a web punch stores
           lat/lng/accuracy and the row schema already carried them — but no column
           ever showed them, so the log looked as though location was not recorded at
-          all. Nothing changed in the database for this; it is purely the column
-          that was missing.
+          all.
 
-          `geofence_ok` is shown as its own word rather than folded into the
-          coordinates, because the three states mean different things and only one
-          of them is a problem:
-            true   inside the venue fence
-            false  outside it — the punch is recorded and flagged for review
-            null   NOT EVALUATED, which today is every punch, because the venue has
-                   no lat/lng set (Admin -> Org -> Locations). "Not checked" must
-                   never render as "outside".
+          THIS CELL USED TO SHOW A GEOFENCE VERDICT and no longer does. The verdict
+          had two problems: it answered a question nobody could act on ("inside a
+          radius somebody configured once?"), and its NULL case — not evaluated,
+          which was EVERY punch, because the venue has no coordinates set — sat one
+          word away from "outside" in a column a manager skims. A tri-state where
+          two of the states look like the same accusation is worse than no column.
+
+          `PunchLocation` replaces it with the thing that was actually wanted: the
+          real place name from OpenStreetMap, the coordinate, and the accuracy that
+          says how much of the coordinate to believe. `geofence_ok` is still in the
+          view and still written — it is simply not drawn here.
         */
         key: "lat",
-        header: t("admin.punch.col.location"),
-        width: "13rem",
+        header: t("punch.place.column"),
+        width: "20rem",
         hideBelow: "lg",
-        render: (row) => {
-          if (row.lat === null || row.lng === null) {
-            return (
-              <span className="text-xs text-muted-foreground">
-                {t("admin.punch.location.none")}
-              </span>
-            );
-          }
-          const coords = `${Number(row.lat).toFixed(5)}, ${Number(row.lng).toFixed(5)}`;
-          return (
-            <div className="min-w-0">
-              <p className="num text-xs">{coords}</p>
-              <p className="text-xs text-muted-foreground">
-                {row.geofence_ok === true
-                  ? t("admin.punch.location.inside")
-                  : row.geofence_ok === false
-                    ? t("admin.punch.location.outside")
-                    : t("admin.punch.location.notChecked")}
-              </p>
-            </div>
-          );
-        },
+        render: (row) => (
+          // `showWhenAbsent` stays on: in an audit log "no location recorded" is
+          // itself a fact worth reading, and most kiosk punches have no fix.
+          <PunchLocation row={row} variant="inline" />
+        ),
       },
       {
         key: "confidence_badge",

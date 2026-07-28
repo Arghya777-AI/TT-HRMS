@@ -271,6 +271,19 @@ export interface PunchRecorded {
    * was recorded when it was not.
    */
   locationAttached: boolean;
+  /**
+   * The coordinate that was ACTUALLY attached to this punch, echoed back from what
+   * the browser sent, so the confirmation can name the place the employee was
+   * recorded at instead of a geofence verdict.
+   *
+   * It comes from the request rather than the response because the function does
+   * not return the fix — and it does not need to: the browser measured it, so it
+   * is already the authority on what was submitted. `null` whenever nothing was
+   * attached, INCLUDING the fallback path where coordinates were taken and then
+   * refused, because in that case the punch genuinely carries no location and
+   * showing the reading would claim otherwise.
+   */
+  fix: { latitude: number; longitude: number; accuracyMetres: number | null } | null;
 }
 
 export interface PunchAlreadyRecorded {
@@ -521,5 +534,22 @@ export async function selfPunch(
     message: result.message ?? null,
     needsReview: result.needsReview ?? null,
     locationAttached,
+    // Gated on `locationAttached`, not on `request.geo`: the fallback path above
+    // retries WITHOUT coordinates after the function refuses them, and reporting
+    // the reading we took in that case would name a place for a punch that has
+    // none stored against it.
+    // `SignInGeo` names its fields `lat` / `lon` / `accuracy_m` — the audit-row
+    // spelling, NOT the function's wire spelling (`latitude` / `longitude` /
+    // `accuracyMetres`). Two shapes for one coordinate is exactly what `toWireGeo`
+    // exists to reconcile, and reading the wrong one here is a compile error
+    // rather than a silent `undefined`, which is why the field is typed.
+    fix:
+      locationAttached && request.geo !== null
+        ? {
+            latitude: request.geo.lat,
+            longitude: request.geo.lon,
+            accuracyMetres: request.geo.accuracy_m,
+          }
+        : null,
   };
 }

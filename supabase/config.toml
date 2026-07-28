@@ -623,3 +623,14 @@ enabled = true
 enabled = true
 # U+ (admin JWT + DB capability check inside); the gateway pre-check is on.
 verify_jwt = true
+
+# reverse-geocode (model U+): turns a punch coordinate into the place name the
+# punch log shows. The gateway check STAYS ON — there is no machine caller, no
+# cron and no device on this path, only a signed-in admin looking at the log — and
+# the function then re-derives `admin.access` through app.has_cap(). It is also
+# what keeps the endpoint from becoming an open geocoding proxy: the OSM Nominatim
+# 1 request/second ceiling and any GOOGLE_MAPS_API_KEY spend are ours, so an
+# unauthenticated caller must never reach the provider through us.
+[functions.reverse-geocode]
+enabled = true
+verify_jwt = true

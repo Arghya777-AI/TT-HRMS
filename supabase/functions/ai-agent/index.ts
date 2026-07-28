@@ -1966,6 +1966,87 @@ function validateSpec(
       continue;
     }
 
+    /*
+      ── SHAPE COERCION, BEFORE ANY CHECK RUNS ──────────────────────────────────
+
+      The model does not always emit the documented shape, and the checks below only
+      look at the documented one — so an off-shape block sailed through them VACUOUSLY.
+      Observed live from this deployment, on a plain "list my July attendance" question:
+
+        title:   {"text": "July 2026 Attendance"}   not a string
+        columns: ["Date", "Status", …]              not [{key,label,format}]
+        rows:    on the BLOCK, not under `table`
+        cells:   {"raw": 484, "format": "duration_min"}   not a scalar
+
+      The formatting consequence was visible (a client rendered nothing). The important
+      consequence was not: a table of twenty-seven days of numbers never reached
+      `checkValue`, so it skipped `isGrounded` — the check that every number must be
+      copied from a tool result and never computed. That is the single guarantee this
+      file exists to provide, and for tables it was not running at all.
+
+      Coercing here rather than teaching each check about each variant keeps ONE
+      canonical shape downstream, and means the grounding check covers whatever the
+      model produced rather than only what it was asked to produce.
+    */
+    {
+      const b = block as unknown as Record<string, unknown>;
+
+      // `title: {text}` → `title: string`.
+      if (typeof b.title === "object" && b.title !== null) {
+        const t = (b.title as Record<string, unknown>).text;
+        b.title = typeof t === "string" ? t : "";
+      }
+      // Same for a subtitle, which arrives the same way.
+      if (typeof b.subtitle === "object" && b.subtitle !== null) {
+        const t = (b.subtitle as Record<string, unknown>).text;
+        b.subtitle = typeof t === "string" ? t : null;
+      }
+
+      // Top-level `columns`/`rows` → the canonical `table`.
+      if (b.table === undefined && Array.isArray(b.columns) && Array.isArray(b.rows)) {
+        b.table = { columns: b.columns, rows: b.rows, exportable: true };
+        delete b.columns;
+        delete b.rows;
+      }
+
+      /*
+        Column normalisation runs UNCONDITIONALLY, and that is the fix to a bug in the
+        first version of this coercion.
+
+        The model emits columns either as `["Date", "Status", …]` or as
+        `[{key,label,format}, …]`, and it emits them either at the top level or already
+        inside a `table` object — the four combinations occur interchangeably across
+        requests. Normalising only while BUILDING the table missed the case where the
+        model had supplied `table` itself with string columns, and those strings reached
+        the client where a `{key,label,format}` was expected: every header rendered
+        blank while the rows underneath were perfect.
+      */
+      const tbl = b.table as Record<string, unknown> | undefined;
+      if (tbl !== undefined && Array.isArray(tbl.columns)) {
+        tbl.columns = (tbl.columns as unknown[]).map((col, ci) => {
+          if (typeof col === "string") {
+            // A derived key only has to be stable within this table — the client uses it
+            // as a React key, never as a lookup into the row.
+            return { key: `c${ci}`, label: col, format: "text" };
+          }
+          const c = (col ?? {}) as Record<string, unknown>;
+          const label = typeof c.label === "string"
+            ? c.label
+            : typeof c.header === "string"
+              ? c.header
+              : typeof c.text === "string"
+                ? c.text
+                : String(c.key ?? `Column ${ci + 1}`);
+          return {
+            key: typeof c.key === "string" ? c.key : `c${ci}`,
+            label,
+            format: typeof c.format === "string" ? c.format : "text",
+          };
+        });
+        if (tbl.exportable === undefined) tbl.exportable = true;
+      }
+    }
+
     // 11 — block rules
     if (["calendar_heatmap", "payslip_card", "employee_card"].includes(block.type)) {
       if (seenSingletons.has(block.type)) {
@@ -2035,11 +2116,84 @@ function validateSpec(
     for (const [vi, value] of arr<SpecValue>(block.values).entries()) {
       checkValue(value, `${at}.values[${vi}]`);
     }
-    for (const [ii, item] of arr<{ label: string; detail?: string | null; value?: SpecValue | null }>(block.items).entries()) {
+    /*
+      THE FLATTENED SHAPES GO THROUGH THE SAME CHECK, AND THIS CLOSED A REAL HOLE.
+
+      `checkValue` does three things: it grounds every number against this turn's tool
+      results, it normalises the money format, and it computes the `display` string the
+      client renders. It was called only for `values[]` and `items[].value`.
+
+      But the model does not only emit those shapes. In practice it emits `kpi_row` and
+      `gauge_row` items with `raw` and `format` FLATTENED onto the item, and
+      `stat_callout` with `raw`/`format` on the BLOCK — both observed in live responses
+      from this deployment. Those numbers were therefore reaching the client:
+
+        · UNGROUNDED — the "every number must be copied from a tool result, do not
+          compute, sum, average or convert" guarantee, which is the single most
+          important check in this file, did not run on them at all; and
+        · UNFORMATTED — no `display`, so a client showed `10872` for a value whose
+          format was `hours`, and `195` for `duration_min`.
+
+      Normalising them into a SpecValue in place and running the same check fixes both at
+      once. Writing the result BACK onto the item/block is what makes `display` appear
+      where the client reads it, so no client-side formatter is needed — and a second
+      formatter is exactly what would let a rendered figure disagree with a validated one.
+    */
+    for (const [ii, item] of arr<Record<string, unknown>>(block.items).entries()) {
       if (item.value !== null && item.value !== undefined) {
-        checkValue(item.value, `${at}.items[${ii}].value`);
+        checkValue(item.value as SpecValue, `${at}.items[${ii}].value`);
+      } else if (item.raw !== undefined && typeof item.format === "string") {
+        const inline: SpecValue = {
+          label: typeof item.label === "string" ? item.label : "",
+          raw: item.raw as number | string | null,
+          format: item.format as ValueFormat,
+          masked: item.masked === true,
+        };
+        checkValue(inline, `${at}.items[${ii}]`);
+        item.format = inline.format;
+        item.display = inline.display;
+        item.masked = inline.masked;
       }
       if (typeof item.detail === "string") item.detail = stripInjection(item.detail).text;
+    }
+    /*
+      TABLE CELLS: A REAL GAP, LEFT DOCUMENTED RATHER THAN HALF-FIXED.
+
+      The check at the bottom of this loop grounds a table cell only when
+      `typeof cell === "number"`. The model frequently emits cells as
+      `{"raw": 484, "format": "duration_min"}` — an OBJECT — which is neither a number nor
+      a string, so it slips past both the grounding check and the injection strip. Those
+      numbers reach the client unverified. That is a genuine hole and it is worth fixing.
+
+      I tried fixing it here by normalising each cell into a SpecValue and running
+      `checkValue` on it. It formats beautifully — 484 became "8:04" — but it took a
+      27-row answer from roughly 3-in-4 succeeding to 0-in-3, because those per-day
+      numbers are NOT in `numberSources`: the grounding source set does not appear to
+      collect values from the per-day tool result the way it does from the summary tools.
+      So enforcing the check produced dozens of legitimate-looking failures and the answer
+      died.
+
+      The honest fix is therefore in the SOURCE COLLECTOR (make `numberSources` include
+      per-day tool values), not here, and that is a change worth making deliberately with
+      the function's logs to hand rather than inferred from HTTP codes. Reverted; the
+      shape coercion above stays, because it fixed blank table headers and a whole block
+      rendering as "nothing to show" without touching validation.
+    */
+    // `stat_callout` carries its figure on the block. Same treatment, same reasons.
+    {
+      const b = block as unknown as Record<string, unknown>;
+      if (b.raw !== undefined && typeof b.format === "string") {
+        const inline: SpecValue = {
+          label: typeof b.title === "string" ? b.title : "",
+          raw: b.raw as number | string | null,
+          format: b.format as ValueFormat,
+          masked: b.masked === true,
+        };
+        checkValue(inline, at);
+        b.format = inline.format;
+        b.display = inline.display;
+        b.masked = inline.masked;
+      }
     }
     for (const [si, series] of arr<{ name: string; colour: string; format: ValueFormat; points?: { x: string; y: number | null }[] }>(block.series).entries()) {
       // 9 — series/axis length equality is structural here: points carry x and y.
@@ -2958,6 +3112,20 @@ async function runAgent(deps: AgentDeps): Promise<AgentAnswer> {
       continue;
     }
 
+    /*
+      REVERTED, and the note is left as a warning to the next person.
+
+      I widened this from `round === 0` to "once, at any round", reasoning that a long
+      table answer overruns on the FINAL turn rather than the first. The reasoning may
+      still be right; the change was not. Measured over five identical requests it took
+      the failure rate from 1-in-4 to 4-in-5, so it introduced a fault rather than fixing
+      one — most likely because continuing the loop after a truncated later turn re-sends
+      a message list that no longer matches what the model returned.
+
+      Restored exactly as it was. The intermittent 500 on long table answers is REAL and
+      PRE-EXISTING (1 in 4 on this question, always on the slowest call) and wants the
+      function's own logs to diagnose properly, which I could not read from here.
+    */
     if (turn.stopReason === "max_tokens" && round === 0 && maxTokens < 16_000) {
       baseParams.max_tokens = 16_000;
       continue;

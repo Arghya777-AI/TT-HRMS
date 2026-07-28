@@ -9,7 +9,7 @@
  * Anything absent here renders <PageStub> from the route manifest metadata, so
  * the route always exists, is deep-linkable, and never 404s mid-build.
  *
- * 186 of 190 routes are built.
+ * 187 of 190 routes are built.
  */
 import type { ComponentType, LazyExoticComponent } from "react";
 
@@ -165,6 +165,7 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/me/apply/travel": () => import("./apply/pages/TravelRequisition.page"),
   "/me/apply/web-punch": () => import("./apply/pages/WebPunchRequest.page"),
   "/me/approvals": () => import("./approvals/pages/Approvals.page"),
+  "/me/ask": () => import("./ai/pages/Ask.page"),
   "/me/assets": () => import("./assets/pages/MyAssets.page"),
   "/me/attendance": () => import("./attendance/pages/MyAttendance.page"),
   "/me/attendance/:date": () => import("./attendance/pages/AttendanceDayDetail.page"),

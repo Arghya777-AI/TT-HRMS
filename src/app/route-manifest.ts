@@ -105,10 +105,17 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/settings/notifications", title: "Notification preferences", hint: "Choose channels; some notices can't be switched off.", cap: "me.view", domain: "settings", phase: "P1", icon: Cog },
   { path: "/me/settings/security", title: "Security", hint: "Password, passkeys, face-enrolment status and sessions.", cap: "me.view", domain: "settings", phase: "P1", icon: Fingerprint },
   { path: "/me/activity", title: "My activity", hint: "Every change to your record, who made it and why, and who read it.", cap: "me.view", domain: "settings", phase: "P1", icon: ShieldCheck },
-  // Named "Regal Lab AI Assistant" at the client's request. STILL phase P2 and still
-  // absent from PAGE_REGISTRY, so this renders the "not switched on" stub — the naming
-  // and the hint describe what it is FOR, they do not make it answer anything.
-  { path: "/me/ask", title: "Regal Lab AI Assistant", hint: "Ask about your own attendance, leave and pay. Three panels — attendance, leave and pay — each with its own charts, and every answer downloadable as Excel or PDF with the infographics included.", cap: "me.view", domain: "ai", phase: "P2", icon: Sparkles },
+  /*
+    BUILT, so no longer P2. The `ai-agent` function had been deployed and keyed for days —
+    scope resolved in SQL, a fixed tool set, fourteen validator checks, every displayed
+    figure recomputed from the tool results the model cited, tokens billed to
+    `ai_usage_ledger`. What was missing was a screen, so the whole thing was unreachable
+    behind the "not switched on" stub. `Ask.page.tsx` is that screen.
+
+    P1.5 rather than P1: it depends on an external model and a paid key, so it is a real
+    feature with an operational dependency, not core attendance.
+  */
+  { path: "/me/ask", title: "Regal Lab AI Assistant", hint: "Ask about your own attendance, leave and pay — charts, provenance for every figure, and Excel or PDF download.", cap: "me.view", domain: "ai", phase: "P1.5", icon: Sparkles },
 ];
 
 /* ── Manager (spec-manager route table) ───────────────────────────────────── */

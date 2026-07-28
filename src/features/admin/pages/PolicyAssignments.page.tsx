@@ -46,6 +46,7 @@ import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { SelectField, TextField, type SelectOption } from "../components/Field";
+import { PunchModePanel } from "../components/PunchModePanel";
 import { EMPLOYMENT_TYPE_LABELS, employmentTypeValues } from "../api/employees.api";
 import {
   KIND_POLICY_TABLE,
@@ -895,6 +896,8 @@ export default function PolicyAssignmentsPage() {
       />
 
       <p className="mt-6 text-xs text-muted-foreground">{t("timeAudit.assign.footnote")}</p>
+      <PunchModePanel />
+
     </div>
   );
 }

@@ -209,11 +209,24 @@ export default function PunchLogPage() {
         render: (row) => dash(row.source_label),
       },
       {
+        /*
+          Gate device, or — for a web punch, which has none — the address it arrived
+          from. See migration 080: the IP was recorded all along and no view exposed it.
+        */
         key: "device_label",
         header: t("admin.punch.col.device"),
-        width: "11rem",
+        width: "12rem",
         hideBelow: "md",
-        render: (row) => dash(row.device_label),
+        render: (row) =>
+          row.device_label !== null
+            ? row.device_label
+            : row.ip_address !== null
+              ? (
+                <span className="num text-xs text-muted-foreground" title={t("attendance.day.ipHint")}>
+                  {t("attendance.day.ip", { ip: row.ip_address })}
+                </span>
+              )
+              : dash(null),
       },
       {
         /*

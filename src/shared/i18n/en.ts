@@ -1414,6 +1414,27 @@ export const en = {
   "attendance.day.col.time": "Time",
   "attendance.day.col.role": "Counted as",
   "attendance.day.col.method": "How",
+  /* A web punch has no gate device, so the column shows where it came from instead. */
+  "attendance.day.ip": "IP {ip}",
+  /* ── How a day's hours are counted (migration 080) ───────────────────────── */
+  "admin.punchMode.title": "How the day is counted",
+  "admin.punchMode.single": "First scan to last scan",
+  "admin.punchMode.multi": "In/out pairs",
+  "admin.punchMode.singleExplain":
+    "The day runs from the first scan to the last scan. Scans in between are treated as noise — somebody tapping the gate at lunch does not shorten their shift. Only an explicit break, plus the shift's own fixed unpaid break, is deducted.",
+  "admin.punchMode.multiExplain":
+    "Scans are read as in/out pairs and every gap between them is unpaid. Right for staff who genuinely clock out and back in — but it means a single midday scan can cut a day to minutes: a real day with scans at 07:36, 07:38, 14:18, 22:12 and 22:15 came out as 5 minutes worked instead of 13h 39m.",
+  "admin.punchMode.historyNote":
+    "Changing this affects days computed from now on. It does NOT rewrite days already computed — use Attendance → Recompute for that, deliberately, so nobody's past pay changes by surprise.",
+  "admin.punchMode.toSingle": "Use first-to-last",
+  "admin.punchMode.toMulti": "Use in/out pairs",
+  "admin.punchMode.noPermission": "Admins only — this decides pay",
+  "admin.punchMode.col.person": "Employee",
+  "admin.punchMode.col.department": "Department",
+  "admin.punchMode.col.mode": "Counted as",
+  "admin.punchMode.empty": "No employees in your scope.",
+  "attendance.day.ipHint":
+    "This punch came from the web, so there is no gate device. The address it was sent from is shown instead — it is a rough indication of network, not of place; the location column is the position the device reported.",
   "attendance.day.col.gate": "Gate",
   "attendance.day.col.note": "Note",
   "attendance.day.duplicate": "Duplicate — ignored",

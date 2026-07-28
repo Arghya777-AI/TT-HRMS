@@ -355,6 +355,12 @@ export const attendancePunchSchema = z.object({
    * places with no way to say how much of it to believe.
    */
   location_accuracy_m: dbNumericNullable,
+  /**
+   * The address the punch arrived from (migration 080). It matters most for a WEB punch:
+   * that has no gate device to name, so the IP and the coordinate are its only
+   * provenance. NULL for an import or a punch recorded before the column was captured.
+   */
+  ip_address: z.string().nullable(),
   geofence_ok: z.boolean().nullable(),
   is_offline_replay: z.boolean().nullable(),
   needs_review: z.boolean().nullable(),

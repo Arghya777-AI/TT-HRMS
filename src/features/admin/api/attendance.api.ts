@@ -354,6 +354,8 @@ export const punchRowSchema = z.object({
    * every row while typechecking clean.
    */
   location_accuracy_m: dbNumericNullable,
+  /** Source address — a web punch's only provenance besides its coordinate. */
+  ip_address: z.string().nullable(),
   geofence_ok: z.boolean().nullable(),
   is_offline_replay: z.boolean(),
   needs_review: z.boolean(),

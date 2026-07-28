@@ -82,10 +82,31 @@ export function PunchTimeline({
       render: (row) => punchMethodLabel(row),
     },
     {
+      /*
+        GATE, or the address it came from.
+
+        A kiosk punch names its device. A WEB punch has no device, so this column used to
+        show an em dash — the least informative cell on the row for the punch type that
+        most needs corroborating. The IP is the only provenance a web punch carries
+        besides its coordinate, and it was being recorded all along (migration 080 finally
+        exposes it).
+
+        Shown ONLY when there is no device: an IP beside a gate name would be noise, and
+        for a gate punch the device IS the answer.
+      */
       key: "device_label",
       header: t("attendance.day.col.gate"),
       hideBelow: "md",
-      render: (row) => dash(row.device_label),
+      render: (row) =>
+        row.device_label !== null
+          ? row.device_label
+          : row.ip_address !== null
+            ? (
+              <span className="num text-xs text-muted-foreground" title={t("attendance.day.ipHint")}>
+                {t("attendance.day.ip", { ip: row.ip_address })}
+              </span>
+            )
+            : dash(null),
     },
     {
       /*

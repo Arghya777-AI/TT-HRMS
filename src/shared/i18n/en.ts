@@ -28,6 +28,7 @@ import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
 import { keysPunchLocation } from "./keys/punch-location";
+import { keysSectionNav } from "./keys/section-nav";
 import { keysHrCompliance } from "./keys/hr-compliance";
 import { keysHrLeaveCost } from "./keys/hr-leavecost";
 import { keysHrWorkforce } from "./keys/hr-workforce";
@@ -59,6 +60,7 @@ export const en = {
   ...keysAnalyticsPlanned,
   ...keysAnalyticsOverview,
   ...keysPunchLocation,
+  ...keysSectionNav,
   ...keysHrLeaveCost,
   ...keysAnalyticsLive,
   ...keysHrMovement,
@@ -5159,6 +5161,10 @@ export const en = {
   "admin.days.subtitle": "The computed day per employee — {period}.",
   "admin.days.wholeMonth": "whole month",
   "admin.days.showWholeMonth": "Show whole month",
+  // Replaces showWholeMonth on Day Records: that grid now honours the SHARED
+  // period (day / week / month / year / custom range), so falling back from a
+  // single-date deep link returns to whatever period is selected, not to a month.
+  "admin.days.showWholePeriod": "Show the whole period",
   "admin.days.singleDateNotice": "Showing {date} only.",
   "admin.days.col.date": "Date",
   "admin.days.col.employee": "Employee",

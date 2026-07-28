@@ -35,7 +35,7 @@ import {
   fetchApprovalBreaches,
   fetchAssetCustody,
   fetchDocumentComplianceSummary,
-  fetchEnrolmentGaps,
+  fetchEnrolmentCoverageSummary,
   fetchExpiringDocuments,
   fetchGateHealth,
   fetchOpenExceptions,
@@ -142,12 +142,28 @@ export function useUnacknowledgedPolicies(
 // -----------------------------------------------------------------------------
 
 /** Who cannot use the gate and why — the view's own `gap_kind`, bucketed. */
-export function useEnrolmentGaps(
+/**
+ * RENAMED from `useEnrolmentGaps`, deliberately.
+ *
+ * `useKioskConsole.ts` exports a hook of that name which resolves to
+ * `EnrolmentGap[]` — an ARRAY — and three screens call it and then `.filter()` the
+ * result. This one resolves to `{ summary, provenance }`, an OBJECT. Two exported
+ * hooks sharing a name while returning different shapes is a footgun with a
+ * particularly nasty failure mode: an import from the wrong module gives an object
+ * where an array is expected, `?? []` does not catch it because an object is not
+ * nullish, and the page dies on `x.filter is not a function` — which minifies to a
+ * single letter and tells you nothing.
+ *
+ * The array readers are now hardened with `asArray`, which turns that crash into a
+ * silently EMPTY list — better than a white screen, worse than a compile error.
+ * Distinct names give the compile error.
+ */
+export function useEnrolmentCoverageSummary(
   filters: AnalyticsFilters,
 ): UseQueryResult<EnrolmentGapResult, Error> {
   return useQuery({
     queryKey: panelKey(qk.admin.systemAll(), "enrolment-gaps", filters),
-    queryFn: ({ signal }) => fetchEnrolmentGaps(filters, { signal }),
+    queryFn: ({ signal }) => fetchEnrolmentCoverageSummary(filters, { signal }),
     staleTime: SNAPSHOT_STALE_MS,
     retry: shouldRetryQuery,
   });

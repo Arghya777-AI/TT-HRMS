@@ -96,7 +96,7 @@ import {
   useApprovalBreaches,
   useAssetCustody,
   useDocumentCompliance,
-  useEnrolmentGaps,
+  useEnrolmentCoverageSummary,
   useExpiringDocuments,
   useGateHealth,
   useOpenExceptions,
@@ -420,7 +420,7 @@ export function CompliancePanel({
   const expiring = useExpiringDocuments(filters);
   const policies = usePolicyAcknowledgement(filters);
   const unacknowledged = useUnacknowledgedPolicies(filters);
-  const gaps = useEnrolmentGaps(filters);
+  const gaps = useEnrolmentCoverageSummary(filters);
   const gate = useGateHealth(filters);
   const breaches = useApprovalBreaches(filters);
   const ownOverdue = useOwnOverdueApprovals();

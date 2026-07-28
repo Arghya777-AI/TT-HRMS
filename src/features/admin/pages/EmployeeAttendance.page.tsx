@@ -45,16 +45,13 @@ import {
   fmtCivilDateWeekday,
   fmtDateTime,
   fmtDurationHm,
-  fmtMonthLong,
   fmtTime,
-  isIstMonthKey,
-  istMonthOfDate,
-  istMonthRange,
-  nowIstMonth,
 } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
-import { MonthStepper } from "../components/MonthStepper";
+import { PeriodBar } from "../components/PeriodBar";
+import { periodLabel } from "../analyticsFilterBar";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { useAdminEmployee } from "../hooks/usePeople";
@@ -66,7 +63,7 @@ import {
   useDayRecordsCount,
   useDayStatusCounts,
 } from "../hooks/useAttendanceRecords";
-import { useEmployeeMonthSummary } from "../hooks/usePeopleLifecycle";
+import { useEmployeePeriodSummary } from "../hooks/usePeopleLifecycle";
 import {
   SINGLE_PUNCH_FLAG,
   attendanceStatusValues,
@@ -119,14 +116,25 @@ export default function EmployeeAttendancePage() {
   const employee = useAdminEmployee(code);
   const employeeId = employee.data?.id ?? null;
 
-  const monthParam = params.get("m");
-  const month = monthParam !== null && isIstMonthKey(monthParam) ? monthParam : nowIstMonth();
+  /*
+    THE PERIOD IS SHARED with the analytics dashboard (same url parameters), so a
+    period chosen there survives the click into one person's attendance.
+
+    Nothing here was ever month-grained: `f_attendance_period_summary` has always
+    taken an arbitrary (employee, from, to) and the day grid reads
+    `v_attendance_day_enriched` per employee-day. The month was an accident of how
+    `useEmployeeMonthSummary` was parameterised, not a limit of the data.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
   const statusParam = params.get("status");
   const status: AttendanceStatus | "" = isAttendanceStatus(statusParam) ? statusParam : "";
   const onlyExceptions = params.get("exceptions") === "true";
   const openDate = params.get("d");
 
-  const range = useMemo(() => istMonthRange(month), [month]);
+  const range = useMemo(
+    () => ({ from: analytics.period.from, to: analytics.period.to }),
+    [analytics.period.from, analytics.period.to],
+  );
 
   const filters = useMemo<DayFilters>(
     () => ({
@@ -151,7 +159,7 @@ export default function EmployeeAttendancePage() {
     [range, employeeId, onlyExceptions],
   );
 
-  const summary = useEmployeeMonthSummary(employeeId, month);
+  const summary = useEmployeePeriodSummary(employeeId, range.from, range.to);
   const days = useDayRecords(filters);
   const total = useDayRecordsCount(filters);
   const statusCounts = useDayStatusCounts(breakdownFilters, attendanceStatusValues);
@@ -169,11 +177,18 @@ export default function EmployeeAttendancePage() {
     setParams(next, { replace: true });
   }
 
-  function setMonth(next: string): void {
-    const p = new URLSearchParams(params);
-    p.set("m", next);
-    p.delete("d");
-    setParams(p, { replace: true });
+
+  /**
+   * Clear THIS page's narrowing — the status chip, the exceptions flag and any open
+   * day — and leave the shared period untouched. Resetting somebody's chosen window
+   * as a side effect of clearing a status filter is a surprise, not a convenience.
+   */
+  function clearPageFilters(): void {
+    const next = new URLSearchParams(params);
+    next.delete("status");
+    next.delete("exceptions");
+    next.delete("d");
+    setParams(next, { replace: true });
   }
 
   const columns: DataGridColumn<DayRow>[] = [
@@ -304,20 +319,15 @@ export default function EmployeeAttendancePage() {
         title={t("admin.pAtt.title")}
         subtitle={
           person === null
-            ? t("admin.pAtt.subtitle.plain", { month: fmtMonthLong(month) })
+            ? t("admin.pAtt.subtitle.plain", { month: periodLabel(analytics.period) })
             : t("admin.pAtt.subtitle.person", {
                 name: person.display_name,
                 code: person.employee_code,
-                month: fmtMonthLong(month),
+                month: periodLabel(analytics.period),
               })
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <MonthStepper
-              month={month}
-              onChange={setMonth}
-              {...(person !== null ? { minMonth: istMonthOfDate(person.date_of_join) } : {})}
-            />
             <Button asChild variant="outline" size="sm">
               <Link to={`/admin/people/${encodeURIComponent(code)}`}>
                 <ArrowLeft className="mr-2 size-4" aria-hidden />
@@ -326,6 +336,13 @@ export default function EmployeeAttendancePage() {
             </Button>
           </div>
         }
+      />
+
+      {/* The joining date is still the floor: there is no attendance before it, and
+          "previous" must not walk into a window that cannot contain a record. */}
+      <PeriodBar
+        className="mb-4"
+        {...(person !== null ? { minDate: person.date_of_join } : {})}
       />
 
       <StateBoundary
@@ -381,7 +398,7 @@ export default function EmployeeAttendancePage() {
               isPending={summary.isPending}
               error={summary.error}
               onRetry={() => void summary.refetch()}
-              month={month}
+              periodText={periodLabel(analytics.period)}
             />
 
             {/* Total + per-status breakdown, both counted by Postgres. */}
@@ -437,7 +454,7 @@ export default function EmployeeAttendancePage() {
                     {t("admin.pAtt.filter.exceptionsOnly")}
                   </Button>
                   {hasFilter ? (
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setMonth(month)}>
+                    <Button type="button" size="sm" variant="ghost" onClick={clearPageFilters}>
                       {t("admin.pAtt.filter.clear")}
                     </Button>
                   ) : null}
@@ -479,7 +496,7 @@ export default function EmployeeAttendancePage() {
                     {...(hasFilter
                       ? {
                           action: (
-                            <Button variant="outline" onClick={() => setMonth(month)}>
+                            <Button variant="outline" onClick={clearPageFilters}>
                               {t("admin.pAtt.filter.clear")}
                             </Button>
                           ),
@@ -543,18 +560,19 @@ function SummaryStrip({
   isPending,
   error,
   onRetry,
-  month,
+  periodText,
 }: {
   summary: PeriodSummary | null;
   isPending: boolean;
   error: Error | null;
   onRetry: () => void;
-  month: string;
+  /** Already-formatted period label — the strip does not re-derive it. */
+  periodText: string;
 }) {
   return (
     <div className="mt-4">
       <h2 className="font-display text-lg font-semibold">
-        {t("admin.pAtt.strip.title", { month: fmtMonthLong(month) })}
+        {t("admin.pAtt.strip.title", { month: periodText })}
       </h2>
       <div className="mt-2">
         <StateBoundary

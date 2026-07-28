@@ -20,7 +20,6 @@
  * @route /admin/kiosk/match-review
  */
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { ScanFace, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,12 +32,7 @@ import { StatusChip } from "@/shared/ui/StatusChip";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
-import {
-  fmtDateTime,
-  fmtMonthLong,
-  isIstMonthKey,
-  istMonthRange,
-  nowIstMonth,
+import { fmtDateTime,
 } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { asArray } from "@/lib/asArray";
@@ -46,24 +40,27 @@ import { t } from "@/shared/i18n/en";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { fetchEmployeeOptions, type DirectoryRow } from "../api/employees.api";
 import { REVIEW_OUTCOMES, type CandidateReveal, type FaceMatchAudit } from "../api/kiosk.api";
-import {
-  useCandidateRevealMutation,
+import { useCandidateRevealMutation,
   useFaceMatchAudit,
   useKioskDevices,
 } from "../hooks/useKioskConsole";
 import { matchOutcomeChip } from "../kiosk-display";
-import { MonthStepper } from "../components/MonthStepper";
+import { PeriodBar } from "../components/PeriodBar";
+import { periodLabel } from "../analyticsFilterBar";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { ReasonActionButton } from "../components/ReasonActionButton";
 import { KioskSectionNav } from "../components/KioskSectionNav";
 
 export default function MatchReviewPage() {
-  const [params, setParams] = useSearchParams();
   const { can } = useAuth();
   const isSuper = can("admin.super");
 
-  const requested = params.get("m");
-  const month = requested !== null && isIstMonthKey(requested) ? requested : nowIstMonth();
-  const range = useMemo(() => istMonthRange(month), [month]);
+  /* Shared analytics period — see PeriodBar. */
+  const { filters: analytics } = useAnalyticsFilters();
+  const range = useMemo(
+    () => ({ from: analytics.period.from, to: analytics.period.to }),
+    [analytics.period.from, analytics.period.to],
+  );
   const [onlyReview, setOnlyReview] = useState(true);
 
   const attempts = useFaceMatchAudit(
@@ -97,11 +94,6 @@ export default function MatchReviewPage() {
   const reviewOutcomes: readonly string[] = REVIEW_OUTCOMES;
   const reviewable = rows.filter((r) => reviewOutcomes.includes(r.outcome)).length;
 
-  function setMonth(next: string): void {
-    const nextParams = new URLSearchParams(params);
-    nextParams.set("m", next);
-    setParams(nextParams, { replace: false });
-  }
 
   const columns: DataGridColumn<FaceMatchAudit>[] = [
     {
@@ -258,8 +250,9 @@ export default function MatchReviewPage() {
         icon={ScanFace}
         title={t("admin.kiosk.match.title")}
         subtitle={t("admin.kiosk.match.subtitle")}
-        actions={<MonthStepper month={month} onChange={setMonth} />}
       />
+
+      <PeriodBar className="mb-4" />
 
       <KioskSectionNav />
 
@@ -281,12 +274,12 @@ export default function MatchReviewPage() {
             label={t("admin.kiosk.match.kpi.review")}
             value={formatNumber(reviewable)}
             tone={reviewable > 0 ? "warn" : "success"}
-            hint={t("admin.kiosk.match.kpi.reviewHint", { month: fmtMonthLong(month) })}
+            hint={t("admin.kiosk.match.kpi.reviewHint", { month: periodLabel(analytics.period) })}
           />
           <KpiTile
             label={t("admin.kiosk.match.kpi.total")}
             value={formatNumber(rows.length)}
-            hint={t("admin.kiosk.match.kpi.totalHint", { month: fmtMonthLong(month) })}
+            hint={t("admin.kiosk.match.kpi.totalHint", { month: periodLabel(analytics.period) })}
           />
         </section>
 
@@ -319,7 +312,7 @@ export default function MatchReviewPage() {
             onlyReview ? (
               <EmptyState
                 icon={ScanFace}
-                title={t("admin.kiosk.match.emptyFiltered.title", { month: fmtMonthLong(month) })}
+                title={t("admin.kiosk.match.emptyFiltered.title", { month: periodLabel(analytics.period) })}
                 hint={t("admin.kiosk.match.emptyFiltered.hint")}
                 action={
                   <Button variant="outline" onClick={() => setOnlyReview(false)}>
@@ -330,7 +323,7 @@ export default function MatchReviewPage() {
             ) : (
               <EmptyState
                 icon={ScanFace}
-                title={t("admin.kiosk.match.empty.title", { month: fmtMonthLong(month) })}
+                title={t("admin.kiosk.match.empty.title", { month: periodLabel(analytics.period) })}
                 hint={t("admin.kiosk.match.empty.hint")}
               />
             )

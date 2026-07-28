@@ -241,7 +241,8 @@ export function useTeamDays(f: TeamDayFilters): UseQueryResult<TeamDay[], Error>
   return useQuery({
     queryKey: qk.team.list({
       view: "days",
-      month: f.month,
+      from: f.from,
+      to: f.to,
       slice: f.slice ?? "all",
       employees: [...f.employeeIds].sort(),
     }),
@@ -257,14 +258,16 @@ export function useTeamDayCount(
   slice: TeamDayFilters["slice"],
 ): UseQueryResult<number, Error> {
   const withSlice: TeamDayFilters = {
-    month: f.month,
+    from: f.from,
+    to: f.to,
     employeeIds: f.employeeIds,
     ...(slice !== undefined ? { slice } : {}),
   };
   return useQuery({
     queryKey: qk.team.list({
       view: "day-count",
-      month: f.month,
+      from: f.from,
+      to: f.to,
       slice: slice ?? "all",
       employees: [...f.employeeIds].sort(),
     }),
@@ -281,17 +284,19 @@ export function useTeamDayCount(
  * with the half-days and leave fractions already applied.
  */
 export function useTeamPeriodSummaries(
-  month: string,
+  from: string,
+  to: string,
   employeeIds: readonly string[],
 ): UseQueryResult<TeamPeriodSummary[], Error> {
   return useQuery({
     queryKey: qk.team.list({
       view: "period-summary",
-      month,
+      from,
+      to,
       employees: [...employeeIds].sort(),
     }),
     enabled: employeeIds.length > 0,
-    queryFn: ({ signal }) => fetchTeamPeriodSummaries(month, employeeIds, signal),
+    queryFn: ({ signal }) => fetchTeamPeriodSummaries(from, to, employeeIds, signal),
     retry: shouldRetryQuery,
   });
 }
@@ -305,7 +310,8 @@ export function useTeamLeaveDays(f: TeamLeaveFilters): UseQueryResult<TeamLeaveD
   return useQuery({
     queryKey: qk.team.list({
       view: "leave-days",
-      month: f.month,
+      from: f.from,
+      to: f.to,
       slice: f.slice ?? "all",
       employees: [...f.employeeIds].sort(),
     }),
@@ -320,14 +326,16 @@ export function useTeamLeaveCount(
   slice: TeamLeaveFilters["slice"],
 ): UseQueryResult<number, Error> {
   const withSlice: TeamLeaveFilters = {
-    month: f.month,
+    from: f.from,
+    to: f.to,
     employeeIds: f.employeeIds,
     ...(slice !== undefined ? { slice } : {}),
   };
   return useQuery({
     queryKey: qk.team.list({
       view: "leave-count",
-      month: f.month,
+      from: f.from,
+      to: f.to,
       slice: slice ?? "all",
       employees: [...f.employeeIds].sort(),
     }),

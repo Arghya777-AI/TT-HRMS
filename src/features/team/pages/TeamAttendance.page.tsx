@@ -19,7 +19,7 @@
  *
  * @route /team/attendance
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CalendarDays, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,13 +28,14 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { StatusChip } from "@/shared/ui/StatusChip";
-import { fmtCivilDateWeekday, fmtDuration, nowIstDate } from "@/lib/datetime";
+import { fmtCivilDateWeekday, fmtDuration } from "@/lib/datetime";
 import { dash, formatNumber, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
 import { PersonCell } from "@/features/admin/components/PersonCell";
-import { MonthStepper } from "@/features/admin/components/MonthStepper";
+import { PeriodBar } from "@/features/admin/components/PeriodBar";
+import { useAnalyticsFilters } from "@/features/admin/hooks/useAnalyticsFilters";
 import {
   DAY_STATUS_CHIP,
   isTeamDaySlice,
@@ -113,24 +114,44 @@ export default function TeamAttendancePage() {
   // Memoised so downstream deps get a stable reference while loading.
   const employeeIds = useMemo(() => roster.data?.employeeIds ?? [], [roster.data]);
 
-  const [month, setMonth] = useState(() => nowIstDate().slice(0, 7));
+  /*
+    THE PERIOD IS SHARED with the analytics dashboard, read from the same url
+    parameters. It replaces a `useState` month, which had two problems beyond being
+    month-only: a manager could not LINK to what they were looking at, and stepping
+    the month was invisible to the rest of the app. `v_team_attendance_days` and
+    `v_team_leave_days` are per-day rows, so any period is a predicate they honour.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
   const rawSlice = params.get("slice");
   const slice: TeamDaySlice = isTeamDaySlice(rawSlice) ? rawSlice : "all";
 
   const filters = useMemo(
-    () => ({ month, employeeIds, ...(slice !== "all" ? { slice } : {}) }),
-    [month, employeeIds, slice],
+    () => ({
+      from: analytics.period.from,
+      to: analytics.period.to,
+      employeeIds,
+      ...(slice !== "all" ? { slice } : {}),
+    }),
+    [analytics.period.from, analytics.period.to, employeeIds, slice],
   );
 
   const days = useTeamDays(filters);
   const rows = days.data ?? [];
-  const summaries = useTeamPeriodSummaries(month, employeeIds);
+  const summaries = useTeamPeriodSummaries(
+    analytics.period.from,
+    analytics.period.to,
+    employeeIds,
+  );
 
   // One count per slice tile, all sharing the month + roster predicate. The
   // hook takes the slice as its second argument (it overrides the filter's).
   // Written out one call per slice — hooks may not be called in a loop, and a
   // fixed record of seven calls is the honest version of that constraint.
-  const base = { month, employeeIds } as const;
+  const base = {
+    from: analytics.period.from,
+    to: analytics.period.to,
+    employeeIds,
+  } as const;
   const counts: Record<TeamDaySlice, ReturnType<typeof useTeamDayCount>> = {
     all: useTeamDayCount(base, undefined),
     exceptions: useTeamDayCount(base, "exceptions"),
@@ -258,8 +279,9 @@ export default function TeamAttendancePage() {
         icon={Clock}
         title={t("team.att.title")}
         subtitle={t("team.att.subtitle", { n: formatNumber(employeeIds.length) })}
-        actions={<MonthStepper month={month} onChange={setMonth} />}
       />
+
+      <PeriodBar className="mb-4" />
 
       {noTeam ? (
         <div className="mt-6">

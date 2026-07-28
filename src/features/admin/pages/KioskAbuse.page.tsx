@@ -42,10 +42,6 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { PunchLocation } from "@/shared/ui/PunchLocation";
 import {
   fmtDateTime,
-  fmtMonthLong,
-  isIstMonthKey,
-  istMonthRange,
-  nowIstMonth,
 } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -71,7 +67,9 @@ import {
 } from "../hooks/usePunchConsole";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
 import { useReasonPrompt } from "../hooks/useReasonPrompt";
-import { MonthStepper } from "../components/MonthStepper";
+import { PeriodBar } from "../components/PeriodBar";
+import { periodLabel } from "../analyticsFilterBar";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -141,10 +139,20 @@ export default function KioskAbusePage() {
   const [params, setParams] = useSearchParams();
   const { employee } = useAuth();
 
-  const requestedMonth = params.get("m");
-  const month =
-    requestedMonth !== null && isIstMonthKey(requestedMonth) ? requestedMonth : nowIstMonth();
-  const range = useMemo(() => istMonthRange(month), [month]);
+  /*
+    THE PERIOD IS SHARED with the analytics dashboard, read from the same url
+    parameters, so a period chosen there survives the click into this queue. Named
+    `analytics` so it cannot be confused with this page's own bucket/void filters.
+
+    Everything this screen reads is day-grained — `attendance_punches` rows and
+    `v_kiosk_health` over (from, to) — so a day, a week or a year are all questions
+    it can answer honestly, not just a calendar month.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
+  const range = useMemo(
+    () => ({ from: analytics.period.from, to: analytics.period.to }),
+    [analytics.period.from, analytics.period.to],
+  );
 
   const requestedBucket = params.get("q") ?? "";
   const bucket: AbuseBucket = isAbuseBucket(requestedBucket) ? requestedBucket : "flagged";
@@ -380,8 +388,9 @@ export default function KioskAbusePage() {
         icon={ShieldCheck}
         title={t("admin.kiosk.abuse.title")}
         subtitle={t("admin.kiosk.abuse.subtitle")}
-        actions={<MonthStepper month={month} onChange={(next) => setSearchParam("m", next)} />}
       />
+
+      <PeriodBar className="mb-4" />
 
       <KioskSectionNav />
 
@@ -440,7 +449,7 @@ export default function KioskAbusePage() {
               numbers: t("admin.kiosk.abuse.kpi.gateNumbers", {
                 value: formatNumber(livenessRefused),
                 rows: formatNumber(healthRows.length),
-                month: fmtMonthLong(month),
+                period: periodLabel(analytics.period),
               }),
             }}
           />
@@ -452,7 +461,7 @@ export default function KioskAbusePage() {
               numbers: t("admin.kiosk.abuse.kpi.gateNumbers", {
                 value: formatNumber(duplicatesSuppressed),
                 rows: formatNumber(healthRows.length),
-                month: fmtMonthLong(month),
+                period: periodLabel(analytics.period),
               }),
             }}
           />
@@ -518,11 +527,11 @@ export default function KioskAbusePage() {
               </div>
               <p className="text-xs text-muted-foreground" aria-live="polite">
                 {bucketCount === null
-                  ? t("admin.kiosk.abuse.showing.unknown", { month: fmtMonthLong(month) })
+                  ? t("admin.kiosk.abuse.showing.unknown", { month: periodLabel(analytics.period) })
                   : t("admin.kiosk.abuse.showing", {
                       shown: formatNumber((rows.data ?? []).length),
                       total: formatNumber(bucketCount),
-                      month: fmtMonthLong(month),
+                      period: periodLabel(analytics.period),
                     })}
               </p>
             </div>
@@ -532,7 +541,7 @@ export default function KioskAbusePage() {
               icon={ShieldCheck}
               title={t("admin.kiosk.abuse.empty.title", {
                 label: t(BUCKET_LABEL[bucket]),
-                month: fmtMonthLong(month),
+                period: periodLabel(analytics.period),
               })}
               hint={t(BUCKET_EMPTY_HINT[bucket])}
               action={

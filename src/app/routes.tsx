@@ -17,6 +17,8 @@ import PageStub from "@/shared/ui/PageStub";
 import { PAGE_REGISTRY } from "@/features/registry";
 import { ROUTES, REDIRECTS, type RouteMeta } from "./route-manifest";
 import { AppShell } from "./shell/AppShell";
+import { SectionNav } from "./shell/SectionNav";
+import { hasSectionNav } from "./shell/sectionNavModel";
 import { FirstRunGate, RedirectIfAuthed, RequireAuth, RequireCap, RootRedirect } from "./auth/guards";
 
 // Auth + kiosk surfaces are eagerly-split chunks of their own.
@@ -59,10 +61,40 @@ function ManifestRoute({ meta }: { meta: RouteMeta }) {
   const Element = useRouteElement(meta);
   return (
     <RequireCap cap={meta.cap}>
+      {/*
+        THE SECTION STRIP IS MOUNTED ONCE, HERE, not on ~60 individual pages.
+
+        This is the only place that already holds `meta` for every screen, so the
+        strip can be derived from `meta.domain` with no path parsing and no per-page
+        edit. Mounting it inside each page would have meant sixty near-identical
+        changes and sixty chances to miss one — which is precisely the failure mode
+        the strip exists to fix.
+
+        It renders INSIDE `RequireCap`, so somebody refused a screen sees the refusal
+        rather than a section strip framing an error. `SectionNav` returns null for
+        any domain without a strip, so this costs nothing on the other sections.
+      */}
+      <SectionNavForRoute domain={meta.domain} />
       <Suspense fallback={<RouteFallback />}>
         <Element />
       </Suspense>
     </RequireCap>
+  );
+}
+
+/**
+ * The strip, padded to line up with the page container beneath it.
+ *
+ * Every page renders its own `container py-6`, so an unpadded strip would sit flush
+ * against the viewport edge while the page content was inset — the tabs would not
+ * line up with the heading they belong to.
+ */
+function SectionNavForRoute({ domain }: { domain: string }) {
+  if (!hasSectionNav(domain)) return null;
+  return (
+    <div className="container pt-6">
+      <SectionNav domain={domain} />
+    </div>
   );
 }
 

@@ -32,7 +32,7 @@ import { BarChart3, Users } from "lucide-react";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
-import { addIstMonths, fmtDurationHm, fmtMonthLong, nowIstMonth } from "@/lib/datetime";
+import { addIstMonths, fmtDurationHm, fmtMonthLong, istMonthRange, nowIstMonth } from "@/lib/datetime";
 import { dash, formatNumber, formatPercent } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
@@ -102,18 +102,37 @@ export default function TeamAnalyticsPage() {
     () => Array.from({ length: TREND_MONTHS }, (_, k) => addIstMonths(month, -(TREND_MONTHS - 1 - k))),
     [month],
   );
-  const m0 = useTeamPeriodSummaries(months[0] ?? month, employeeIds);
-  const m1 = useTeamPeriodSummaries(months[1] ?? month, employeeIds);
-  const m2 = useTeamPeriodSummaries(months[2] ?? month, employeeIds);
-  const m3 = useTeamPeriodSummaries(months[3] ?? month, employeeIds);
-  const m4 = useTeamPeriodSummaries(months[4] ?? month, employeeIds);
-  const m5 = useTeamPeriodSummaries(months[5] ?? month, employeeIds);
+  /*
+    THIS SCREEN KEEPS ITS MONTH STEPPER, deliberately. The chart is a month-over-month
+    trend: six calls to the same server function, one per calendar month. A day or a
+    custom range is not a narrower version of that question, it is a different chart —
+    so offering the shared period here would be a control that cannot mean what it says.
+    The other team screens (attendance, leave) read per-day rows and DID move.
+
+    The window is expanded here now that `useTeamPeriodSummaries` takes (from, to):
+    the function `f_attendance_period_summary` never cared about months.
+  */
+  const windows = useMemo(
+    () => months.map((m) => istMonthRange(m)),
+    [months],
+  );
+  const w = (k: number) => windows[k] ?? istMonthRange(month);
+  const m0 = useTeamPeriodSummaries(w(0).from, w(0).to, employeeIds);
+  const m1 = useTeamPeriodSummaries(w(1).from, w(1).to, employeeIds);
+  const m2 = useTeamPeriodSummaries(w(2).from, w(2).to, employeeIds);
+  const m3 = useTeamPeriodSummaries(w(3).from, w(3).to, employeeIds);
+  const m4 = useTeamPeriodSummaries(w(4).from, w(4).to, employeeIds);
+  const m5 = useTeamPeriodSummaries(w(5).from, w(5).to, employeeIds);
   /** The selected month is the LAST of the six. */
   const current = m5;
 
   // Exception tiles for the selected month — the same counts /team/attendance
   // opens, so the two screens cannot disagree about how many late days there were.
-  const base = useMemo(() => ({ month, employeeIds }), [month, employeeIds]);
+  const selected = useMemo(() => istMonthRange(month), [month]);
+  const base = useMemo(
+    () => ({ from: selected.from, to: selected.to, employeeIds }),
+    [selected.from, selected.to, employeeIds],
+  );
   const lateCount = useTeamDayCount(base, "late");
   const earlyExitCount = useTeamDayCount(base, "early_exit");
   const absentCount = useTeamDayCount(base, "absent");

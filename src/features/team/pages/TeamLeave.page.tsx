@@ -18,7 +18,7 @@
  *
  * @route /team/leave
  */
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CalendarDays, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,13 +27,14 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
-import { fmtCivilDateWeekday, nowIstDate } from "@/lib/datetime";
+import { fmtCivilDateWeekday } from "@/lib/datetime";
 import { dash, formatDays, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
 import { PersonCell } from "@/features/admin/components/PersonCell";
-import { MonthStepper } from "@/features/admin/components/MonthStepper";
+import { PeriodBar } from "@/features/admin/components/PeriodBar";
+import { useAnalyticsFilters } from "@/features/admin/hooks/useAnalyticsFilters";
 import { SelectField } from "@/features/admin/components/Field";
 import {
   isTeamLeaveSlice,
@@ -75,18 +76,30 @@ export default function TeamLeavePage() {
   // the roster is loading, instead of a fresh [] every render.
   const employeeIds = useMemo(() => roster.data?.employeeIds ?? [], [roster.data]);
 
-  const [month, setMonth] = useState(() => nowIstDate().slice(0, 7));
+  /*
+    THE PERIOD IS SHARED with the analytics dashboard, read from the same url
+    parameters. It replaces a `useState` month, which had two problems beyond being
+    month-only: a manager could not LINK to what they were looking at, and stepping
+    the month was invisible to the rest of the app. `v_team_attendance_days` and
+    `v_team_leave_days` are per-day rows, so any period is a predicate they honour.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
   const rawSlice = params.get("slice");
   const slice: TeamLeaveSlice = isTeamLeaveSlice(rawSlice) ? rawSlice : "all";
 
   const filters = useMemo(
-    () => ({ month, employeeIds, ...(slice !== "all" ? { slice } : {}) }),
-    [month, employeeIds, slice],
+    () => ({
+      from: analytics.period.from,
+      to: analytics.period.to,
+      employeeIds,
+      ...(slice !== "all" ? { slice } : {}),
+    }),
+    [analytics.period.from, analytics.period.to, employeeIds, slice],
   );
 
   const leaveDays = useTeamLeaveDays(filters);
   const total = useTeamLeaveCount(
-    { month, employeeIds },
+    { from: analytics.period.from, to: analytics.period.to, employeeIds },
     slice === "all" ? undefined : slice,
   );
   const balances = useTeamLeaveBalances(employeeIds);
@@ -195,8 +208,9 @@ export default function TeamLeavePage() {
             ? t("team.leave.subtitle", { n: formatNumber(total.data) })
             : t("team.leave.subtitlePlain")
         }
-        actions={<MonthStepper month={month} onChange={setMonth} />}
       />
+
+      <PeriodBar className="mb-4" />
 
       {noTeam ? (
         <div className="mt-6">

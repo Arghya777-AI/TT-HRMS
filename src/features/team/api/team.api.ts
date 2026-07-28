@@ -84,7 +84,6 @@ import {
   selectOneOrThrow,
   type Filter,
 } from "@/shared/api/query";
-import { istMonthRange } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import type { StatusChipEntry } from "@/shared/ui/StatusChip";
 import { decideLeaveRequest } from "@/features/admin/api/leave.api";
@@ -999,8 +998,16 @@ export function isTeamDaySlice(value: string | null): value is TeamDaySlice {
 }
 
 export interface TeamDayFilters {
-  /** 'YYYY-MM', expanded to an inclusive IST civil-date window by `istMonthRange`. */
-  readonly month: string;
+  /*
+    An inclusive IST civil-date WINDOW, not a month.
+    It was `month: 'YYYY-MM'`, expanded here by `istMonthRange`. Nothing about
+    `v_team_attendance_days` is month-grained — the rows are per employee-day — so
+    the month was a needless narrowing that left the team screens unable to answer
+    "this week" or "this quarter" while the admin screens could. The callers now pass
+    the shared analytics period straight through.
+  */
+  readonly from: string;
+  readonly to: string;
   /** Reportee ids in scope. Empty means "this manager has no reportees". */
   readonly employeeIds: readonly string[];
   readonly slice?: TeamDaySlice;
@@ -1008,8 +1015,7 @@ export interface TeamDayFilters {
 
 /** The one place team-day predicates are built, so counts and rows agree. */
 export function teamDayFilters(f: TeamDayFilters): readonly Filter[] {
-  const { from, to } = istMonthRange(f.month);
-  const filters: Filter[] = [gte("ist_date", from), lte("ist_date", to)];
+  const filters: Filter[] = [gte("ist_date", f.from), lte("ist_date", f.to)];
   if (f.employeeIds.length > 0) filters.push(inList("employee_id", f.employeeIds));
   for (const extra of TEAM_DAY_SLICE_FILTERS[f.slice ?? "all"]) filters.push(extra);
   return filters;
@@ -1085,12 +1091,12 @@ export type TeamPeriodSummary = z.infer<typeof teamPeriodSummarySchema>;
  * which rows exist at all.
  */
 export async function fetchTeamPeriodSummaries(
-  month: string,
+  from: string,
+  to: string,
   employeeIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<TeamPeriodSummary[]> {
   if (employeeIds.length === 0) return [];
-  const { from, to } = istMonthRange(month);
   const rows = await rpcMany(
     F_PERIOD_SUMMARY_FN,
     { p_from: from, p_to: to, p_employee_id: null },
@@ -1152,14 +1158,15 @@ export function isTeamLeaveSlice(value: string | null): value is TeamLeaveSlice 
 }
 
 export interface TeamLeaveFilters {
-  readonly month: string;
+  /** Inclusive IST civil-date window — see `TeamDayFilters` for why not a month. */
+  readonly from: string;
+  readonly to: string;
   readonly employeeIds: readonly string[];
   readonly slice?: TeamLeaveSlice;
 }
 
 export function teamLeaveFilters(f: TeamLeaveFilters): readonly Filter[] {
-  const { from, to } = istMonthRange(f.month);
-  const filters: Filter[] = [gte("leave_date", from), lte("leave_date", to)];
+  const filters: Filter[] = [gte("leave_date", f.from), lte("leave_date", f.to)];
   if (f.employeeIds.length > 0) filters.push(inList("employee_id", f.employeeIds));
   for (const extra of TEAM_LEAVE_SLICE_FILTERS[f.slice ?? "all"]) filters.push(extra);
   return filters;

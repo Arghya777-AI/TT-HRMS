@@ -41,9 +41,12 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { dash, formatNumber } from "@/lib/format";
-import { fmtCivilDate, fmtDateTime, fmtMonthLong, istMonthRange, isIstMonthKey, nowIstMonth } from "@/lib/datetime";
+import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
+import { PERIOD_PARAM_KEYS } from "@/lib/period";
 import { t } from "@/shared/i18n/en";
-import { MonthStepper } from "../components/MonthStepper";
+import { PeriodBar } from "../components/PeriodBar";
+import { periodLabel } from "../analyticsFilterBar";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { ReasonActionButton } from "../components/ReasonActionButton";
@@ -101,14 +104,21 @@ function isMovementType(v: string | null): v is LifecycleEventType {
 export default function TransfersPage() {
   const [params, setParams] = useSearchParams();
 
-  const monthParam = params.get("m");
-  const month = monthParam !== null && isIstMonthKey(monthParam) ? monthParam : nowIstMonth();
+  /*
+    THE PERIOD IS SHARED with the analytics dashboard, read from the same url
+    parameters, so a period chosen there survives the click into this screen.
+    Named `analytics` so it cannot be confused with this page's own filters.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
   const typeParam = params.get("type");
   const eventType: LifecycleEventType | "" = isMovementType(typeParam) ? typeParam : "";
   const employeeId = params.get("employee") ?? "";
   const includeReversed = params.get("reversed") === "true";
 
-  const range = useMemo(() => istMonthRange(month), [month]);
+  const range = useMemo(
+    () => ({ from: analytics.period.from, to: analytics.period.to }),
+    [analytics.period.from, analytics.period.to],
+  );
 
   const labels = useEmployeeLabels();
   const employeeOptions = useEmployeeOptions(labels.data);
@@ -169,11 +179,6 @@ export default function TransfersPage() {
     setParams(next, { replace: true });
   }
 
-  function setMonth(next: string): void {
-    const p = new URLSearchParams(params);
-    p.set("m", next);
-    setParams(p, { replace: true });
-  }
 
   const columns: DataGridColumn<LifecycleEvent>[] = [
     {
@@ -237,9 +242,10 @@ export default function TransfersPage() {
       <PageHeader
         icon={Workflow}
         title={t("admin.transfers.title")}
-        subtitle={t("admin.transfers.subtitle", { month: fmtMonthLong(month) })}
-        actions={<MonthStepper month={month} onChange={setMonth} />}
+        subtitle={t("admin.transfers.subtitle", { month: periodLabel(analytics.period) })}
       />
+
+      <PeriodBar className="mb-4" />
 
       <div className="mt-4">
         <Notice tone="info">{t("admin.transfers.triggerNotice")}</Notice>
@@ -259,7 +265,7 @@ export default function TransfersPage() {
         {total.isSuccess
           ? t("admin.transfers.registerCount", {
               n: formatNumber(total.data),
-              month: fmtMonthLong(month),
+              month: periodLabel(analytics.period),
             })
           : t("admin.transfers.registerCountUnknown")}
       </p>
@@ -295,8 +301,17 @@ export default function TransfersPage() {
               type="button"
               variant="ghost"
               onClick={() => {
+                /*
+                  Clear this page's OWN narrowing and keep the shared period. The
+                  period lives in the analytics params that PeriodBar owns; wiping
+                  it as a side effect of clearing a type filter would reset a
+                  reader's chosen window without them asking.
+                */
                 const next = new URLSearchParams();
-                next.set("m", month);
+                for (const key of PERIOD_PARAM_KEYS) {
+                  const held = params.get(key);
+                  if (held !== null) next.set(key, held);
+                }
                 setParams(next, { replace: true });
               }}
             >

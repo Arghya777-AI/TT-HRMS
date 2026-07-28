@@ -46,14 +46,13 @@ import {
   fmtDateTime,
   fmtDurationHm,
   fmtTime,
-  isIstMonthKey,
-  istMonthOfDate,
-  istMonthRange,
-  nowIstMonth,
 } from "@/lib/datetime";
+import { PERIOD_PARAM_KEYS } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
-import { MonthStepper } from "../components/MonthStepper";
+import { PeriodBar } from "../components/PeriodBar";
+import { periodLabel } from "../analyticsFilterBar";
+import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -118,13 +117,15 @@ export default function DayRecordsPage() {
   // the Command Centre's own links (`?date=…&late=true`).
   const dateParam = params.get("date");
   const singleDate = dateParam !== null && CIVIL_DATE.test(dateParam) ? dateParam : null;
-  const monthParam = params.get("m");
-  const month =
-    singleDate !== null
-      ? istMonthOfDate(singleDate)
-      : monthParam !== null && isIstMonthKey(monthParam)
-        ? monthParam
-        : nowIstMonth();
+
+  /*
+    THE PERIOD IS SHARED, not private to this page. `useAnalyticsFilters` reads the
+    same url parameters the analytics dashboard writes, so a period chosen there
+    survives the click through to this grid — which is what "the same filters apply
+    on every details page" has to mean in practice. Named `analytics` because
+    `filters` below is this page's own `DayFilters`.
+  */
+  const { filters: analytics } = useAnalyticsFilters();
 
   const employeeId = params.get("employee") ?? "";
   // `DayFilters.departmentIds` filters `department_name`: the day view exposes the
@@ -142,9 +143,20 @@ export default function DayRecordsPage() {
   const employeeOptions = useEmployeeOptions(labels.data);
   const departments = useRefOptions("departments");
 
+  /*
+    A single-date deep link still wins — that is the shape of the Command Centre's
+    own links (`?date=…&late=true`) and a link that named one day must not silently
+    widen to a period. Otherwise the range is the SHARED period, so this grid
+    answers day, week, month, year or a custom range rather than only a month.
+    `v_attendance_day_enriched` is per employee-day, so every one of those is a
+    predicate it can honour honestly.
+  */
   const range = useMemo(
-    () => (singleDate !== null ? { from: singleDate, to: singleDate } : istMonthRange(month)),
-    [singleDate, month],
+    () =>
+      singleDate !== null
+        ? { from: singleDate, to: singleDate }
+        : { from: analytics.period.from, to: analytics.period.to },
+    [singleDate, analytics.period.from, analytics.period.to],
   );
 
   const filters = useMemo<DayFilters>(
@@ -199,21 +211,35 @@ export default function DayRecordsPage() {
     setParams(next, { replace: true });
   }
 
-  function setMonth(next: string): void {
+  /**
+   * Drop a single-date deep link and fall back to the shared period.
+   *
+   * It does NOT write a period of its own: the period lives in the analytics
+   * parameters that `PeriodBar` owns, and re-setting it here would fight the bar
+   * for the same url.
+   */
+  function clearSingleDate(): void {
     const params2 = new URLSearchParams(params);
-    params2.set("m", next);
-    // The month stepper and a single-date deep link are the same control; the
-    // one the admin touched last wins.
     params2.delete("date");
     params2.delete("openEmployee");
     params2.delete("openDate");
     setParams(params2, { replace: true });
   }
 
+  /**
+   * Clear this page's OWN narrowing (employee, department, status, the flags) and
+   * nothing else. The period parameters are deliberately carried over: "clear the
+   * filters" means the ones on this screen, and resetting somebody's chosen period
+   * as a side effect of clearing a status chip is the kind of surprise that makes a
+   * reader stop trusting the controls.
+   */
   function clearFilters(): void {
     const next = new URLSearchParams();
     if (singleDate !== null) next.set("date", singleDate);
-    else next.set("m", month);
+    for (const key of PERIOD_PARAM_KEYS) {
+      const held = params.get(key);
+      if (held !== null) next.set(key, held);
+    }
     setParams(next, { replace: true });
   }
 
@@ -363,25 +389,33 @@ export default function DayRecordsPage() {
     },
   ];
 
-  const periodLabel =
-    singleDate !== null ? fmtCivilDateWeekday(singleDate) : t("admin.days.wholeMonth");
+  /*
+    The subtitle names the period the grid is ACTUALLY showing. It used to say
+    "whole month" unconditionally, which became a plain untruth the moment this
+    screen started honouring a week or a year — the header would claim a month while
+    the counts below covered seven days. `periodLabel` is the same formatter the
+    filter bar's own chip uses, so the two cannot disagree.
+  */
+  const shownPeriod =
+    singleDate !== null ? fmtCivilDateWeekday(singleDate) : periodLabel(analytics.period);
 
   return (
     <div className="container py-6">
       <PageHeader
         icon={CalendarClock}
         title={t("admin.days.title")}
-        subtitle={t("admin.days.subtitle", { period: periodLabel })}
-        actions={<MonthStepper month={month} onChange={setMonth} />}
+        subtitle={t("admin.days.subtitle", { period: shownPeriod })}
       />
+
+      <PeriodBar className="mb-4" />
 
       {singleDate !== null ? (
         <div className="mb-4">
           <Notice
             tone="info"
             action={
-              <Button variant="outline" size="sm" onClick={() => setMonth(month)}>
-                {t("admin.days.showWholeMonth")}
+              <Button variant="outline" size="sm" onClick={clearSingleDate}>
+                {t("admin.days.showWholePeriod")}
               </Button>
             }
           >

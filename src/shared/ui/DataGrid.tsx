@@ -251,8 +251,19 @@ export function DataGrid<T>({
                   }
                   className={cn("p-4", onRowClick && "cursor-pointer transition-colors hover:bg-muted/50")}
                 >
+                  {/*
+                    A `div`, NOT a `p`. A column's `render` may return anything —
+                    a StatusChip, a PersonCell, a PunchLocation — and every one of
+                    those is a block element. `<p>` may only contain phrasing
+                    content, so React logged `validateDOMNesting: <div> cannot
+                    appear as a descendant of <p>` on the analytics screen, and the
+                    browser SILENTLY CLOSES the paragraph before the offending
+                    child: the title and the rest of the card end up as siblings,
+                    which is a real layout bug on narrow screens and not only a
+                    console warning.
+                  */}
                   {titleColumn ? (
-                    <p className="font-medium">{cellContent(row, titleColumn)}</p>
+                    <div className="font-medium">{cellContent(row, titleColumn)}</div>
                   ) : null}
                   <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
                     {cardColumns

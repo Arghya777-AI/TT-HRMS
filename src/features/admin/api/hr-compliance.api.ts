@@ -464,7 +464,7 @@ export interface EnrolmentGapResult {
  * The total is a separate `count=exact` over the SAME predicate, so the tile is
  * the true size of the queue even when the page below it was capped.
  */
-export async function fetchEnrolmentGaps(
+export async function fetchEnrolmentCoverageSummary(
   filters: AnalyticsFilters,
   opts: ComplianceFetchOptions = {},
 ): Promise<EnrolmentGapResult> {

@@ -329,16 +329,32 @@ export function useEmployeeSalaryRevisions(
  * RLS-protected read "no such employee" and "not in your admin scope" are
  * indistinguishable at the wire, and the page says so instead of guessing.
  */
+export function useEmployeePeriodSummary(
+  employeeId: string | null,
+  from: string,
+  to: string,
+): UseQueryResult<PeriodSummary | null, Error> {
+  return useQuery({
+    queryKey: qk.admin.attendanceSummary(from, to, employeeId ?? "none"),
+    queryFn: ({ signal }) => fetchEmployeePeriodSummary(employeeId ?? "", from, to, signal),
+    enabled: employeeId !== null && employeeId !== "",
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * The same strip for one IST month.
+ *
+ * Kept as a thin wrapper rather than the primary shape: `f_attendance_period_summary`
+ * has ALWAYS taken an arbitrary (employee, from, to) — the month was only how this
+ * hook happened to be parameterised, and that accident was what stopped
+ * `/admin/people/:code/attendance` from honouring the shared day/week/year period.
+ * The function was never the constraint.
+ */
 export function useEmployeeMonthSummary(
   employeeId: string | null,
   month: string,
 ): UseQueryResult<PeriodSummary | null, Error> {
   const range = istMonthRange(month);
-  return useQuery({
-    queryKey: qk.admin.attendanceSummary(range.from, range.to, employeeId ?? "none"),
-    queryFn: ({ signal }) =>
-      fetchEmployeePeriodSummary(employeeId ?? "", range.from, range.to, signal),
-    enabled: employeeId !== null && employeeId !== "",
-    retry: shouldRetryQuery,
-  });
+  return useEmployeePeriodSummary(employeeId, range.from, range.to);
 }

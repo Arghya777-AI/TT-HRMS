@@ -53,6 +53,10 @@ import { t } from "@/shared/i18n/en";
 import { withFilters, type AnalyticsFilters } from "@/lib/analyticsFilters";
 import { exportReport } from "@/lib/exportReport";
 import { AnalyticsFilterBar } from "./AnalyticsFilterBar";
+import { WorkforcePanel } from "./WorkforcePanel";
+import { MovementPanel } from "./MovementPanel";
+import { LeaveCostPanel } from "./LeaveCostPanel";
+import { CompliancePanel } from "./CompliancePanel";
 import { Notice } from "./Notice";
 import {
   useAnalyticsFilterOptions,
@@ -62,6 +66,7 @@ import {
   useTodayBoard,
 } from "../hooks/useAnalytics";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
+import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
 import type { DepartmentBreakdownRow } from "../analyticsAggregate";
 
 /** Minutes → a clock face. `avgLastOutMinutes` can exceed 1440 on a night shift. */
@@ -76,6 +81,17 @@ function clockOf(minutes: number | null): string {
 export function AnalyticsOverview() {
   const navigate = useNavigate();
   const { filters } = useAnalyticsFilters();
+
+  /*
+    LIVE. One subscription for the whole dashboard, mounted here rather than in each
+    panel: every panel shares the analytics query key, so a single invalidation
+    refreshes all of them. Four subscriptions would mean four channels and four
+    refetch storms for one punch at the gate.
+
+    The hook coalesces events — a guard scanning a queue fires many per second, and
+    invalidating per event would make this slower than polling.
+  */
+  const live = useAnalyticsLive();
 
   const options = useAnalyticsFilterOptions();
   const today = useTodayBoard();
@@ -212,8 +228,16 @@ export function AnalyticsOverview() {
 
       {/* ── The selected period ──────────────────────────────────────────────── */}
       <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-lg font-semibold">
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
           {t("admin.analytics.overview.periodTitle")}
+          {/* Whether the figures are updating themselves is a property of the
+              screen a reader is entitled to see, not an implementation detail. */}
+          {live.status === "live" ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-normal text-muted-foreground">
+              <span className="size-2 rounded-full bg-success" aria-hidden />
+              {t("admin.analytics.overview.liveOn")}
+            </span>
+          ) : null}
         </h2>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => void download("csv")}>
@@ -404,6 +428,19 @@ export function AnalyticsOverview() {
           </p>
         ) : null}
       </StateBoundary>
+
+      {/*
+        THE HR BREADTH. Each panel owns its own queries and reads the SAME URL
+        filters, so stepping the period moves every one of them together — which is
+        the whole point of putting the filter in the URL rather than in state.
+
+        Ordered as an HR head reads: who is here, who is arriving and leaving, what
+        it costs, and what is out of compliance.
+      */}
+      <WorkforcePanel />
+      <MovementPanel />
+      <LeaveCostPanel />
+      <CompliancePanel />
     </section>
   );
 }

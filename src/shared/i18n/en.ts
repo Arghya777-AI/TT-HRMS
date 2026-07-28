@@ -27,6 +27,11 @@ import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
+import { keysHrCompliance } from "./keys/hr-compliance";
+import { keysHrLeaveCost } from "./keys/hr-leavecost";
+import { keysHrWorkforce } from "./keys/hr-workforce";
+import { keysHrMovement } from "./keys/hr-movement";
+import { keysAnalyticsLive } from "./keys/analytics-live";
 
 // Per-screen catalogues, each owned by exactly one author (see keys/*.ts).
 export const en = {
@@ -52,6 +57,11 @@ export const en = {
   ...keysAnalytics,
   ...keysAnalyticsPlanned,
   ...keysAnalyticsOverview,
+  ...keysHrLeaveCost,
+  ...keysAnalyticsLive,
+  ...keysHrMovement,
+  ...keysHrWorkforce,
+  ...keysHrCompliance,
   // App
   "app.name": "Tamarind Tree HRMS",
   "app.loading": "Loading…",

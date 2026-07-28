@@ -25,6 +25,7 @@ export const keysAnalyticsOverview = {
 
   // ── Selected period ───────────────────────────────────────────────────────
   "admin.analytics.overview.periodTitle": "Selected period",
+  "admin.analytics.overview.liveOn": "updating live",
   "admin.analytics.overview.employees": "People",
   "admin.analytics.overview.avgWorked": "Average worked",
   // The denominator, said out loud. An average over "days with a first AND last

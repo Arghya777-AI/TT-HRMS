@@ -75,7 +75,7 @@ export function SettingRow({ setting, canEdit, onSave }: SettingRowProps) {
         {setting.description !== null ? (
           <p className="mt-0.5 text-xs text-muted-foreground">{setting.description}</p>
         ) : null}
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="font-mono">{setting.key}</span>
           <span>{t("admin.settings.row.updated", { when: fmtDateTime(setting.updated_at) })}</span>
           {!canEdit ? (
@@ -84,7 +84,7 @@ export function SettingRow({ setting, canEdit, onSave }: SettingRowProps) {
               {t("admin.settings.row.superOnly")}
             </Badge>
           ) : null}
-        </p>
+        </div>
       </div>
 
       <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">

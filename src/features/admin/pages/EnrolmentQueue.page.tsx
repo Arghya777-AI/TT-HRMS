@@ -27,6 +27,9 @@ import { KpiTile } from "@/shared/ui/KpiTile";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
+import { useFaceLoginAccess, useSetFaceLogin } from "../../settings/hooks/useFaceLogin";
+import type { FaceLoginAccess } from "../../settings/api/faceLogin.api";
+import { PersonCell } from "../components/PersonCell";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
@@ -345,6 +348,121 @@ export default function EnrolmentQueuePage() {
           </Link>
         </p>
       </StateBoundary>
+
+      <FaceLoginRoster />
     </div>
+  );
+}
+
+/**
+ * Who may sign in with their face, for everybody in the admin's scope.
+ *
+ * The enrolment console is the right home for it: this is where an admin already
+ * decides who has a face template at all, and "may that template open a session" is
+ * the next question in the same breath.
+ *
+ * SCOPE IS THE VIEW'S, NOT THIS COMPONENT'S. `useFaceLoginAccess()` with no argument
+ * returns every row `v_face_login_access` permits — for an admin, their whole scope;
+ * for a manager who somehow reached this screen, only their team. Nothing here filters
+ * by role, so the list cannot be wider than the caller's authority.
+ */
+function FaceLoginRoster() {
+  const access = useFaceLoginAccess();
+  const rows = asArray(access.data);
+
+  const columns: DataGridColumn<FaceLoginAccess>[] = [
+    {
+      key: "display_name",
+      header: t("faceLogin.admin.col.person"),
+      width: "16rem",
+      render: (row) => (
+        <PersonCell name={row.display_name ?? "—"} code={row.employee_code ?? ""} />
+      ),
+    },
+    {
+      key: "allow_face_login",
+      header: t("faceLogin.admin.col.state"),
+      width: "10rem",
+      render: (row) => (
+        <StatusChip
+          status={row.allow_face_login ? "on" : "off"}
+          map={{
+            on: { label: t("faceLogin.state.on"), tone: "success" },
+            off: { label: t("faceLogin.state.off"), tone: "neutral" },
+          }}
+        />
+      ),
+    },
+    {
+      key: "has_live_template",
+      header: t("faceLogin.admin.col.enrolled"),
+      width: "14rem",
+      hideBelow: "md",
+      /*
+        Three states, not two. "Switch on but no template" and "switch on, privileged,
+        so refused anyway" both look like working face sign-in if the column only says
+        yes/no — and an admin acting on that would be wrong.
+      */
+      render: (row) =>
+        row.is_privileged ? (
+          <span className="text-sm text-muted-foreground">{t("faceLogin.admin.privileged")}</span>
+        ) : row.has_live_template ? (
+          <span className="text-sm">{t("faceLogin.admin.template.live")}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {row.has_enrolled ? t("faceLogin.admin.template.gone") : t("faceLogin.admin.template.none")}
+          </span>
+        ),
+    },
+    {
+      key: "action",
+      header: t("faceLogin.admin.col.action"),
+      align: "right",
+      width: "13rem",
+      render: (row) => <FaceLoginRowAction row={row} />,
+    },
+  ];
+
+  return (
+    <div className="mt-8">
+      <h2 className="font-display text-lg font-semibold">{t("faceLogin.admin.title")}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t("faceLogin.admin.hint")}</p>
+      <div className="mt-3">
+        <StateBoundary
+          loading={access.isPending}
+          error={access.error}
+          onRetry={() => void access.refetch()}
+          isEmpty={!access.isPending && access.error === null && rows.length === 0}
+          empty={<EmptyState icon={ScanFace} title={t("faceLogin.admin.empty")} />}
+          skeletonRows={4}
+        >
+          <DataGrid columns={columns} rows={rows} rowKey={(row) => row.employee_id} pageSize={15} />
+        </StateBoundary>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One row's button. Its own component so the pending state of one person's toggle
+ * cannot re-render, or disable, the whole table.
+ */
+function FaceLoginRowAction({ row }: { row: FaceLoginAccess }) {
+  const set = useSetFaceLogin();
+  if (!row.can_manage) {
+    return <span className="text-xs text-muted-foreground">{t("faceLogin.noPermission")}</span>;
+  }
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={row.allow_face_login ? "outline" : "default"}
+      disabled={set.isPending}
+      onClick={() =>
+        set.mutate({ employeeId: row.employee_id, enabled: !row.allow_face_login })
+      }
+    >
+      {row.allow_face_login ? t("faceLogin.action.disable") : t("faceLogin.action.enable")}
+    </Button>
   );
 }

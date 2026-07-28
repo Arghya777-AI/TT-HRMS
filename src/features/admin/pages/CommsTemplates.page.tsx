@@ -429,7 +429,7 @@ export default function CommsTemplatesPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t("admin.comms.tpl.editor.tokens")}
               </p>
-              <p className="mt-1.5 flex flex-wrap gap-1">
+              <div className="mt-1.5 flex flex-wrap gap-1">
                 {tokensInBody(editor.body).length === 0 ? (
                   <span className="text-xs text-muted-foreground">
                     {t("admin.comms.tpl.editor.noTokens")}
@@ -441,7 +441,7 @@ export default function CommsTemplatesPage() {
                     </Badge>
                   ))
                 )}
-              </p>
+              </div>
               {tokenList(selected.variables).length > 0 ? (
                 <p className="mt-2 text-xs text-muted-foreground">
                   {t("admin.comms.tpl.editor.declared", {

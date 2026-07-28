@@ -873,7 +873,7 @@ export function FaceEnrolmentConsole() {
                     <p className="text-muted-foreground">{t("admin.faceEnrol.invite.none")}</p>
                   ) : null}
                   {selected.invitation !== null ? (
-                    <p className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <StatusChip
                         status={selected.invitation.status}
                         map={requestChip(selected.invitation.status)}
@@ -883,10 +883,10 @@ export function FaceEnrolmentConsole() {
                           when: fmtDateTime(selected.invitation.requested_at),
                         })}
                       </span>
-                    </p>
+                    </div>
                   ) : null}
                   {selected.submission !== null ? (
-                    <p className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <StatusChip
                         status={selected.submission.status}
                         map={requestChip(selected.submission.status)}
@@ -896,7 +896,7 @@ export function FaceEnrolmentConsole() {
                           when: fmtDateTime(selected.submission.requested_at),
                         })}
                       </span>
-                    </p>
+                    </div>
                   ) : null}
                   <p className="text-muted-foreground">{t("admin.faceEnrol.notify.inAppGap")}</p>
                   {selected.invitation !== null ? (

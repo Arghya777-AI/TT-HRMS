@@ -29,6 +29,7 @@ import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
 import { keysPunchLocation } from "./keys/punch-location";
 import { keysSectionNav } from "./keys/section-nav";
+import { keysFaceLogin } from "./keys/face-login";
 import { keysHrCompliance } from "./keys/hr-compliance";
 import { keysHrLeaveCost } from "./keys/hr-leavecost";
 import { keysHrWorkforce } from "./keys/hr-workforce";
@@ -61,6 +62,7 @@ export const en = {
   ...keysAnalyticsOverview,
   ...keysPunchLocation,
   ...keysSectionNav,
+  ...keysFaceLogin,
   ...keysHrLeaveCost,
   ...keysAnalyticsLive,
   ...keysHrMovement,

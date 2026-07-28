@@ -58,6 +58,8 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
+import { FaceLoginSwitch } from "@/shared/ui/FaceLoginSwitch";
+import { useFaceLoginAccess } from "../hooks/useFaceLogin";
 import { Notice } from "@/features/admin/components/Notice";
 import { useSwipeCards } from "@/features/profile/hooks/useProfile";
 import type { SwipeCard } from "@/features/profile/api/employment.api";
@@ -561,6 +563,50 @@ function PasskeysCard() {
   );
 }
 
+/* ── Face SIGN-IN switch ──────────────────────────────────────────────────── */
+
+/**
+ * The employee's own face sign-in switch.
+ *
+ * `useFaceLoginAccess()` with no argument returns exactly one row — theirs — because
+ * `v_face_login_access` scopes rows to self OR manager-of OR admin-scope. An employee
+ * therefore cannot see or reach anybody else's switch through this card, and that is
+ * enforced in Postgres rather than by what this component chooses to render.
+ */
+function MyFaceLoginCard() {
+  const access = useFaceLoginAccess();
+  const auth = useAuth();
+  const mine = access.data?.find((row) => row.employee_id === auth.employee?.employeeId) ?? null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("faceLogin.title.self")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <StateBoundary
+          loading={access.isPending}
+          error={access.error}
+          onRetry={() => void access.refetch()}
+          isEmpty={!access.isPending && access.error === null && mine === null}
+          empty={<p className="text-sm text-muted-foreground">{t("faceLogin.noEmployee")}</p>}
+          skeletonRows={2}
+        >
+          {mine !== null ? (
+            // No border: the Card already provides one.
+            <FaceLoginSwitch
+              row={mine}
+              audience="self"
+              hideTitle
+              className="border-0 bg-transparent p-0"
+            />
+          ) : null}
+        </StateBoundary>
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ── Face enrolment ───────────────────────────────────────────────────────── */
 
 function FaceCard() {
@@ -639,7 +685,12 @@ function FaceCard() {
 
           {latest !== null ? (
             <div className="rounded-md border p-3">
-              <p className="flex flex-wrap items-center gap-2 text-sm">
+              {/* A `div`, not a `p`: StatusChip and Badge both render a div, and `<p>`
+                  may only contain phrasing content — the browser silently closes the
+                  paragraph before the first one, so the badges after it became
+                  siblings of the paragraph rather than children of it. Same defect
+                  class as the DataGrid card title fixed alongside this. */}
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <StatusChip status={latest.status} map={ENROLMENT_CHIP} />
                 <span className="num text-xs text-muted-foreground">
                   {t("security.face.requested", { when: fmtDateTime(latest.requested_at) })}
@@ -656,7 +707,7 @@ function FaceCard() {
                     })}
                   </Badge>
                 ) : null}
-              </p>
+              </div>
               {latest.review_comment !== null ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">{latest.review_comment}</p>
               ) : null}
@@ -848,6 +899,10 @@ export default function SecurityPage() {
         <AuthenticatorCard />
         <PasskeysCard />
         <FaceCard />
+        {/* The switch sits NEXT TO the enrolment card, not inside it: enrolment is
+            "does a template exist", this is "may it open a session", and merging them
+            would suggest that withdrawing one withdraws the other. */}
+        <MyFaceLoginCard />
         <SwipeCardsCard />
         <SessionsCard />
       </div>

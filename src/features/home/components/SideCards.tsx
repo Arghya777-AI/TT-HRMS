@@ -143,7 +143,7 @@ export function UpcomingHolidaysCard({ query, hasCalendar }: HolidaysCardProps) 
                 <p className="num text-xs text-muted-foreground">
                   {fmtCivilDateWeekday(h.holiday_date)}
                 </p>
-                <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   <span className="min-w-0">{h.name}</span>
                   {h.is_optional ? (
                     <Badge variant="info">{t("home.holidays.optional")}</Badge>
@@ -151,7 +151,7 @@ export function UpcomingHolidaysCard({ query, hasCalendar }: HolidaysCardProps) 
                   {!h.is_paid ? (
                     <Badge variant="neutral">{t("home.holidays.unpaid")}</Badge>
                   ) : null}
-                </p>
+                </div>
               </li>
             ))}
           </ul>
@@ -196,7 +196,7 @@ export function AnnouncementsCard({ query }: AnnouncementsCardProps) {
           <ul className="divide-y">
             {rows.slice(0, 3).map((a) => (
               <li key={a.id} className="py-2.5 first:pt-0 last:pb-0">
-                <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   <span className="min-w-0">{a.title}</span>
                   {a.pinned ? <Badge variant="neutral">{t("home.news.pinned")}</Badge> : null}
                   {(() => {
@@ -205,7 +205,7 @@ export function AnnouncementsCard({ query }: AnnouncementsCardProps) {
                       <Badge variant={badge.variant}>{badge.label}</Badge>
                     );
                   })()}
-                </p>
+                </div>
                 {a.requires_acknowledgement ? (
                   <p className="mt-0.5 text-xs text-warning">{t("home.news.needsAck")}</p>
                 ) : null}
@@ -259,12 +259,12 @@ export function LastPayslipCard({ query }: LastPayslipCardProps) {
           const period = row.pay_period?.name ?? fmtCivilDate(row.period_start);
           return (
             <div className="space-y-3">
-              <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                 <span className="min-w-0">{period}</span>
                 {row.is_reversed ? (
                   <Badge variant="danger">{t("home.payslip.reversed")}</Badge>
                 ) : null}
-              </p>
+              </div>
               <dl className="grid grid-cols-2 gap-4">
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{t("home.payslip.netPay")}</dt>

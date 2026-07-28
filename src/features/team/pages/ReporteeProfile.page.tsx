@@ -81,6 +81,8 @@ import { StatusChip } from "@/shared/ui/StatusChip";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { PunchLocation } from "@/shared/ui/PunchLocation";
+import { FaceLoginSwitch } from "@/shared/ui/FaceLoginSwitch";
+import { useFaceLoginAccess } from "@/features/settings/hooks/useFaceLogin";
 import { dash, formatNumber } from "@/lib/format";
 import {
   addIstDays,
@@ -206,6 +208,15 @@ export default function ReporteeProfilePage() {
    * the day: the engine takes arrival from the FIRST scan of the business date
    * and departure from the LAST, whatever the gate wrote in this column.
    */
+  /*
+    The manager's copy of the face sign-in switch. Scoped by the DATABASE: passing this
+    reportee's id to `v_face_login_access` returns a row only if the caller is that
+    person, their reporting manager, or an admin in scope — so a manager cannot reach
+    a switch for somebody outside their team by editing the url.
+  */
+  const faceAccess = useFaceLoginAccess(employeeId === null ? [] : [employeeId]);
+  const faceRow = faceAccess.data?.[0] ?? null;
+
   const scanColumns: DataGridColumn<TeamPunch>[] = [
     {
       key: "effective_date",
@@ -429,6 +440,16 @@ export default function ReporteeProfilePage() {
                 )}
               </StateBoundary>
             </FactCard>
+
+            {/*
+              --- Face sign-in, which a manager may set for their own reportee ---
+
+              Rendered only when the database returned a row, which for this url means
+              the caller really is this person's reporting manager (or an admin in
+              scope). A manager who edits the url to somebody else's code gets no row
+              and therefore no control, without this page deciding anything.
+            */}
+            {faceRow !== null ? <FaceLoginSwitch row={faceRow} audience="other" /> : null}
 
             {/* --- The raw scan log, minus the forensics the view withholds --- */}
             <FactCard

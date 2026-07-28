@@ -344,6 +344,13 @@ interface AccountRow {
   is_privileged: boolean;
   /** An active, consented, un-purged template of the right dimension exists. */
   has_face_template: boolean;
+  /**
+   * `employees.allow_face_login` (migration 078) — the per-person switch the
+   * employee, their manager or an admin can flip. Separate from CONSENT: consent is
+   * permission to hold a template at all and lives in `secure.biometric_consents`;
+   * this is permission to use it to open a session.
+   */
+  allow_face_login: boolean;
 }
 
 interface CandidateRow {
@@ -509,7 +516,14 @@ async function resolveAccount(client: Sql, identifier: string): Promise<AccountR
                 AND t.is_active
                 AND t.purged_at IS NULL
                 AND t.descriptor_dim = ${DESCRIPTOR_DIM}
-           )                           AS has_face_template
+           )                           AS has_face_template,
+           -- COALESCE: a profile with no employee row LEFT JOINs to NULL, and a NULL
+           -- must not read as permission. assertFaceEligible refuses a null employee
+           -- anyway, but a boolean that can arrive NULL is a trap for the next person
+           -- to touch this query. No backticks in here: inside a tagged template a
+           -- backtick in a SQL comment ENDS the literal, which is how this same
+           -- mistake took down device auth once already.
+           COALESCE(e.allow_face_login, false) AS allow_face_login
       FROM public.profiles p
       LEFT JOIN public.employees e
              ON e.profile_id = p.id AND e.deleted_at IS NULL
@@ -539,7 +553,19 @@ function assertAccountUsable(account: AccountRow): void {
  * consented template. Everything else gets the ONE generic refusal.
  */
 function assertFaceEligible(account: AccountRow): string {
-  if (account.is_privileged || !account.has_face_template || account.employee_id === null) {
+  /*
+    `allow_face_login` joins the SAME generic refusal as every other gate, and that is
+    deliberate. Telling a caller "face sign-in is switched off for this account" would
+    confirm the account exists and hand an attacker a probe for which accounts are
+    worth attacking. The person who turned the switch off already knows they did; the
+    screen that owns the switch says so in words, where the reader is authenticated.
+  */
+  if (
+    account.is_privileged ||
+    !account.has_face_template ||
+    !account.allow_face_login ||
+    account.employee_id === null
+  ) {
     faceUnavailable();
   }
   return account.employee_id;

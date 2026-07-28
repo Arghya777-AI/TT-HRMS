@@ -12,6 +12,16 @@
  * short tail look like a collapse in attendance.
  */
 export const keysAnalyticsOverview = {
+  // ── Sub-tabs ──────────────────────────────────────────────────────────────
+  // Five sections instead of one 19,906 px page. Named for the QUESTION each
+  // answers, not for the panel component behind it.
+  "admin.dashboard.tabs.label": "Dashboard sections",
+  "admin.dashboard.tab.overview": "Overview",
+  "admin.dashboard.tab.workforce": "Workforce & org",
+  "admin.dashboard.tab.movement": "Movement & risk",
+  "admin.dashboard.tab.leavecost": "Leave & cost",
+  "admin.dashboard.tab.compliance": "Compliance & ops",
+
   // ── Live board ────────────────────────────────────────────────────────────
   "admin.analytics.overview.todayTitle": "On site today",
   "admin.analytics.overview.onRoll": "On roll",

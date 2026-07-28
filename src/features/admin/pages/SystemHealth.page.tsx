@@ -404,14 +404,14 @@ export default function SystemHealthPage() {
         skeletonRows={4}
       >
         {cronRows.length > 0 ? (
-          <p className="mb-2 text-xs text-muted-foreground">
+          <div className="mb-2 text-xs text-muted-foreground">
             <Badge variant="neutral">
               {t("admin.settings.health.jobs.enabled", {
                 on: formatNumber(cronEnabled),
                 total: formatNumber(cronRows.length),
               })}
             </Badge>
-          </p>
+          </div>
         ) : null}
         <DataGrid
           columns={jobColumns}

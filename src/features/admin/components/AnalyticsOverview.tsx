@@ -68,6 +68,7 @@ import {
 } from "../hooks/useAnalytics";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
+import { DashboardPanelTabs, useDashboardPanel } from "./DashboardPanelTabs";
 import { liveStatusCopy, type AnalyticsLiveStatus } from "../analyticsLive";
 import type { DepartmentBreakdownRow } from "../analyticsAggregate";
 
@@ -110,6 +111,7 @@ export function AnalyticsOverview() {
     invalidating per event would make this slower than polling.
   */
   const live = useAnalyticsLive();
+  const [panel, setPanel] = useDashboardPanel();
 
   const options = useAnalyticsFilterOptions();
   const today = useTodayBoard();
@@ -193,6 +195,21 @@ export function AnalyticsOverview() {
         optionsLoading={options.isLoading}
       />
 
+      {/*
+        SUB-TABS, because the whole dashboard on one page was 19,906 px tall — the
+        client's words were that it is "very, very, very strict to scroll down". Five
+        sections, one at a time, and ONLY the selected one is mounted: that also stops
+        five panels' worth of queries firing for figures nobody is looking at.
+
+        The choice lives in the url (`?panel=`) beside the period, so a particular
+        section of a particular period is a link somebody can send. It is a separate
+        parameter from the filter bar's, so switching sections never disturbs the
+        filters and clearing filters never bounces the reader to Overview.
+      */}
+      <DashboardPanelTabs active={panel} onSelect={setPanel} />
+
+      {panel === "overview" ? (
+      <>
       {/* ── Live: who is on site right now. Independent of the period filter, and
              labelled so nobody reads it as part of the selected range. ────────── */}
       <h2 className="mb-2 mt-5 font-display text-lg font-semibold">
@@ -466,10 +483,15 @@ export function AnalyticsOverview() {
         Nothing is lost by suppressing them: a dimension a panel cannot honour is
         declared in its own provenance caveats, not by the absence of a control.
       */}
-      <WorkforcePanel showFilterBar={false} />
-      <MovementPanel />
-      <LeaveCostPanel showFilterBar={false} />
-      <CompliancePanel showFilterBar={false} />
+      </>
+      ) : null}
+
+      {/* One panel at a time. Each is mounted ONLY while selected, so an unopened
+          section costs nothing — neither height nor queries. */}
+      {panel === "workforce" ? <WorkforcePanel showFilterBar={false} /> : null}
+      {panel === "movement" ? <MovementPanel /> : null}
+      {panel === "leavecost" ? <LeaveCostPanel showFilterBar={false} /> : null}
+      {panel === "compliance" ? <CompliancePanel showFilterBar={false} /> : null}
     </section>
   );
 }

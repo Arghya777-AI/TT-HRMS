@@ -243,12 +243,12 @@ export default function PolicyReaderPage() {
           </h2>
 
           {alreadyAcked ? (
-            <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="success">{t("policies.ack.done")}</Badge>
               <span className="num text-muted-foreground">
                 {t("policies.reader.acked", { when: fmtDateTime(ack.acknowledged_at ?? "") })}
               </span>
-            </p>
+            </div>
           ) : ack === null ? (
             <p className="mt-3 text-sm text-muted-foreground">{t("policies.reader.noAck")}</p>
           ) : (

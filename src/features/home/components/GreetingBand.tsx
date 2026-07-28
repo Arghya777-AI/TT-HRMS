@@ -61,7 +61,7 @@ export function GreetingBand({
         {shift === null ? (
           <p className="text-sm text-muted-foreground">{t("home.greeting.noShift")}</p>
         ) : (
-          <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+          <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
             <span className="num">{shiftWindow(shift)}</span>
             <Badge variant="neutral">
               {shiftSource === "assignment"
@@ -76,7 +76,7 @@ export function GreetingBand({
                 {t("home.greeting.break", { minutes: fmtDurationHm(shift.unpaid_break_minutes) })}
               </span>
             ) : null}
-          </p>
+          </div>
         )}
       </div>
 

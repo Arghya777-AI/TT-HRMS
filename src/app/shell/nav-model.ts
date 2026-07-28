@@ -115,6 +115,10 @@ const TEAM_ITEMS: readonly NavItem[] = [
 
 /** ADMIN group — section landings from the spec-admin route table. */
 const ADMIN_ITEMS: readonly NavItem[] = [
+  // DASHBOARD FIRST, ahead of the Command Centre. It is the screen an admin opens
+  // to see the state of the business, and it was previously eighth of ten — below
+  // the fold in a normal viewport, which is how it came to be reported missing.
+  { labelKey: "shell.nav.admin.analytics", to: "/admin/analytics", icon: BarChart3, cap: "admin.access" },
   { labelKey: "shell.nav.admin.command", to: "/admin", icon: Gauge, cap: "admin.access", badge: "admin.alerts" },
   { labelKey: "shell.nav.admin.people", to: "/admin/people", icon: Users, cap: "admin.access" },
   { labelKey: "shell.nav.admin.attendance", to: "/admin/attendance/live", icon: Clock, cap: "admin.access" },
@@ -128,7 +132,6 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   // employee's face is the task an admin comes here to do; the rest of the section
   // is reachable from that screen's own tabs.
   { labelKey: "shell.nav.admin.faceKiosk", to: "/admin/kiosk/enrolment", icon: ScanFace, cap: "admin.access" },
-  { labelKey: "shell.nav.admin.analytics", to: "/admin/analytics", icon: BarChart3, cap: "admin.access" },
   { labelKey: "shell.nav.admin.audit", to: "/admin/audit", icon: ShieldCheck, cap: "admin.access" },
   { labelKey: "shell.nav.admin.settings", to: "/admin/settings/branding", icon: Settings, cap: "admin.access" },
 ];

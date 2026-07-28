@@ -57,10 +57,10 @@ export function AttentionCard({ query, nowMs }: AttentionCardProps) {
               return (
                 <li key={item.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
                   <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                       <span className="min-w-0">{item.title}</span>
                       <Badge variant={badge.variant}>{badge.label}</Badge>
-                    </p>
+                    </div>
                     {item.body !== null && item.body !== "" ? (
                       <p className="mt-0.5 text-sm text-muted-foreground">{item.body}</p>
                     ) : null}

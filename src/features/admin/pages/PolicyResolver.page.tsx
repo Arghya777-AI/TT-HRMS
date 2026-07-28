@@ -742,13 +742,13 @@ export default function PolicyResolverPage() {
                           cutoff: fmtCivilDate(payPeriod.data.attendance_cutoff_date),
                         })}
                       </p>
-                      <p className="mt-1 text-xs">
+                      <div className="mt-1 text-xs">
                         {payPeriod.data.attendance_locked_at === null ? (
                           <Badge variant="success">{t("timeAudit.resolver.day.periodOpen")}</Badge>
                         ) : (
                           <Badge variant="warning">{t("timeAudit.resolver.day.periodLocked")}</Badge>
                         )}
-                      </p>
+                      </div>
                     </>
                   )}
                   <p className="mt-1 text-xs text-muted-foreground">

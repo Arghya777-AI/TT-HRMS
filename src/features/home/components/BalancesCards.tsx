@@ -152,7 +152,7 @@ export function CompOffCard({ query }: BalancesProps) {
                   tone={tone === "neutral" ? "default" : tone}
                 />
               </dl>
-              <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="neutral">
                   {t("home.compOff.credits", { count: formatNumber(compOff.open_credits) })}
                 </Badge>
@@ -163,7 +163,7 @@ export function CompOffCard({ query }: BalancesProps) {
                     })}
                   </Badge>
                 ) : null}
-              </p>
+              </div>
               {compOff.nearest_expiry !== null && tone !== "neutral" ? (
                 <p className={tone === "danger" ? "text-sm text-destructive" : "text-sm text-warning"}>
                   {tone === "danger"

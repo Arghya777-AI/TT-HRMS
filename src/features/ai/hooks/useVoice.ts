@@ -84,6 +84,31 @@ function transcriptFrom(event: unknown): { text: string; final: boolean } {
   return { text: text.trim(), final };
 }
 
+/**
+ * Why the microphone could not be opened. Each one has its own next step, which is the
+ * entire reason this is not a boolean.
+ */
+type MicOutcome =
+  | "granted"
+  | "unavailable"
+  | "insecure"
+  | "blocked_site"
+  | "dismissed_or_os"
+  | "no_device"
+  | "device_busy";
+
+/**
+ * One sentence per outcome. Kept as a table rather than a chain of ternaries so that
+ * adding an outcome without giving it a sentence is a type error.
+ */
+const MIC_MESSAGE: Readonly<Record<Exclude<MicOutcome, "granted" | "unavailable">, Parameters<typeof t>[0]>> = {
+  insecure: "ai.voice.err.insecure",
+  blocked_site: "ai.voice.err.blockedSite",
+  dismissed_or_os: "ai.voice.err.dismissed",
+  no_device: "ai.voice.err.noDevice",
+  device_busy: "ai.voice.err.busy",
+};
+
 export interface VoiceInput {
   /** False when the browser has no SpeechRecognition (Firefox, some Android). */
   readonly supported: boolean;
@@ -156,19 +181,62 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
    * It must stay inside the click handler's call stack to count as a user gesture, which
    * is why this is awaited by `start` rather than run in an effect somewhere.
    */
-  const requestMicrophone = useCallback(async (): Promise<"granted" | "denied" | "unavailable"> => {
+  /**
+   * ASK THE BROWSER, AND FIND OUT EXACTLY WHY IF IT SAYS NO.
+   *
+   * `SpeechRecognition.start()` does not reliably raise the permission dialog in Chrome —
+   * `getUserMedia` is what prompts, so it is called first and its stream stopped at once
+   * (recognition opens its own; holding this one lights a second recording indicator).
+   *
+   * WHY IT REPORTS A REASON RATHER THAN A BOOLEAN. "Microphone access was blocked. Allow it
+   * in your browser settings" was shown for every possible refusal, and it sent somebody
+   * to a settings page that had nothing wrong in it — three separate times, because each
+   * of these needs a DIFFERENT action and they are indistinguishable from the outside:
+   *
+   *   · the site is blocked in Chrome     → the padlock in the address bar, not settings
+   *   · the prompt was dismissed          → press the button again and choose Allow
+   *   · macOS is blocking Chrome itself   → System Settings, and no prompt ever appears
+   *   · there is no microphone            → nothing to allow
+   *   · another app holds the microphone  → close it
+   *
+   * `permissions.query` distinguishes the first from the rest: a `denied` state means a
+   * remembered site-level block, which is the only case where "browser settings" is even
+   * the right place to look. The DOMException name separates the others.
+   */
+  const requestMicrophone = useCallback(async (): Promise<MicOutcome> => {
     const media = navigator.mediaDevices;
     if (media === undefined || typeof media.getUserMedia !== "function") {
       // No getUserMedia at all: let recognition try on its own rather than refusing here.
       return "unavailable";
     }
+    if (!window.isSecureContext) return "insecure";
+
+    // Whether a decision is already remembered for this site, before we ask.
+    let priorState: string | null = null;
+    try {
+      const status = await navigator.permissions.query(
+        { name: "microphone" } as unknown as PermissionDescriptor,
+      );
+      priorState = status.state;
+    } catch {
+      // Firefox and older Safari do not support querying it. Not knowing is fine.
+    }
+
     try {
       const stream = await media.getUserMedia({ audio: true });
       for (const track of stream.getTracks()) track.stop();
       micGranted.current = true;
       return "granted";
-    } catch {
-      return "denied";
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "Error";
+      // Logged so a screenshot is not the only diagnostic available.
+      console.error("microphone request refused", { name, priorState });
+      if (name === "NotFoundError" || name === "OverconstrainedError") return "no_device";
+      if (name === "NotReadableError" || name === "AbortError") return "device_busy";
+      if (priorState === "denied") return "blocked_site";
+      // NotAllowedError with no remembered block: either the prompt was dismissed, or the
+      // operating system is refusing Chrome and no prompt was ever shown.
+      return "dismissed_or_os";
     }
   }, []);
 
@@ -180,14 +248,9 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
     }
     setError(null);
 
-    const permission = await requestMicrophone();
-    if (permission === "denied") {
-      /*
-        Now this sentence is TRUE: they were asked and said no, or the permission was
-        already blocked. Either way the fix is in the browser, not in this app — which is
-        exactly what it could not honestly say before.
-      */
-      setError(t("ai.voice.err.blocked"));
+    const outcome = await requestMicrophone();
+    if (outcome !== "granted" && outcome !== "unavailable") {
+      setError(t(MIC_MESSAGE[outcome]));
       return;
     }
     const rec = new Ctor();
@@ -225,7 +288,7 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
       */
       setError(
         code === "not-allowed" && !micGranted.current
-          ? t("ai.voice.err.blocked")
+          ? t("ai.voice.err.blockedSite")
           : code === "service-not-allowed" || code === "audio-capture"
           ? t("ai.voice.err.service")
           : code === "no-speech"

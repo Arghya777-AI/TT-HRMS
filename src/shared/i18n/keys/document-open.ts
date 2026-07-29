@@ -80,8 +80,21 @@ export const keysDocumentOpen = {
   // only shown after the browser has actually been asked and refused — it used to appear
   // when nothing had been asked at all, pointing people at a setting that did not exist yet.
   "ai.voice.err.unsupported": "This browser cannot listen. Type the question instead.",
-  "ai.voice.err.blocked":
-    "Microphone access was blocked. Allow it in your browser settings, then try again.",
+  // ONE SENTENCE PER CAUSE, because each needs a different action and the old single
+  // "allow it in your browser settings" sent people to a page with nothing wrong in it.
+  // The padlock, not Settings: a site-level block is cleared from the address bar.
+  "ai.voice.err.blockedSite":
+    "This site is blocked from using the microphone. Click the padlock in the address bar, set Microphone to Allow, then reload the page.",
+  // Covers both "they dismissed the prompt" and "the operating system is refusing Chrome",
+  // which cannot be told apart from inside the page — so both next steps are given, the
+  // second keyed to the symptom that identifies it (no prompt appeared at all).
+  "ai.voice.err.dismissed":
+    "The microphone was not allowed. Press the microphone button again and choose Allow. If no prompt appeared at all, your computer is blocking the browser — on a Mac, open System Settings › Privacy & Security › Microphone and switch your browser on.",
+  "ai.voice.err.noDevice": "No microphone was found on this device.",
+  "ai.voice.err.busy":
+    "Another app is using the microphone. Close it and try again.",
+  "ai.voice.err.insecure":
+    "Dictation needs a secure (https) connection.",
   // The speech SERVICE declining is not a permission problem and must not be described as
   // one — there is nothing in browser settings to change.
   "ai.voice.err.service":

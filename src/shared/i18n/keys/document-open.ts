@@ -45,4 +45,31 @@ export const keysDocumentOpen = {
   // ── The topbar bell ───────────────────────────────────────────────────────
   // Spoken as well as shown: a coloured dot is not information to a screen reader.
   "shell.topbar.notificationsUnread": "Notifications, {n} unread",
+
+  // ── Role assignment (People directory) ────────────────────────────────────
+  "admin.roles.title": "Access level",
+  "admin.roles.subtitle.ok":
+    "Who can see what. A manager sees their own team; an admin sees the whole organisation.",
+  "admin.roles.subtitle.mismatch":
+    "{n} to check — the org chart and the access level disagree for these people.",
+  "admin.roles.empty": "Nobody to show.",
+  "admin.roles.col.person": "Person",
+  "admin.roles.col.access": "Access",
+  "admin.roles.col.reportees": "Reports to them",
+  "admin.roles.col.check": "Check",
+  "admin.roles.col.set": "Change to",
+  // HR and admin are deliberately the same role, as asked.
+  "admin.roles.role.employee": "Employee",
+  "admin.roles.role.manager": "Manager",
+  "admin.roles.role.admin": "HR / Admin",
+  "admin.roles.role.superAdmin": "Super admin",
+  "admin.roles.role.noLogin": "No login yet",
+  "admin.roles.adminOnly": "Only an admin can change this",
+  "admin.roles.noAccount": "No login yet, so no access level to set",
+  // Each mismatch names its own fix, because they are different fixes.
+  "admin.roles.check.teamNoRole": "People report to them but they have no manager access",
+  "admin.roles.check.managerNoTeam": "Has manager access but nobody reports to them",
+  "admin.roles.check.ok": "Consistent",
+  "admin.roles.reasonPrompt":
+    "Why is {name}'s access level changing? At least 10 characters — this is kept in the audit trail.",
 } as const;

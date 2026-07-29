@@ -40,6 +40,7 @@ import { SelectField, TextField } from "../components/Field";
 import { PersonCell } from "../components/PersonCell";
 import { useRefOptions } from "../hooks/useMasters";
 import { OnboardingQueuePanel } from "@/features/onboarding/components/OnboardingQueuePanel";
+import { RolePanel } from "../components/RolePanel";
 import {
   DIRECTORY_PAGE_SIZE,
   flattenDirectory,
@@ -397,6 +398,9 @@ export default function DirectoryPage() {
       {/* Who still owes their joining paperwork — the question HR asks while
           already looking at the directory. */}
       <OnboardingQueuePanel />
+      {/* Access level sits with the people it applies to, and surfaces the two ways the
+          org chart and the role table can disagree — one of which hid three whole teams. */}
+      <RolePanel />
 
     </div>
   );

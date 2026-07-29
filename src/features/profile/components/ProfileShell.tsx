@@ -13,11 +13,13 @@
  */
 import type { ReactNode } from "react";
 import { UserRound } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { formatPercent } from "@/lib/format";
 import { fmtCivilDayMonthWeekday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import { useMyPhoto } from "../hooks/useMyPhoto";
 import { ProfileTabs } from "./ProfileTabs";
 import type { MyEmployeeProfile } from "../api/profile.api";
 import type { OrgLabels } from "../api/profile.api";
@@ -56,6 +58,7 @@ export function ProfileShell({
   partialLabel,
   children,
 }: ProfileShellProps) {
+  const photo = useMyPhoto();
   const noEmployeeRow = !loading && error == null && profile === null;
 
   return (
@@ -90,7 +93,7 @@ export function ProfileShell({
         >
           {profile ? (
             <div className="space-y-6">
-              <IdentityBand profile={profile} orgLabels={orgLabels ?? null} />
+              <IdentityBand profile={profile} orgLabels={orgLabels ?? null} photo={photo.data ?? null} />
               {children}
             </div>
           ) : null}
@@ -106,12 +109,21 @@ export function ProfileShell({
  * (spec-employee §P4), and the reference product's `25-Sep-2000` on the
  * Employment tab is precisely the leak being closed.
  */
+/** Initials for the fallback: first letters of the first two words. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((w) => w[0] ?? "").join("");
+  return letters === "" ? "?" : letters.toUpperCase();
+}
+
 function IdentityBand({
   profile,
   orgLabels,
+  photo,
 }: {
   profile: MyEmployeeProfile;
   orgLabels: OrgLabels | null;
+  photo: { url: string } | null | undefined;
 }) {
   const facts: Array<{ label: string; value: string }> = [
     { label: t("profile.identity.code"), value: profile.employee_code },
@@ -136,7 +148,23 @@ function IdentityBand({
   return (
     <section className="rounded-lg border bg-card p-4" aria-label={t("profile.identity.label")}>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
+        {/*
+          THE PHOTOGRAPH, on the one screen whose header comment already promised it:
+          "the one place the employee's name, code, designation and photo appear". The
+          photo was the one item on that list that never rendered — no `AvatarImage`
+          existed anywhere in the app — so somebody could upload their picture, see it
+          verified, and never lay eyes on it again.
+
+          Initials remain the fallback. An avatar is decoration: nothing on this screen
+          should fail because a face could not be fetched.
+        */}
+        <Avatar className="h-16 w-16 shrink-0">
+          {photo?.url !== undefined && photo.url !== null ? (
+            <AvatarImage src={photo.url} alt={profile.display_name} />
+          ) : null}
+          <AvatarFallback className="text-lg">{initialsOf(profile.display_name)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
           {/* Natural case, no CSS uppercase — DR-14. */}
           <h2 className="truncate font-display text-lg font-semibold">{profile.display_name}</h2>
           <p className="mt-0.5 truncate text-sm text-muted-foreground">

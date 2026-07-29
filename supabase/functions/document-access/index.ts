@@ -95,6 +95,24 @@ const ALLOWED_METHODS = ["POST", "OPTIONS"] as const;
  */
 const SIGNED_URL_TTL_SECONDS = 120;
 
+/**
+ * A photograph gets ten minutes instead of two.
+ *
+ * NOT a relaxation of anything — the same RLS decides whether the caller may see it.
+ * It is about how the two are USED. A document is opened once: somebody clicks View,
+ * reads the Aadhaar, and is done, so a two-minute link is generous. An avatar is
+ * rendered on every page, on every navigation, for as long as the person is working.
+ * At a 120-second life that is a fresh mint every couple of minutes and two
+ * `document_access_log` rows with it — which would bury the rows that matter (who
+ * opened whose Aadhaar) under thousands recording that somebody saw their own face.
+ *
+ * Ten minutes lets the client cache for eight and keeps the log readable.
+ */
+const PHOTO_TTL_SECONDS = 600;
+
+/** The one document type that is a face, not a claim. */
+const PHOTO_TYPE_CODE = "PHOTO";
+
 const AccessBody = z.object({
   document_id: common.uuid,
   /**
@@ -108,6 +126,8 @@ const AccessBody = z.object({
 
 interface DocRow {
   id: string;
+  /** Embedded so the TTL can depend on the type without a second query. */
+  document_types: { code: string | null } | null;
   storage_bucket: string | null;
   storage_path: string | null;
   file_name: string | null;
@@ -145,7 +165,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const { data, error } = await caller
       .from("documents")
       .select(
-        "id, storage_bucket, storage_path, file_name, mime_type, status, virus_scan_status, title, employee_id",
+        "id, storage_bucket, storage_path, file_name, mime_type, status, virus_scan_status, " +
+          "title, employee_id, document_types(code)",
       )
       .eq("id", body.document_id)
       .is("deleted_at", null)
@@ -181,7 +202,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     // ── The log, BEFORE the URL exists ────────────────────────────────────────
-    const expiresAt = toIso(new Date(nowMs() + SIGNED_URL_TTL_SECONDS * 1000));
+    const ttl = doc.document_types?.code === PHOTO_TYPE_CODE
+      ? PHOTO_TTL_SECONDS
+      : SIGNED_URL_TTL_SECONDS;
+    const expiresAt = toIso(new Date(nowMs() + ttl * 1000));
     const ctx: RequestContext = {
       actorId: auth.userId,
       source: "edge_function",
@@ -214,7 +238,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .from(doc.storage_bucket)
       .createSignedUrl(
         doc.storage_path,
-        SIGNED_URL_TTL_SECONDS,
+        ttl,
         body.access_kind === "download"
           ? { download: doc.file_name ?? doc.title ?? "document" }
           : undefined,
@@ -251,7 +275,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return ok({
       document_id: doc.id,
       url: signed.data.signedUrl,
-      expires_in_seconds: SIGNED_URL_TTL_SECONDS,
+      expires_in_seconds: ttl,
       expires_at: expiresAt,
       file_name: doc.file_name,
       mime_type: doc.mime_type,

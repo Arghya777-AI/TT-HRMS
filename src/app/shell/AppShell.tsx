@@ -32,12 +32,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ModeToggle } from "@/components/theme/mode-toggle";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { formatNumber } from "@/lib/format";
 import { useUnreadCount } from "@/features/notifications/hooks/useNotifications";
+import { useMyPhoto } from "@/features/profile/hooks/useMyPhoto";
 import { BRAND } from "@/config/brand";
 import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
@@ -221,6 +222,7 @@ function NotificationBell() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { employee, signOut } = useAuth();
+  const photo = useMyPhoto();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -310,10 +312,45 @@ export function AppShell({ children }: { children: ReactNode }) {
               <IstClock />
               <NotificationBell />
               <ModeToggle />
+              {/*
+                SIGN OUT, ALWAYS ON SCREEN. It already existed inside the avatar menu,
+                which means it was two clicks away and invisible until you went looking —
+                on a shared office machine or a kiosk tablet that is the difference
+                between somebody signing out and somebody walking away still signed in.
+                It stays in the menu too: muscle memory is worth more than tidiness.
+
+                There is no LOGIN button here on purpose. This header only ever renders
+                for somebody already signed in — `RequireAuth` sends everyone else to
+                /login — so a login button in it could never be pressed by anybody who
+                needed it.
+              */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void signOut()}
+                aria-label={t("shell.topbar.signOut")}
+              >
+                <LogOut className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">{t("shell.topbar.signOut")}</span>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" aria-label={t("shell.topbar.userMenu")}>
                     <Avatar className="h-7 w-7">
+                      {/*
+                        The uploaded photograph, when there is one. `AvatarImage` was
+                        never rendered anywhere in this app — every avatar was initials,
+                        so a person could upload their picture and never see it. The URL
+                        is a short-lived signed link because the bucket is private; if it
+                        fails for any reason the fallback below is what shows, which is
+                        why nothing here reports an error.
+                      */}
+                      {photo.data?.url !== undefined ? (
+                        <AvatarImage
+                          src={photo.data.url}
+                          alt={employee?.displayName ?? t("shell.topbar.userMenu")}
+                        />
+                      ) : null}
                       <AvatarFallback className="text-xs">{initials(employee?.displayName ?? null)}</AvatarFallback>
                     </Avatar>
                   </Button>

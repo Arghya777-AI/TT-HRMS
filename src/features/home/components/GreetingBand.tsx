@@ -10,11 +10,12 @@
  * DR-60 requires ("Sunday + Alternate Saturday"); nothing is assembled here from
  * the dow/weeks arrays.
  */
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtCivilTime, fmtDurationHm } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import { useMyPhoto } from "@/features/profile/hooks/useMyPhoto";
 import type { MyEmployeeHome, Shift, ShiftSource, WeeklyOffRule } from "../api/home.api";
 import { initialsOf } from "../display";
 
@@ -33,6 +34,9 @@ export function GreetingBand({
   weeklyOffRule,
   loading,
 }: GreetingBandProps) {
+  // Above the loading early-return: hooks must run in the same order every render.
+  const photo = useMyPhoto();
+
   if (loading) {
     return (
       <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border bg-card p-4">
@@ -49,8 +53,12 @@ export function GreetingBand({
   return (
     <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border bg-card p-4">
       <Avatar className="h-11 w-11">
-        {/* photo_path is a private storage path; a signed URL is minted per
-            request, so the band shows initials until that endpoint exists. */}
+        {/* That endpoint now exists. `document-access` mints the signed URL and
+            `useMyPhoto` caches it under its own expiry; initials remain the fallback
+            for anybody who has not uploaded a picture, or whose link failed. */}
+        {photo.data?.url !== undefined ? (
+          <AvatarImage src={photo.data.url} alt={me?.display_name ?? ""} />
+        ) : null}
         <AvatarFallback>{initialsOf(me?.display_name ?? "")}</AvatarFallback>
       </Avatar>
 

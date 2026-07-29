@@ -62,7 +62,6 @@ export const keysAiAssistant = {
 
   // ── Footnotes ─────────────────────────────────────────────────────────────
   /** Cost is shown, not hidden: it is the company's money and an admin can see the ledger. */
-  "ai.usage": "This answer cost ₹{cost}.",
   "ai.scopeNote":
     "Answers cover your own records only, as at {today} (IST). Figures come from the same tables the rest of the app reads — if a number here disagrees with a screen, trust the screen and tell HR.",
 } as const;

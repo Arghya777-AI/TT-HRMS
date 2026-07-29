@@ -167,11 +167,15 @@ function Turn({ turn }: { turn: AskTurn }) {
             </div>
           ) : null}
 
-          {typeof turn.answer.usage?.cost_inr === "number" ? (
-            <p className="text-[11px] text-muted-foreground/70">
-              {t("ai.usage", { cost: turn.answer.usage.cost_inr.toFixed(2) })}
-            </p>
-          ) : null}
+          {/*
+            NO PER-ANSWER COST. It used to print "This answer cost ₹8.45" under
+            every reply. Spend is somebody else's job — HR reading their own
+            attendance has no decision to make with that number, and pricing a
+            question in front of the person asking it discourages them from
+            asking. The figure is still recorded: `ai_usage_ledger` keeps every
+            paisa and the admin sees the monthly total on AI Configuration and
+            Analytics · AI, which is where a budget is actually managed.
+          */}
         </div>
       ) : null}
     </article>

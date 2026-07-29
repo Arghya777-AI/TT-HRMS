@@ -44,6 +44,7 @@ import { useIsOnline, useIstTicker } from "../hooks/useHomeUi";
 import { greetingLine } from "../display";
 import { GreetingBand } from "../components/GreetingBand";
 import { TodayCard } from "../components/TodayCard";
+import { EqualHeightRow } from "../components/EqualHeightRow";
 import { AttentionCard } from "../components/AttentionCard";
 import { MonthStrip } from "../components/MonthStrip";
 import { CompOffCard, LeaveBalancesCard } from "../components/BalancesCards";
@@ -176,12 +177,22 @@ export default function HomePage() {
         tallest one, so an expanded punch confirmation would pad Today and Attention with
         empty space and give back the vertical room it just saved.
       */}
-      <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/*
+        ALL THREE THE HEIGHT OF THE SHORTEST. Equalising to the tallest is what CSS grid
+        does for free and it is the wrong direction here — the notification list has no
+        natural end, so matching it would hand back all the vertical space this row was
+        created to save. `EqualHeightRow` measures instead and caps to the shortest, with
+        the overflow scrolling inside each card under a sticky header, and one Expand
+        control for when somebody wants the whole list at once.
+      */}
+      <EqualHeightRow className="sm:grid-cols-2 lg:grid-cols-3">
         <SelfPunchCard />
-
         {/* Region B + C */}
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
         <AttentionCard query={attentionQuery} nowMs={nowMs} />
+      </EqualHeightRow>
+
+      <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
         {/* Region D */}
         <MonthStrip query={monthQuery} />

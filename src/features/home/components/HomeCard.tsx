@@ -30,7 +30,13 @@ export interface HomeCardProps {
 export function HomeCard({ icon: Icon, title, action, className, children }: HomeCardProps) {
   return (
     <section className={cn("rounded-lg border bg-card", className)} aria-label={title}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+      {/*
+        STICKY, so a card whose height is capped by `EqualHeightRow` can scroll its
+        content without scrolling its own heading and action away. `bg-card` is required
+        — a transparent sticky header lets the rows slide visibly underneath it — and
+        `rounded-t-lg` keeps the corner from being squared off by the opaque fill.
+      */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b bg-card px-4 py-3">
         <h2 className="flex min-w-0 items-center gap-2 font-display text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           <Icon className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">{title}</span>

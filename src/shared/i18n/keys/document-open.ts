@@ -114,4 +114,10 @@ export const keysDocumentOpen = {
   // A disclosure, not a deletion: the mechanics stay in the page for search and for
   // a screen reader. The biometric honesty sentence is NOT behind this.
   "me.punch.howItWorks": "How this works",
+
+  // ── The equal-height card row on Home ─────────────────────────────────────
+  // "Show everything" rather than "Expand": what the button does is release the
+  // height cap, and that is what somebody pressing it wants named.
+  "home.row.expand": "Show everything",
+  "home.row.collapse": "Fit to one row",
 } as const;

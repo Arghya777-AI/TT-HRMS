@@ -817,7 +817,9 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
       className={cn("rounded-lg border bg-card", className)}
       aria-label={t("me.punch.title")}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+      {/* Sticky for the same reason as HomeCard's: this card's height is capped to the
+          shortest in its row, so its content scrolls and its heading must not. */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-t-lg border-b bg-card px-4 py-3">
         <h2 className="flex min-w-0 items-center gap-2 font-display text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           <ScanFace className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">{t("me.punch.title")}</span>

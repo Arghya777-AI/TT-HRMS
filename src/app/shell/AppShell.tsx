@@ -36,6 +36,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ModeToggle } from "@/components/theme/mode-toggle";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { formatNumber } from "@/lib/format";
+import { useUnreadCount } from "@/features/notifications/hooks/useNotifications";
 import { BRAND } from "@/config/brand";
 import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
@@ -171,6 +173,52 @@ function NavGroups({
   );
 }
 
+/**
+ * The bell, with the count that was missing.
+ *
+ * `useUnreadCount` already existed; nothing called it. So notifications WERE
+ * arriving and updating — 400+ rows in the table — and the only way to find out was
+ * to click a static icon on the off-chance. That is the whole of "notifications are
+ * not getting updated" from the reader's side.
+ *
+ * THE BADGE IS ALSO THE ARIA LABEL. A screen reader must hear "Notifications, 3
+ * unread", not just "Notifications" — a coloured dot is not information if you cannot
+ * see it.
+ *
+ * A FAILED COUNT SHOWS NO BADGE rather than a zero. Zero is a claim ("you are up to
+ * date") and we would not know it to be true; absence claims nothing.
+ */
+function NotificationBell() {
+  const unread = useUnreadCount();
+  const n = unread.data ?? 0;
+  const show = unread.isSuccess && n > 0;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="relative"
+      aria-label={show
+        ? t("shell.topbar.notificationsUnread", { n: formatNumber(n) })
+        : t("shell.topbar.notifications")}
+      asChild
+    >
+      <Link to="/me/notifications">
+        <Bell className="h-[18px] w-[18px]" />
+        {show ? (
+          <span
+            aria-hidden
+            className="absolute -right-0.5 -top-0.5 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground"
+          >
+            {/* Past 9 the exact number stops mattering and starts breaking the layout. */}
+            {n > 9 ? "9+" : formatNumber(n)}
+          </span>
+        ) : null}
+      </Link>
+    </Button>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { employee, signOut } = useAuth();
   const location = useLocation();
@@ -260,11 +308,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             <div className="ml-auto flex items-center gap-1">
               <IstClock />
-              <Button variant="ghost" size="icon" aria-label={t("shell.topbar.notifications")} asChild>
-                <Link to="/me/notifications">
-                  <Bell className="h-[18px] w-[18px]" />
-                </Link>
-              </Button>
+              <NotificationBell />
               <ModeToggle />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

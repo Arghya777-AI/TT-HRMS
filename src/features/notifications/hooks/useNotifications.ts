@@ -75,6 +75,21 @@ export function useNotificationCount(filters: FeedFilters): UseQueryResult<numbe
   });
 }
 
+/**
+ * Unread count for the topbar bell.
+ *
+ * THIS HOOK EXISTED AND NOTHING CALLED IT, which is why the complaint was
+ * "notifications are not getting updated". They were: the table had 400+ rows and new
+ * ones kept arriving. What was missing was any sign of it — the bell was a static
+ * icon, so the only way to discover a notification was to click it speculatively and
+ * a person does that twice before they stop.
+ *
+ * It POLLS, and that is the point of the hook rather than a nicety. A badge that only
+ * refreshes on navigation tells you nothing while you sit on one screen, which is
+ * exactly where somebody is when HR approves their document. Sixty seconds is a cheap
+ * `count(*)` against a profile-scoped index; `refetchOnWindowFocus` catches the far
+ * more common case of coming back to the tab.
+ */
 export function useUnreadCount(): UseQueryResult<number, Error> {
   const profileId = useProfileId();
   return useQuery({
@@ -83,6 +98,8 @@ export function useUnreadCount(): UseQueryResult<number, Error> {
     enabled: profileId !== null,
     retry: shouldRetryQuery,
     staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 

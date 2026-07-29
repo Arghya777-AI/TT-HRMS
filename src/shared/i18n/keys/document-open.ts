@@ -41,4 +41,8 @@ export const keysDocumentOpen = {
   // and is the only thing telling them what to fix.
   "admin.docs.pend.rejectPrompt":
     "Why is this being rejected? The employee will see this, so say what they need to fix (at least 10 characters).",
+
+  // ── The topbar bell ───────────────────────────────────────────────────────
+  // Spoken as well as shown: a coloured dot is not information to a screen reader.
+  "shell.topbar.notificationsUnread": "Notifications, {n} unread",
 } as const;

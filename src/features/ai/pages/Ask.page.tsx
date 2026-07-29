@@ -351,7 +351,12 @@ export default function AskPage() {
               size="sm"
               variant={voice.listening ? "default" : "outline"}
               disabled={isAsking}
-              onClick={() => (voice.listening ? voice.stop() : voice.start())}
+              onClick={() => {
+                // `start` is async now — it asks the browser for the microphone before it
+                // begins listening, which is what raises the permission dialog.
+                if (voice.listening) voice.stop();
+                else void voice.start();
+              }}
               aria-pressed={voice.listening}
               title={voice.isCloudRecognition ? t("ai.voice.cloudHint") : t("ai.voice.localHint")}
             >

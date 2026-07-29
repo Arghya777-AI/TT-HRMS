@@ -26,6 +26,7 @@
  * throwing on click.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "@/shared/i18n/en";
 
 /**
  * The vendor-prefixed constructor, typed only as far as this file uses it. The DOM lib
@@ -95,7 +96,8 @@ export interface VoiceInput {
   readonly listening: boolean;
   /** Reader-facing sentence, already chosen for the failure that happened. */
   readonly error: string | null;
-  readonly start: () => void;
+  /** Async: it asks the browser for the microphone before it starts listening. */
+  readonly start: () => Promise<void>;
   readonly stop: () => void;
 }
 
@@ -111,6 +113,11 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<MinimalRecognition | null>(null);
+  /*
+    Whether `getUserMedia` has already SUCCEEDED in this session. It changes what
+    `not-allowed` from the recogniser can honestly mean — see the error handler.
+  */
+  const micGranted = useRef(false);
   // The callback is read at event time, so a re-render with a new closure does not
   // require tearing down the recogniser.
   const onTextRef = useRef(onText);
@@ -132,13 +139,57 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
     setListening(false);
   }, []);
 
-  const start = useCallback(() => {
+  /**
+   * ASK THE BROWSER FIRST.
+   *
+   * This is the bug that made the microphone button useless: `SpeechRecognition.start()`
+   * does NOT reliably raise the permission dialog in Chrome. On a page whose microphone
+   * permission has never been decided it can go straight to `onerror` with
+   * `not-allowed` — so the reader was told "microphone access was blocked, allow it in
+   * your browser settings" having never been asked for it, and there was nothing in
+   * settings to change because no decision had been recorded.
+   *
+   * `getUserMedia` is what actually prompts. So it is called first, purely to make the
+   * browser ask, and the stream is stopped IMMEDIATELY — recognition opens its own, and
+   * holding this one would leave a second recording indicator lit for no reason.
+   *
+   * It must stay inside the click handler's call stack to count as a user gesture, which
+   * is why this is awaited by `start` rather than run in an effect somewhere.
+   */
+  const requestMicrophone = useCallback(async (): Promise<"granted" | "denied" | "unavailable"> => {
+    const media = navigator.mediaDevices;
+    if (media === undefined || typeof media.getUserMedia !== "function") {
+      // No getUserMedia at all: let recognition try on its own rather than refusing here.
+      return "unavailable";
+    }
+    try {
+      const stream = await media.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+      micGranted.current = true;
+      return "granted";
+    } catch {
+      return "denied";
+    }
+  }, []);
+
+  const start = useCallback(async () => {
     const Ctor = recognitionCtor();
     if (Ctor === null) {
-      setError("This browser cannot listen. Type the question instead.");
+      setError(t("ai.voice.err.unsupported"));
       return;
     }
     setError(null);
+
+    const permission = await requestMicrophone();
+    if (permission === "denied") {
+      /*
+        Now this sentence is TRUE: they were asked and said no, or the permission was
+        already blocked. Either way the fix is in the browser, not in this app — which is
+        exactly what it could not honestly say before.
+      */
+      setError(t("ai.voice.err.blocked"));
+      return;
+    }
     const rec = new Ctor();
     rec.lang = RECOGNITION_LANG;
     // One phrase, then close. See the header: an always-on microphone is not wanted.
@@ -154,14 +205,34 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
       const code = (event as { error?: string }).error ?? "";
       // Each of these needs a different action from the reader, so each says something
       // different. "not-allowed" especially: the fix is in browser settings, not here.
+      /*
+        `not-allowed` AND `service-not-allowed` ARE NOT THE SAME REFUSAL, and lumping them
+        together produced a wrong instruction. `not-allowed` is the microphone permission,
+        which the reader can grant. `service-not-allowed` is Chrome's speech SERVICE
+        declining — no API key, an unsupported build, an enterprise policy — and there is
+        nothing in browser settings for them to change. Telling somebody to fix a
+        permission they already granted is worse than telling them it is unavailable.
+      */
+      /*
+        `not-allowed` AFTER A GRANTED MICROPHONE IS NOT A PERMISSION PROBLEM.
+
+        Found while testing: with the microphone permission granted and `getUserMedia`
+        succeeding, the recogniser still reported `not-allowed`. Chrome uses that code for
+        its speech SERVICE being unavailable too — no API key in the build, an enterprise
+        policy, an automation context. So when we KNOW the microphone was granted a moment
+        ago, telling somebody to go and allow a permission they have already allowed sends
+        them into settings to find nothing wrong. It reports unavailability instead.
+      */
       setError(
-        code === "not-allowed" || code === "service-not-allowed"
-          ? "Microphone access was blocked. Allow it in your browser settings, then try again."
+        code === "not-allowed" && !micGranted.current
+          ? t("ai.voice.err.blocked")
+          : code === "service-not-allowed" || code === "audio-capture"
+          ? t("ai.voice.err.service")
           : code === "no-speech"
-          ? "I did not hear anything. Try again, a little closer to the microphone."
+          ? t("ai.voice.err.silence")
           : code === "network"
-          ? "Speech recognition needs a network connection and could not reach it."
-          : "Dictation stopped unexpectedly. Type the question instead.",
+          ? t("ai.voice.err.network")
+          : t("ai.voice.err.generic"),
       );
       setListening(false);
     };
@@ -175,7 +246,7 @@ export function useVoiceInput(onText: (text: string) => void): VoiceInput {
       // Calling start() twice throws; treat it as already listening rather than an error.
       setListening(true);
     }
-  }, []);
+  }, [requestMicrophone]);
 
   return { supported, isCloudRecognition, listening, error, start, stop };
 }

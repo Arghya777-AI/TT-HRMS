@@ -76,6 +76,19 @@ export const keysDocumentOpen = {
   // ── Assistant history (/me/ask/history) ───────────────────────────────────
   // ── Voice ─────────────────────────────────────────────────────────────────
   "ai.voice.start": "Dictate your question",
+  // Each failure needs a different action, so each says something different. "blocked" is
+  // only shown after the browser has actually been asked and refused — it used to appear
+  // when nothing had been asked at all, pointing people at a setting that did not exist yet.
+  "ai.voice.err.unsupported": "This browser cannot listen. Type the question instead.",
+  "ai.voice.err.blocked":
+    "Microphone access was blocked. Allow it in your browser settings, then try again.",
+  // The speech SERVICE declining is not a permission problem and must not be described as
+  // one — there is nothing in browser settings to change.
+  "ai.voice.err.service":
+    "Dictation is not available in this browser. Type the question instead.",
+  "ai.voice.err.silence": "I did not hear anything. Try again, a little closer to the microphone.",
+  "ai.voice.err.network": "Speech recognition needs a network connection and could not reach it.",
+  "ai.voice.err.generic": "Dictation stopped unexpectedly. Type the question instead.",
   "ai.voice.stop": "Stop dictating",
   "ai.voice.listening": "Listening — say your question, then check it before sending.",
   // Chromium sends the audio to Google; Safari and iOS do it on the device. Said

@@ -76,7 +76,6 @@ export const keysAuthLogin = {
   "auth.login.face.state.motion": "{score} measured",
   "auth.login.face.incompatible":
     "Face sign-in cannot run in this browser: it produced a face reading in a format the server does not accept. Use your password or your fingerprint.",
-  "auth.login.face.start": "Start the camera",
   "auth.login.face.cancel": "Cancel",
   "auth.login.face.retry": "Try again",
   "auth.login.face.usePassword": "Use my password instead",

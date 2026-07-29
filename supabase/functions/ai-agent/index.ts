@@ -2585,6 +2585,84 @@ const VISUAL_BLOCK_TYPES = new Set([
   "employee_card",
 ]);
 
+
+/**
+ * Charts for data that has NO numbers in it.
+ *
+ * WHY THIS IS NEEDED. `get_team_roster` returns fifteen rows of pure text — code, name,
+ * department, designation, grade, location, employment type — and the chart builders looked
+ * for a numeric column, found none, and produced a table with nothing to look at. That is
+ * the state a roster question landed in: "Showing the underlying figures" over a grid.
+ *
+ * But categorical data does have a shape: how many people per department, per grade, per
+ * employment type. Counting is the only way to draw it, and counting is legitimate here in a
+ * way that arithmetic on the figures would not be — the count is of ROWS THE TOOL RETURNED,
+ * the same provenance as the `row_count` on the citation, not a claim about anything the
+ * system did not say. Nothing is summed, averaged or converted.
+ *
+ * COLUMN CHOICE IS THE WHOLE TRICK. `employee_code` and `display_name` have one distinct
+ * value per row, so charting them draws fifteen bars of height one — technically a chart and
+ * completely useless. A column earns a chart only if it groups: between two and eight
+ * distinct values. Above eight the bars stop being readable; at one there is nothing to
+ * compare. The most-distinct qualifying column goes first because it is the most
+ * informative, and the runner-up becomes a donut so the answer carries two different views
+ * rather than the same view twice.
+ */
+function categoricalCountBlocks(
+  rows: readonly Record<string, unknown>[],
+  keys: readonly string[],
+  citation: SpecBlock["citation"],
+  limit = 2,
+  /**
+   * Where to start in the bar → donut sequence. Passing 1 when a numeric bar chart has
+   * already been added is what stops an answer showing two bar charts side by side, which
+   * reads as a duplicate rather than a second view.
+   */
+  startIndex = 0,
+): SpecBlock[] {
+  const EMPTY = new Set(["", "—", "-", "null", "undefined"]);
+  const candidates: { key: string; counts: Map<string, number> }[] = [];
+
+  for (const key of keys) {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const raw = row[key];
+      if (typeof raw !== "string" && typeof raw !== "boolean") continue;
+      const value = String(raw).trim();
+      if (EMPTY.has(value.toLowerCase())) continue;
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    // Groups into something comparable, and not one-row-per-value.
+    if (counts.size >= 2 && counts.size <= 8) candidates.push({ key, counts });
+  }
+  if (candidates.length === 0) return [];
+
+  candidates.sort((a, b) => b.counts.size - a.counts.size);
+
+  const readable = (key: string): string =>
+    key.replace(/_/g, " ").replace(/\bname\b/gi, "").trim() || key;
+
+  return candidates.slice(0, limit).map((candidate, offset) => {
+    const i = offset + startIndex;
+    return {
+    // Bar first, donut second: a bar compares magnitudes and a donut shows a split, so two
+    // of them say different things about the same people.
+    type: i === 0 ? "bar_chart" : "donut",
+    title: `By ${readable(candidate.key)}`,
+    series: [{
+      name: "People",
+      colour: i === 0 ? "series-1" : "series-2",
+      format: "int" as ValueFormat,
+      points: [...candidate.counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .map(([x, y]) => ({ x, y })),
+    }],
+    citation,
+    };
+  });
+}
+
 /** The visual types that are CHARTS — the ones a reader means by "show me a graph". */
 const CHART_BLOCK_TYPES = new Set(["bar_chart", "donut", "line_chart", "area", "calendar_heatmap"]);
 
@@ -2631,6 +2709,34 @@ function ensureVisual(spec: InfographicSpec): InfographicSpec {
         });
       }
     }
+  }
+
+  /*
+    NO NUMERIC COLUMN — a roster, a document list, anything that is names and categories.
+    Counting by category is the only way to draw it, and it is what turns "here is a grid of
+    fifteen people" into "here is how those fifteen split by department and by grade". The
+    TABLE IS KEPT: the ask is table AND charts, and the grid is where somebody looks up an
+    individual once the shape has told them where to look.
+  */
+  if (table?.table !== null && table?.table !== undefined && charts.length + added.length < 2) {
+    const cols = table.table.columns;
+    // `categoricalCountBlocks` reads records; a spec table holds parallel arrays.
+    const records = table.table.rows.map((cells) => {
+      const record: Record<string, unknown> = {};
+      cols.forEach((col, i) => {
+        record[col.key] = cells[i];
+      });
+      return record;
+    });
+    added.push(...categoricalCountBlocks(
+      records,
+      cols.filter((c) => c.format === "text").map((c) => c.key),
+      table.citation ?? null,
+      // Only enough to reach two charts in total, and offset past whatever is already there
+      // so a donut follows a bar rather than a second bar following the first.
+      Math.max(0, 2 - charts.length - added.length),
+      charts.length + added.length,
+    ));
   }
 
   /*
@@ -2731,6 +2837,14 @@ function fallbackSpec(
       Nothing is computed — every y is a cell copied out of the tool result, so this stays
       inside the same grounding rule as everything else.
     */
+    const tableCitation = {
+      tool: usable.tool,
+      call_id: usable.callId,
+      filters: usable.result.filters_applied,
+      row_count: usable.rowCount,
+      as_of: usable.result.as_of,
+      truncated: usable.result.truncated,
+    };
     const labelKey = keys.find((k) => typeof rows[0]?.[k] === "string");
     const valueKey = keys.find((k) => typeof rows[0]?.[k] === "number");
     if (labelKey !== undefined && valueKey !== undefined) {
@@ -2749,16 +2863,23 @@ function fallbackSpec(
             format: "decimal1",
             points,
           }],
-          citation: {
-            tool: usable.tool,
-            call_id: usable.callId,
-            filters: usable.result.filters_applied,
-            row_count: usable.rowCount,
-            as_of: usable.result.as_of,
-            truncated: usable.result.truncated,
-          },
+          citation: tableCitation,
         });
       }
+    }
+
+    /*
+      NO NUMERIC COLUMN AT ALL — a roster, a document list, anything that is names and
+      categories. There is still a shape to show: how many people per department, per grade.
+      Without this, `get_team_roster` produced a table and nothing else, which is exactly the
+      answer that was reported as having no infographic.
+    */
+    if (valueKey === undefined) {
+      blocks.push(...categoricalCountBlocks(rows, keys, tableCitation));
+    } else {
+      // A numeric bar chart already went in above; one categorical donut beside it gives the
+      // answer two different views instead of one, which is what "multiple charts" means.
+      blocks.push(...categoricalCountBlocks(rows, keys, tableCitation, 1, 1));
     }
 
     blocks.push({
@@ -2779,14 +2900,7 @@ function fallbackSpec(
         ),
         exportable: rows.length > 10,
       },
-      citation: {
-        tool: usable.tool,
-        call_id: usable.callId,
-        filters: usable.result.filters_applied,
-        row_count: usable.rowCount,
-        as_of: usable.result.as_of,
-        truncated: usable.result.truncated,
-      },
+      citation: tableCitation,
     });
   }
 

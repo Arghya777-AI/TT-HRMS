@@ -24,7 +24,7 @@
  * ever started, and the fallback to password is available at every phase.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, CheckCircle2, Loader2, ScanFace } from "lucide-react";
+import { CheckCircle2, Loader2, ScanFace } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
@@ -179,6 +179,7 @@ export function FaceSignIn({ identifier, onSignedIn, onUsePassword, onCancel }: 
     [stopCamera],
   );
 
+
   const reset = useCallback(() => {
     windowRef.current = [];
     scoredRef.current = 0;
@@ -220,6 +221,29 @@ export function FaceSignIn({ identifier, onSignedIn, onUsePassword, onCancel }: 
     setCameraStarted(true);
     setPhase({ name: "capturing" });
   }, [reset, stopCamera]);
+
+  /*
+    ── THE CAMERA OPENS ITSELF ────────────────────────────────────────────────────
+
+    There was a "Start the camera" button, and it was a click that could only ever be
+    answered one way: somebody who has chosen face sign-in and is looking at a black
+    rectangle wants the camera on. The button asked them to confirm the thing they had
+    just asked for, and in the meantime the panel showed a dead preview above four rows
+    reading "Waiting", which looks like a broken screen rather than a ready one.
+
+    `startedRef` rather than a dependency on `phase`: this must fire exactly once for the
+    life of the panel. Keying it on the phase would restart the camera after a failure,
+    fighting the retry button and re-prompting for permission on a loop.
+
+    The permission prompt is unaffected — `getUserMedia` still raises it, and it is still
+    the browser's decision. What is gone is the click BEFORE the prompt, not the prompt.
+  */
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void start();
+  }, [start]);
 
   /** Send the agreeing window's best frame, then hand the session to the parent. */
   const submit = useCallback(
@@ -439,12 +463,11 @@ export function FaceSignIn({ identifier, onSignedIn, onUsePassword, onCancel }: 
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        {phase.name === "intro" ? (
-          <Button type="button" onClick={() => void start()}>
-            <Camera className="mr-2 size-4" aria-hidden />
-            {t("auth.login.face.start")}
-          </Button>
-        ) : null}
+        {/*
+          No "Start the camera" button: the effect above opens it on mount. The RETRY button
+          below stays, because after a failure a click IS a real decision — the reader has
+          read why it failed and is choosing to go again.
+        */}
         {phase.name === "failed" ? (
           <Button type="button" onClick={() => void start()}>
             {t("auth.login.face.retry")}

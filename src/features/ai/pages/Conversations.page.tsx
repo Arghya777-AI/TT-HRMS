@@ -58,6 +58,7 @@ import {
   type Conversation,
   type TranscriptMessage,
 } from "../api/conversations.api";
+import { RichText } from "../components/RichText";
 
 const LIST_KEY = ["ai", "conversations"] as const;
 
@@ -128,10 +129,10 @@ function TranscriptView({ conversation }: { conversation: Conversation }) {
               {" · "}
               {fmtDateTime(m.recorded_at)}
             </p>
-            {/* Plain text, deliberately. The stored narrative is markdown-lite and
-                rendering it as HTML here would be a second, unaudited renderer for
-                content the assistant produced. */}
-            <p className="whitespace-pre-wrap">{m.content}</p>
+            {/* Same renderer as the live answer, so a conversation read back looks like the
+                conversation as it happened. RichText produces elements, not HTML, so there
+                is no second injection surface — which was the reason this was plain text. */}
+            <RichText text={m.content ?? ""} />
           </div>
         ))}
 

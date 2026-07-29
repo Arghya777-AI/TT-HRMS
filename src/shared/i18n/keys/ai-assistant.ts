@@ -1,5 +1,5 @@
 /**
- * i18n keys owned EXCLUSIVELY by the Regal Lab AI Assistant (`features/ai/*`).
+ * i18n keys owned EXCLUSIVELY by the TTHR Assistant, powered by Regal Lab (`features/ai/*`).
  *
  * Two themes run through this copy and both are deliberate.
  *
@@ -13,7 +13,9 @@
  */
 export const keysAiAssistant = {
   // ── Page ──────────────────────────────────────────────────────────────────
-  "ai.title": "Regal Lab AI Assistant",
+  "ai.title": "TTHR Assistant",
+  /** Attribution, shown under the title. The product is TTHR; Regal Lab built it. */
+  "ai.poweredBy": "Powered by Regal Lab",
   "ai.subtitle":
     "Ask about your own attendance, leave and pay. Every answer is built from your records, shows which data it used, and can be downloaded as Excel or PDF.",
   "ai.placeholder": "Ask about your attendance, leave or pay…",

@@ -1,5 +1,5 @@
 /**
- * /me/ask — Regal Lab AI Assistant.
+ * /me/ask — TTHR Assistant, powered by Regal Lab.
  *
  * ───────────────────────────────────────────────────────────────────────────────
  * THE BACKEND WAS ALREADY HERE
@@ -36,6 +36,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Loader2, MessagesSquare, Mic, MicOff, RotateCcw, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useVoiceInput, useVoiceOutput } from "../hooks/useVoice";
+import { RichText } from "../components/RichText";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -131,8 +132,14 @@ function Turn({ turn }: { turn: AskTurn }) {
 
       {turn.answer !== null ? (
         <div className="space-y-3">
+          {/* The narrative is markdown-lite by contract; rendering it as plain text put
+              literal ** around every emphasised figure. RichText parses three inline forms
+              and nothing else, into elements rather than HTML. */}
           {turn.answer.spec.narrative !== "" ? (
-            <p className="max-w-[52rem] text-sm leading-relaxed">{turn.answer.spec.narrative}</p>
+            <RichText
+              text={turn.answer.spec.narrative}
+              className="max-w-[52rem] text-sm leading-relaxed"
+            />
           ) : null}
 
           {turn.answer.spec.blocks.map((block, i) => (
@@ -236,7 +243,10 @@ export default function AskPage() {
       <PageHeader
         icon={Sparkles}
         title={t("ai.title")}
-        subtitle={t("ai.subtitle")}
+        // The attribution rides on the subtitle rather than the title: "TTHR Assistant" is
+        // what people will call it, and a title carrying its vendor is a title nobody says
+        // out loud. It stays on screen either way.
+        subtitle={`${t("ai.poweredBy")} · ${t("ai.subtitle")}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {/*

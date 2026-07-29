@@ -116,7 +116,7 @@ const ME: readonly RouteMeta[] = [
     P1.5 rather than P1: it depends on an external model and a paid key, so it is a real
     feature with an operational dependency, not core attendance.
   */
-  { path: "/me/ask", title: "Regal Lab AI Assistant", hint: "Ask about your own attendance, leave and pay — charts, provenance for every figure, and Excel or PDF download.", cap: "me.view", domain: "ai", phase: "P1.5", icon: Sparkles },
+  { path: "/me/ask", title: "TTHR Assistant", hint: "Ask about your own attendance, leave and pay — charts, provenance for every figure, and Excel or PDF download.", cap: "me.view", domain: "ai", phase: "P1.5", icon: Sparkles },
   { path: "/me/ask/history", title: "Assistant history", hint: "Every conversation you have had with the assistant — open one, read it back, download it as Excel or PDF.", cap: "me.view", domain: "ai", phase: "P1.5", icon: MessagesSquare },
 ];
 

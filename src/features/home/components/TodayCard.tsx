@@ -41,12 +41,17 @@ export interface TodayCardProps {
   today: string;
 }
 
+/*
+  ONE COLUMN, NOT TWO. This card was written for a row of two, so it carried
+  `lg:col-span-2` and left a single column for Needs-your-attention. The punch card has
+  joined that row, so a two-column Today would push the third card onto a row of its own —
+  which is exactly the vertical stacking this change exists to remove.
+*/
 export function TodayCard({ query, nowMs, today }: TodayCardProps) {
   return (
     <HomeCard
       icon={Clock}
       title={t("home.today.title")}
-      className="lg:col-span-2"
       action={
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
@@ -60,8 +65,9 @@ export function TodayCard({ query, nowMs, today }: TodayCardProps) {
     >
       <RegionBody
         query={query}
+        // Two across, matching the real grid below — never four in a third-width card.
         skeleton={
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }, (_, i) => (
               <div key={i} className="space-y-2">
                 <Skeleton className="h-3 w-16" />
@@ -98,7 +104,14 @@ function TodayFacts({ day, nowMs }: { day: AttendanceDay; nowMs: number }) {
 
   return (
     <div className="space-y-4">
-      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {/*
+        TWO ACROSS AT EVERY WIDTH. It used to go to four columns at `sm`, which was right
+        for a card spanning two thirds of the page and wrong now: four stats across a
+        third-width card gives each of them about seventy pixels, and "0h 00m" wraps
+        mid-value. Two-by-two keeps every figure on one line, and the four facts pair up
+        naturally anyway — in and out, then worked and status.
+      */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         <Fact
           label={t("home.today.firstIn")}
           value={day.first_in_at === null ? "—" : fmtTime(day.first_in_at)}

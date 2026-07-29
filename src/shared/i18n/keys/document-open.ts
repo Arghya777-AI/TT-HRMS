@@ -109,4 +109,9 @@ export const keysDocumentOpen = {
   "ai.history.col.when": "When",
   "ai.history.col.who": "Who",
   "ai.history.col.said": "Message",
+
+  // ── Punch card ────────────────────────────────────────────────────────────
+  // A disclosure, not a deletion: the mechanics stay in the page for search and for
+  // a screen reader. The biometric honesty sentence is NOT behind this.
+  "me.punch.howItWorks": "How this works",
 } as const;

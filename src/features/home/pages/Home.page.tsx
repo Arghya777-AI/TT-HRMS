@@ -147,24 +147,38 @@ export default function HomePage() {
         />
       )}
 
-      {/* The punch button, above everything else on the page: it is the one
-          thing on /me that is time-critical, and the employee is standing at
-          their desk about to start or end a shift. It owns its own queries and
-          renders nothing but a sentence when web punch is not enabled for the
-          account, so it cannot push the rest of the page down for people who
-          cannot use it. */}
-      <div className="mb-4">
-        {/*
-          Above the punch card deliberately: if HR has asked this person to enrol,
-          the punch card below will tell them their face is not registered, and this
-          is the sentence that explains what to do about it. Reversing the order
-          would show the symptom before the cause.
-        */}
-        <FaceEnrolmentAskCard />
-        <SelfPunchCard />
-      </div>
+      {/*
+        Above the punch card deliberately: if HR has asked this person to enrol, the
+        punch card will tell them their face is not registered, and this is the sentence
+        that explains what to do about it. Reversing the order would show the symptom
+        before the cause. It stays FULL WIDTH — it is a paragraph of prose, and prose in
+        a one-third column is a column of two-word lines.
+      */}
+      <FaceEnrolmentAskCard />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/*
+        ── ONE ROW, THREE COLUMNS ────────────────────────────────────────────────
+        The punch card used to sit full-width above this grid, so a confirmed punch
+        pushed Today and Needs-your-attention most of a screen down: on a laptop you
+        punched in and then had to scroll to see whether the day had been recorded.
+        Now the three things an employee opens this page for share the first row.
+
+        THE PUNCH CARD IS STILL FIRST IN SOURCE ORDER, so it is the first thing a screen
+        reader reaches and the top card on a phone. Being time-critical did not require
+        being full-width; it required being first.
+
+        THE BREAKPOINTS. One column below 640, two from 640, three from 1024. The middle
+        step is the one that was missing — the old grid went straight from one column to
+        three at `lg`, so every tablet and every half-width laptop window rendered a
+        single tall stack, which is the shape being complained about.
+
+        `items-start` matters: without it CSS grid stretches every card in a row to the
+        tallest one, so an expanded punch confirmation would pad Today and Attention with
+        empty space and give back the vertical room it just saved.
+      */}
+      <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <SelfPunchCard />
+
         {/* Region B + C */}
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
         <AttentionCard query={attentionQuery} nowMs={nowMs} />

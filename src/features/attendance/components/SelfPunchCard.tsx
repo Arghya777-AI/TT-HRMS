@@ -228,7 +228,7 @@ function LocationLine({ outcome }: { outcome: PunchRecorded }) {
         lng: outcome.fix.longitude,
         location_accuracy_m: outcome.fix.accuracyMetres,
       }}
-      variant="detail"
+      variant="compact"
       className="text-left"
     />
   );
@@ -622,14 +622,22 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             </p>
           ) : null}
           <LocationLine outcome={phase.outcome} />
-          {reviewLine(phase.outcome) !== null ? (
-            <p className="text-muted-foreground">{reviewLine(phase.outcome)}</p>
-          ) : null}
           {phase.outcome.message !== null ? (
             <p className="mt-1 text-muted-foreground">{phase.outcome.message}</p>
           ) : null}
-          <p className="num mt-1 text-xs tabular-nums text-muted-foreground">
-            {t("me.punch.done.elapsed", { seconds: (phase.elapsedMs / 1000).toFixed(1) })}
+          {/*
+            The review sentence and the timing shared a card three rows tall between
+            them for one row of information. They are one wrapped line now: same words,
+            same order, `flex-wrap` so a narrow column breaks them onto two rather than
+            overflowing. The timing keeps `tabular-nums` — it is a measurement.
+          */}
+          <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+            {reviewLine(phase.outcome) !== null ? (
+              <span>{reviewLine(phase.outcome)}</span>
+            ) : null}
+            <span className="num tabular-nums">
+              {t("me.punch.done.elapsed", { seconds: (phase.elapsedMs / 1000).toFixed(1) })}
+            </span>
           </p>
         </AuthNotice>
         <div className="flex flex-wrap gap-2">
@@ -772,10 +780,32 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             {punchState.data !== undefined ? (
               <p className="num tabular-nums">{lastScanLine(punchState.data, today)}</p>
             ) : null}
-            <p>{t("me.punch.state.direction")}</p>
-            <p>{t("me.punch.face.frameRule", { total: FACE_MIN_FRAMES })}</p>
-            {/* The disclosure, in words, every time — not once in a policy page. */}
+            {/*
+              THE TWO MECHANICAL EXPLANATIONS FOLD AWAY; THE DISCLOSURE DOES NOT.
+
+              These three paragraphs ran to about a dozen wrapped lines once this card
+              moved into a one-third column, which is most of the vertical space the
+              layout change was meant to give back. But they are not equivalent:
+
+                · how the direction is decided, and the three-frame rule, are mechanics.
+                  Useful once, and then only when something looks wrong — a disclosure is
+                  the right shape for them, and `<details>` keeps them in the page for
+                  search and for a screen reader.
+                · the honesty sentence is a biometric disclosure. The comment it replaced
+                  said it plainly: "in words, every time — not once in a policy page."
+                  Folding it away to save four lines would be reversing that decision to
+                  make a layout tidier, so it stays open, above the fold, always.
+            */}
             <p>{t("me.punch.face.honesty")}</p>
+            <details className="group">
+              <summary className="cursor-pointer list-none font-medium text-foreground/70 hover:text-foreground">
+                {t("me.punch.howItWorks")}
+              </summary>
+              <div className="mt-1 space-y-1">
+                <p>{t("me.punch.state.direction")}</p>
+                <p>{t("me.punch.face.frameRule", { total: FACE_MIN_FRAMES })}</p>
+              </div>
+            </details>
           </div>
         ) : null}
       </div>

@@ -156,3 +156,52 @@ describe("the geofence verdict is gone from the punch UI", () => {
     });
   }
 });
+
+/**
+ * The `compact` variant exists to make the punch confirmation fit a one-third column
+ * beside Today and Needs-your-attention. It was added by TYPESETTING the same facts more
+ * tightly — the coordinate and the accuracy onto one line, the long geocoder address
+ * clamped to two — and the whole point is that nothing was dropped.
+ *
+ * That distinction is invisible in a diff six months from now, and "make it fit" is
+ * exactly the instruction under which a coordinate or an accuracy quietly disappears. So
+ * it is asserted: whatever else changes about the compact layout, it renders the place,
+ * the coordinate, the accuracy and a map link, and the accuracy still carries the
+ * hint that stops a ±2 km fix reading as a precise location.
+ */
+describe("the compact variant drops none of the facts", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src/shared/ui/PunchLocation.tsx"),
+    "utf8",
+  );
+  const start = source.indexOf('if (variant === "compact")');
+  const block = source.slice(start, source.indexOf("\n  return (", start));
+
+  it("is actually implemented", () => {
+    expect(start).toBeGreaterThan(-1);
+  });
+
+  it("renders the coordinate", () => {
+    expect(block).toContain("{coordinates}");
+  });
+
+  it("renders the accuracy, with its hint", () => {
+    expect(block).toContain("{accuracyText}");
+    expect(block).toContain("punch.place.accuracyHint");
+  });
+
+  it("renders the place name and a map link", () => {
+    expect(block).toContain("{nameLine.text}");
+    expect(block).toContain("{mapUrl}");
+  });
+
+  it("still shows the full address rather than only the short label", () => {
+    // Clamped to two lines is fine; absent is not.
+    expect(block).toContain("place.data.displayName");
+    expect(block).toContain("line-clamp-2");
+  });
+
+  it("names no geofence verdict", () => {
+    expect(block).not.toMatch(/geofence|insideVenue|outsideVenue/i);
+  });
+});

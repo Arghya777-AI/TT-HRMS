@@ -54,8 +54,15 @@ export interface PunchLocationProps {
   /**
    * `inline` — one line for a table cell: short place, accuracy, map link.
    * `detail` — the full block: full address, coordinate, accuracy, map, copy.
+   * `compact` — the same FACTS as `detail` in about a third of the height, for a
+   *   card sitting in a column beside other cards. Nothing is removed: the place,
+   *   the full address, the coordinate and the accuracy are all still on screen,
+   *   because those were asked for on every punch and an employee may need them
+   *   later. What changes is the typesetting — the coordinate and the accuracy
+   *   share one line instead of occupying a two-row definition list, and the long
+   *   geocoder address is clamped to two lines with the whole of it in `title`.
    */
-  variant?: "inline" | "detail";
+  variant?: "inline" | "detail" | "compact";
   /**
    * Whether to render anything at all when the punch carries no coordinate.
    * A detail panel says "No location recorded" (the absence is information);
@@ -150,6 +157,64 @@ export function PunchLocation({
           <ExternalLink className="size-3.5" aria-hidden="true" />
         </a>
       </span>
+    );
+  }
+
+  if (variant === "compact") {
+    return (
+      <div className={`min-w-0 space-y-1 ${className ?? ""}`}>
+        <div className="flex items-start gap-1.5">
+          <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="min-w-0">
+            <div
+              className={`truncate text-sm font-medium ${
+                nameLine.muted ? "text-muted-foreground" : "text-foreground"
+              }`}
+              title={nameLine.text}
+            >
+              {nameLine.text}
+            </div>
+            {/* Clamped, not dropped. The full address is the one line that made this
+                panel four rows tall on a narrow column, and it is also the line that
+                tells somebody which gate they were at — so it stays, at two lines,
+                with the rest reachable on hover and by a screen reader. */}
+            {outcome === "resolved" &&
+              place.data?.displayName !== null &&
+              place.data?.displayName !== undefined &&
+              place.data.displayName !== nameLine.text && (
+                <div
+                  className="line-clamp-2 text-xs leading-snug text-muted-foreground"
+                  title={place.data.displayName}
+                >
+                  {place.data.displayName}
+                </div>
+              )}
+            {nameLine.muted && nameLine.hint !== null && (
+              <div className="text-xs text-muted-foreground">{nameLine.hint}</div>
+            )}
+          </div>
+        </div>
+
+        {/* One line for four things that used to take four. `flex-wrap` so it
+            degrades to two lines on a very narrow column rather than overflowing. */}
+        <div className="ml-5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+          <span className="num text-foreground">{coordinates}</span>
+          <span className="text-muted-foreground" title={t("punch.place.accuracyHint")}>
+            {accuracyText}
+          </span>
+          <a
+            href={mapUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            aria-label={t("punch.place.openMapAria", { place: nameLine.text })}
+          >
+            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+            {t("punch.place.openMap")}
+          </a>
+          <CopyCoordinates value={coordinates} />
+        </div>
+      </div>
     );
   }
 

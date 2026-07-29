@@ -166,6 +166,7 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/me/apply/web-punch": () => import("./apply/pages/WebPunchRequest.page"),
   "/me/approvals": () => import("./approvals/pages/Approvals.page"),
   "/me/ask": () => import("./ai/pages/Ask.page"),
+  "/me/ask/history": () => import("./ai/pages/Conversations.page"),
   "/me/assets": () => import("./assets/pages/MyAssets.page"),
   "/me/attendance": () => import("./attendance/pages/MyAttendance.page"),
   "/me/attendance/:date": () => import("./attendance/pages/AttendanceDayDetail.page"),

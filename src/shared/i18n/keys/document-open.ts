@@ -72,4 +72,41 @@ export const keysDocumentOpen = {
   "admin.roles.check.ok": "Consistent",
   "admin.roles.reasonPrompt":
     "Why is {name}'s access level changing? At least 10 characters — this is kept in the audit trail.",
+
+  // ── Assistant history (/me/ask/history) ───────────────────────────────────
+  // ── Voice ─────────────────────────────────────────────────────────────────
+  "ai.voice.start": "Dictate your question",
+  "ai.voice.stop": "Stop dictating",
+  "ai.voice.listening": "Listening — say your question, then check it before sending.",
+  // Chromium sends the audio to Google; Safari and iOS do it on the device. Said
+  // plainly, because the audio is somebody talking about their own pay.
+  "ai.voice.cloudHint":
+    "Dictate your question. On this browser the audio is transcribed by Google, not on your device.",
+  "ai.voice.localHint": "Dictate your question. The audio is transcribed on your device.",
+  "ai.voice.readAloud": "Read aloud",
+  "ai.voice.stopReading": "Stop reading",
+  "ai.history.link": "Past conversations",
+  "ai.history.title": "Your conversations",
+  "ai.history.subtitle":
+    "Everything you have asked the assistant, kept so you can read it back. Open one to see the whole exchange, or download it.",
+  "ai.history.askNew": "Ask something new",
+  "ai.history.untitled": "Untitled conversation",
+  "ai.history.you": "You",
+  "ai.history.assistant": "Assistant",
+  "ai.history.meta": "{turns} messages · last activity {when}",
+  "ai.history.archived": "archived",
+  "ai.history.archiveAria": "Archive the conversation \u201c{name}\u201d",
+  "ai.history.restoreAria": "Restore the conversation \u201c{name}\u201d",
+  "ai.history.showArchived": "Show {n} archived",
+  "ai.history.hideArchived": "Hide archived",
+  "ai.history.empty.title": "No conversations yet",
+  "ai.history.empty.hint": "Ask the assistant something and it will appear here.",
+  "ai.history.emptyTranscript": "This conversation has no messages to show.",
+  // Never silent about a gap: a transcript missing a turn must not read as complete.
+  "ai.history.redacted":
+    "{n} message(s) are not shown here because their content was removed.",
+  "ai.history.export.title": "Assistant conversation",
+  "ai.history.col.when": "When",
+  "ai.history.col.who": "Who",
+  "ai.history.col.said": "Message",
 } as const;

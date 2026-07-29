@@ -33,7 +33,9 @@
  * @route /me/ask
  */
 import { useMemo, useState, type FormEvent } from "react";
-import { Loader2, RotateCcw, Send, Sparkles } from "lucide-react";
+import { Loader2, MessagesSquare, Mic, MicOff, RotateCcw, Send, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useVoiceInput, useVoiceOutput } from "../hooks/useVoice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -104,6 +106,9 @@ async function downloadTable(
 
 function Turn({ turn }: { turn: AskTurn }) {
   const [busy, setBusy] = useState<ExportFormat | null>(null);
+  // Per-turn, so pressing "read this" on one answer stops the other: the hook cancels
+  // any utterance in flight, which is what somebody means by it.
+  const speech = useVoiceOutput();
   const tables = useMemo(
     () => (turn.answer === null ? [] : exportableTables(turn.answer.spec)),
     [turn.answer],
@@ -142,6 +147,30 @@ function Turn({ turn }: { turn: AskTurn }) {
                 <li key={caveat}>{caveat}</li>
               ))}
             </ul>
+          ) : null}
+
+          {/*
+            READ IT ALOUD. Only the narrative is spoken — a synthesiser reading a
+            fifteen-row roster is unusable, and the narrative is the part written as
+            sentences. It is on the device, so nothing is sent anywhere, unlike
+            dictation on Chromium.
+          */}
+          {speech.supported && turn.answer.spec.narrative.trim() !== "" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                speech.speaking ? speech.stop() : speech.speak(turn.answer?.spec.narrative ?? "")}
+              aria-pressed={speech.speaking}
+            >
+              {speech.speaking ? (
+                <VolumeX className="mr-2 size-4" aria-hidden />
+              ) : (
+                <Volume2 className="mr-2 size-4" aria-hidden />
+              )}
+              {speech.speaking ? t("ai.voice.stopReading") : t("ai.voice.readAloud")}
+            </Button>
           ) : null}
 
           {tables.length > 0 ? (
@@ -185,6 +214,15 @@ function Turn({ turn }: { turn: AskTurn }) {
 export default function AskPage() {
   const { turns, isAsking, pending, ask, reset } = useAskAgent();
   const [draft, setDraft] = useState("");
+
+  /*
+    Dictated text is APPENDED to whatever is already in the box, not substituted for it.
+    Somebody who typed half a question and then reached for the microphone means "and
+    also this"; replacing their typing would silently destroy it.
+  */
+  const voice = useVoiceInput((text) =>
+    setDraft((prev) => (prev.trim() === "" ? text : `${prev.trim()} ${text}`)),
+  );
   const [mode, setMode] = useState<"panel" | "analyst">("panel");
 
   function submit(event: FormEvent) {
@@ -200,12 +238,27 @@ export default function AskPage() {
         title={t("ai.title")}
         subtitle={t("ai.subtitle")}
         actions={
-          turns.length > 0 ? (
-            <Button type="button" variant="outline" size="sm" onClick={reset}>
-              <RotateCcw className="mr-2 size-4" aria-hidden />
-              {t("ai.newThread")}
+          <div className="flex flex-wrap items-center gap-2">
+            {/*
+              ALWAYS PRESENT, not only when there are turns. Past conversations are
+              exactly what somebody wants when this screen is EMPTY — they came back to
+              re-read an answer, and a link that appears only after you ask something new
+              is the one place it is no use. The command palette also finds it, but
+              nobody searches for a screen they do not know exists.
+            */}
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/me/ask/history">
+                <MessagesSquare className="mr-2 size-4" aria-hidden />
+                {t("ai.history.link")}
+              </Link>
             </Button>
-          ) : undefined
+            {turns.length > 0 ? (
+              <Button type="button" variant="outline" size="sm" onClick={reset}>
+                <RotateCcw className="mr-2 size-4" aria-hidden />
+                {t("ai.newThread")}
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
@@ -286,6 +339,32 @@ export default function AskPage() {
             maxLength={2_000}
             disabled={isAsking}
           />
+          {/*
+            DICTATION FILLS THE BOX, IT DOES NOT SEND. Recognition mishears exactly the
+            words these questions are made of — Aadhaar, lakh, names — so a question sent
+            unread costs a wrong answer. Hidden entirely where the browser has no
+            SpeechRecognition (Firefox) rather than failing on click.
+          */}
+          {voice.supported ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={voice.listening ? "default" : "outline"}
+              disabled={isAsking}
+              onClick={() => (voice.listening ? voice.stop() : voice.start())}
+              aria-pressed={voice.listening}
+              title={voice.isCloudRecognition ? t("ai.voice.cloudHint") : t("ai.voice.localHint")}
+            >
+              {voice.listening ? (
+                <MicOff className="size-4" aria-hidden />
+              ) : (
+                <Mic className="size-4" aria-hidden />
+              )}
+              <span className="sr-only">
+                {voice.listening ? t("ai.voice.stop") : t("ai.voice.start")}
+              </span>
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant={mode === "analyst" ? "default" : "outline"}
@@ -304,6 +383,17 @@ export default function AskPage() {
             <span className="sr-only">{t("ai.send")}</span>
           </Button>
         </form>
+
+        {/* The microphone's own state, under the composer where it is being used.
+            `listening` is said out loud too: a person who cannot see the button change
+            colour has no other signal that the microphone is open. */}
+        {voice.error !== null ? (
+          <p className="text-center text-xs text-destructive" role="status">{voice.error}</p>
+        ) : voice.listening ? (
+          <p className="text-center text-xs text-primary" role="status">
+            {t("ai.voice.listening")}
+          </p>
+        ) : null}
 
         <p className="text-center text-xs text-muted-foreground/70">
           {t("ai.scopeNote", { today: istToday() })}

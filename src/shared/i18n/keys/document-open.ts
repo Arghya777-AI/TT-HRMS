@@ -103,7 +103,13 @@ export const keysDocumentOpen = {
   "ai.voice.err.network": "Speech recognition needs a network connection and could not reach it.",
   "ai.voice.err.generic": "Dictation stopped unexpectedly. Type the question instead.",
   "ai.voice.stop": "Stop dictating",
-  "ai.voice.listening": "Listening — say your question, then check it before sending.",
+  // "Keeps listening" is the promise the continuous session now makes; the reader needs to
+  // know nothing will cut them off mid-sentence and that stopping is their job.
+  "ai.voice.listening":
+    "Listening — keep talking, then press the microphone again when you have finished.",
+  // Shown when the meter reads zero: the session is open and hearing nothing.
+  "ai.voice.listeningSilent":
+    "Listening, but not picking anything up yet — check your microphone is not muted.",
   // Chromium sends the audio to Google; Safari and iOS do it on the device. Said
   // plainly, because the audio is somebody talking about their own pay.
   "ai.voice.cloudHint":

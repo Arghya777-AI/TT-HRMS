@@ -346,29 +346,57 @@ export default function AskPage() {
             SpeechRecognition (Firefox) rather than failing on click.
           */}
           {voice.supported ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={voice.listening ? "default" : "outline"}
-              disabled={isAsking}
-              onClick={() => {
-                // `start` is async now — it asks the browser for the microphone before it
-                // begins listening, which is what raises the permission dialog.
-                if (voice.listening) voice.stop();
-                else void voice.start();
-              }}
-              aria-pressed={voice.listening}
-              title={voice.isCloudRecognition ? t("ai.voice.cloudHint") : t("ai.voice.localHint")}
-            >
+            <span className="relative inline-flex shrink-0">
+              {/*
+                THE PULSE IS THE MICROPHONE'S ACTUAL LEVEL, not a keyframe animation. Two
+                rings scale with `voice.level`, which a WebAudio analyser measures from the
+                live stream — so it moves when somebody speaks, and stays still when the
+                microphone is hearing nothing. That second case is the useful one: a decorative
+                pulse would keep throbbing at a muted microphone and tell the reader their
+                question was being heard when it was not.
+
+                The outer ring lags the inner one and fades as it grows, which is what reads
+                as a pulse spreading outward rather than a circle changing size.
+              */}
               {voice.listening ? (
-                <MicOff className="size-4" aria-hidden />
-              ) : (
-                <Mic className="size-4" aria-hidden />
-              )}
-              <span className="sr-only">
-                {voice.listening ? t("ai.voice.stop") : t("ai.voice.start")}
-              </span>
-            </Button>
+                <>
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-md bg-primary/30 transition-transform duration-100 ease-out motion-reduce:hidden"
+                    style={{ transform: `scale(${1 + voice.level * 0.9})`, opacity: 0.55 - voice.level * 0.35 }}
+                  />
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-md bg-primary/40 transition-transform duration-75 ease-out motion-reduce:hidden"
+                    style={{ transform: `scale(${1 + voice.level * 0.45})` }}
+                  />
+                </>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                className="relative"
+                variant={voice.listening ? "default" : "outline"}
+                disabled={isAsking}
+                onClick={() => {
+                  // `start` is async — it asks the browser for the microphone before it
+                  // begins listening, which is what raises the permission dialog.
+                  if (voice.listening) voice.stop();
+                  else void voice.start();
+                }}
+                aria-pressed={voice.listening}
+                title={voice.isCloudRecognition ? t("ai.voice.cloudHint") : t("ai.voice.localHint")}
+              >
+                {voice.listening ? (
+                  <MicOff className="size-4" aria-hidden />
+                ) : (
+                  <Mic className="size-4" aria-hidden />
+                )}
+                <span className="sr-only">
+                  {voice.listening ? t("ai.voice.stop") : t("ai.voice.start")}
+                </span>
+              </Button>
+            </span>
           ) : null}
           <Button
             type="button"
@@ -396,7 +424,12 @@ export default function AskPage() {
           <p className="text-center text-xs text-destructive" role="status">{voice.error}</p>
         ) : voice.listening ? (
           <p className="text-center text-xs text-primary" role="status">
-            {t("ai.voice.listening")}
+            {/*
+              `level === 0` while listening is not nothing to say: the microphone is open and
+              picking up silence, which is exactly the state somebody needs told about when
+              it is muted at the operating system or they are too far away from it.
+            */}
+            {voice.level === 0 ? t("ai.voice.listeningSilent") : t("ai.voice.listening")}
           </p>
         ) : null}
 

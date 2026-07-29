@@ -14,6 +14,9 @@
  */
 import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { ZodError } from "zod";
+import { TTApiError } from "@/shared/api/invoke";
+import { t } from "@/shared/i18n/en";
 import { askAgent, type AskResponse } from "../api/aiAgent.api";
 
 export interface AskTurn {
@@ -32,6 +35,51 @@ export interface AskAgentState {
   pending: string | null;
   ask: (question: string, mode?: "panel" | "analyst") => void;
   reset: () => void;
+}
+
+
+/**
+ * Turn a failure into a sentence a person can act on.
+ *
+ * THIS EXISTED AS `error.message` AND PUT A ZOD DUMP ON SCREEN. A `ZodError`'s `message`
+ * IS the serialised list of issues, so a schema mismatch printed this to the reader:
+ *
+ *   [ { "code": "invalid_type", "expected": "string", "received": "undefined",
+ *       "path": [ "spec", "blocks", 1, "series", 0, "colour" ], "message": "Required" } ]
+ *
+ * Which tells an employee asking about their attendance precisely nothing, and reads as a
+ * broken product rather than a bad answer. The detail is not thrown away — it goes to the
+ * console, where the person who can act on it will look.
+ *
+ * A SERVER REFUSAL KEEPS ITS OWN WORDS. `TTApiError.problem.detail` was written by the
+ * side that refused and is more specific than any sentence here.
+ */
+function explainAskError(error: unknown): string {
+  if (error instanceof TTApiError) {
+    const detail = error.problem.detail;
+    if (typeof detail === "string" && detail.trim() !== "") return detail;
+    return t("ai.error.server");
+  }
+  if (error instanceof ZodError) {
+    // Kept for whoever is debugging; never shown.
+    console.error("ai-agent answer failed validation", error.issues);
+    return t("ai.error.shape");
+  }
+  if (error instanceof Error) {
+    /*
+      A zod error that has been wrapped loses `instanceof` but keeps the dump in its
+      message. Anything that looks like a serialised issue list is treated the same way
+      rather than pasted on screen — the shape of the string is the giveaway.
+    */
+    const looksLikeIssueList = /"code"\s*:\s*"invalid_/.test(error.message) ||
+      /^\s*\[\s*\{/.test(error.message);
+    if (looksLikeIssueList) {
+      console.error("ai-agent answer failed validation", error);
+      return t("ai.error.shape");
+    }
+    return error.message;
+  }
+  return t("ai.error.unknown");
 }
 
 export function useAskAgent(): AskAgentState {
@@ -78,7 +126,7 @@ export function useAskAgent(): AskAgentState {
                 id: `err-${prior.length}`,
                 question: trimmed,
                 answer: null,
-                error: error instanceof Error ? error.message : String(error),
+                error: explainAskError(error),
               },
             ]);
             setPending(null);

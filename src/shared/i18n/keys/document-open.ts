@@ -120,4 +120,12 @@ export const keysDocumentOpen = {
   // height cap, and that is what somebody pressing it wants named.
   "home.row.expand": "Show everything",
   "home.row.collapse": "Fit to one row",
+
+  // ── Assistant failures, in sentences ──────────────────────────────────────
+  // A zod dump used to be printed verbatim here. These say what happened and what to
+  // do; the issue list goes to the console for whoever can act on it.
+  "ai.error.shape":
+    "The assistant built an answer this screen could not read, so nothing is shown rather than something wrong. Ask again — it usually succeeds on a second attempt.",
+  "ai.error.server": "The assistant could not answer that just now. Try again shortly.",
+  "ai.error.unknown": "Something went wrong while answering. Try again shortly.",
 } as const;

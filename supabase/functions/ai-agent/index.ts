@@ -2070,7 +2070,41 @@ function coerceSpecNotation(candidate: unknown, calls: ToolCallRecord[]): unknow
         const list = block[key];
         if (Array.isArray(list)) for (const v of list) fixFormat(v);
       }
-      if (Array.isArray(block.series)) for (const sr of block.series) fixFormat(sr);
+      /*
+        A SERIES WITHOUT `colour` OR `format` REACHED THE BROWSER AND CRASHED THE ANSWER.
+
+        The wire schema declares both required, but that grammar is Opus-only and the
+        deployed model is claude-sonnet-5, so nothing enforced it. `validateSpec` checked
+        a series' POINTS and never its own two fields, so an incomplete series passed the
+        server — and the client's zod schema, which does require them, rejected the whole
+        answer and printed its raw error object on screen:
+
+          path: ["spec","blocks",1,"series",0,"colour"] — Required
+
+        Both are presentation, not substance: a chart line's colour token and the number
+        format of its y-values say nothing about whether the figures are right. So they
+        are filled rather than fatal. The colour cycles through the palette by index,
+        which is what a caller would have chosen anyway, and the format defaults to the
+        one that renders any number legibly.
+      */
+      if (Array.isArray(block.series)) {
+        block.series.forEach((raw, i) => {
+          if (raw === null || typeof raw !== "object") return;
+          const sr = raw as Record<string, unknown>;
+          fixFormat(sr);
+          if (typeof sr.colour !== "string" || !(PALETTE_TOKENS as readonly string[]).includes(sr.colour)) {
+            sr.colour = PALETTE_TOKENS[i % 6] ?? "series-1";
+          }
+          if (typeof sr.format !== "string" || !(VALUE_FORMATS as readonly string[]).includes(sr.format)) {
+            sr.format = "decimal1";
+          }
+          if (typeof sr.name !== "string" || sr.name.trim() === "") {
+            sr.name = block.title !== undefined && typeof block.title === "string" && block.title !== ""
+              ? block.title
+              : "Series";
+          }
+        });
+      }
       const table = block.table;
       if (table !== null && typeof table === "object") {
         const cols = (table as Record<string, unknown>).columns;
@@ -2198,6 +2232,35 @@ function validateSpec(
           };
         });
         if (tbl.exportable === undefined) tbl.exportable = true;
+      }
+    }
+
+    /*
+      11a — A CHART MUST HAVE SOMETHING TO PLOT.
+
+      Nothing checked this, and filling in a series' missing `colour` and `format` (see
+      coerceSpecNotation) made the gap visible: a series that is well-formed but EMPTY now
+      passes every check, so three chart cards rendered under real headings — "Attendance
+      percentage by month", "Present days by month" — each containing the words "Nothing to
+      show for this part of the answer". A card that promises a chart and delivers a
+      shrug is worse than no card: the reader cannot tell whether they have no data or the
+      product is broken.
+
+      So an empty chart is a FAILURE. That buys a repair round, in which the model either
+      supplies the points or drops the block; and if it does neither, the fallback shows the
+      underlying figures as a table, which is the honest end state.
+
+      Only the series-driven types. `progress_bars`, `gauge_row` and `kpi_row` carry their
+      data in `values`, and `alert`/`stat_callout` legitimately have neither.
+    */
+    if (["line_chart", "bar_chart", "area", "donut", "calendar_heatmap"].includes(block.type)) {
+      const plottable = arr<{ points?: { y: number | null }[] }>(block.series)
+        .flatMap((sr) => arr<{ y: number | null }>(sr.points))
+        .filter((pt) => pt.y !== null).length;
+      if (plottable === 0) {
+        failures.push(
+          `${at}: a ${block.type} needs at least one point with a value. Either give it the figures from a tool result, or remove the block.`,
+        );
       }
     }
 
@@ -2350,6 +2413,22 @@ function validateSpec(
       }
     }
     for (const [si, series] of arr<{ name: string; colour: string; format: ValueFormat; points?: { x: string; y: number | null }[] }>(block.series).entries()) {
+      /*
+        The series' OWN fields, which this loop never checked — it went straight to the
+        points. That gap is what let a series with no `colour` through the server and into
+        a client whose schema requires it. Reported as failures so that if the coercion
+        above ever stops covering a case, the answer degrades to the server-rendered
+        fallback instead of a red error box in the reader's face.
+      */
+      if (typeof series.colour !== "string" || series.colour === "") {
+        failures.push(`${at}.series[${si}].colour is required (a palette token, not a hex)`);
+      }
+      if (!(VALUE_FORMATS as readonly string[]).includes(series.format)) {
+        failures.push(`${at}.series[${si}].format '${series.format}' is not a supported format`);
+      }
+      if (typeof series.name !== "string" || series.name === "") {
+        failures.push(`${at}.series[${si}].name is required`);
+      }
       // 9 — series/axis length equality is structural here: points carry x and y.
       for (const [pi, point] of arr<{ x: string; y: number | null }>(series.points).entries()) {
         if (point.y === null) continue;

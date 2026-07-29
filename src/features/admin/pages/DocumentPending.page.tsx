@@ -27,7 +27,7 @@
  * @route /admin/documents/pending
  */
 import { useMemo, useState } from "react";
-import { ClipboardCheck, FileClock, Inbox } from "lucide-react";
+import { Check, ClipboardCheck, FileClock, Inbox, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -40,6 +40,8 @@ import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
+import { useMutation } from "@tanstack/react-query";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { SelectField } from "../components/Field";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
 import {
@@ -52,6 +54,7 @@ import {
   usePolicyAckStatus,
 } from "../hooks/useDocumentsAdmin";
 import {
+  decideDocumentReview,
   ackStatusValues,
   type AckFilters,
   type AckStatus,
@@ -70,6 +73,73 @@ type Tab = "uploads" | "acks" | "compliance";
 
 /** The three acknowledgement states that are still owed. */
 const OPEN_ACK_STATUSES: readonly AckStatus[] = ["assigned", "opened", "overdue"];
+
+
+/**
+ * Approve / Reject for one waiting document, with the file one click away.
+ *
+ * VIEW COMES FIRST, deliberately: the whole failure mode of a review queue is
+ * approving a filename. The reviewer can open the file before deciding, and every
+ * open is written to `document_access_log` before the link exists.
+ *
+ * A REJECTION ASKS FOR A REASON and the server requires ten characters. That is the
+ * one the employee has to act on — "rejected" with no reason means they re-upload the
+ * same file and it is rejected again. An approval needs no sentence, because
+ * demanding one only teaches people to type "ok".
+ *
+ * THE SERVER'S REFUSAL IS SHOWN VERBATIM. It knows things this component does not
+ * (scope, whether the row is still pending) and its wording is the accurate one.
+ */
+function ReviewActions({ row, onDone }: { row: AdminDocument; onDone: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const decide = useMutation({
+    mutationFn: (v: { decision: "approved" | "rejected"; comment?: string }) =>
+      decideDocumentReview(row.id, v.decision, v.comment),
+    onSuccess: () => {
+      setError(null);
+      onDone();
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-1.5">
+        <DocumentOpenButtons documentId={row.id} title={row.title} variant="icon" />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={decide.isPending}
+          onClick={() => decide.mutate({ decision: "approved" })}
+        >
+          <Check className="mr-1.5 size-4" aria-hidden />
+          {t("admin.docs.pend.approve")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={decide.isPending}
+          onClick={() => {
+            // A prompt, not a bare button: the server wants ten characters and this
+            // sentence is what the employee will read and act on.
+            const reason = window.prompt(t("admin.docs.pend.rejectPrompt"));
+            if (reason !== null && reason.trim() !== "") {
+              decide.mutate({ decision: "rejected", comment: reason.trim() });
+            }
+          }}
+        >
+          <X className="mr-1.5 size-4" aria-hidden />
+          {t("admin.docs.pend.reject")}
+        </Button>
+      </div>
+      {error !== null ? (
+        <span className="max-w-[18rem] text-right text-xs text-destructive">{error}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export default function DocumentPendingPage() {
   const [tab, setTab] = useState<Tab>("uploads");
@@ -171,6 +241,21 @@ export default function DocumentPendingPage() {
       width: "9rem",
       hideBelow: "md",
       render: (row) => <StatusChip status={row.status} map={DOCUMENT_STATUS_CHIP} />,
+    },
+    {
+      /*
+        THE DECIDE COLUMN. This screen shipped as a read-only register because both
+        halves of a review were missing — there was no RPC, so approving would have
+        written a status with no reviewer against it. Migration 087 supplies
+        `decide_document_review`, which writes the status, the reviewer, the timestamp
+        and the comment in one statement, and `document-access` supplies the link, so
+        HR can look at the file before deciding rather than approving a filename.
+      */
+      key: "decide",
+      header: "",
+      align: "right",
+      width: "20rem",
+      render: (row) => <ReviewActions row={row} onDone={() => void uploads.refetch()} />,
     },
   ];
 

@@ -20,9 +20,15 @@
  *     which writes `document_access_log` FIRST. There is no
  *     `supabase/functions/document-access/` in this repo, so no download path is
  *     exposed at all rather than minting an unlogged URL from the browser.
- *  2. NO REVIEW DECISION. Approving or rejecting an upload has no server-side
- *     path: there is no `decide_document_review` RPC anywhere in
- *     `supabase/migrations/`, and `documents.reviewed_at` / `reviewed_by` have no
+ *  2. REVIEW DECISION — NOW EXISTS (migration 087). `decide_document_review`
+ *     writes the status, the reviewer, the timestamp and the comment in ONE
+ *     statement, which is why it is a definer function and not a column grant: a
+ *     row must never be able to claim a review nobody made. The note below records
+ *     what the situation WAS, because it is the reason the queue shipped read-only.
+ *
+ *     Previously: approving or rejecting an upload had no server-side
+ *     path: there was no `decide_document_review` RPC anywhere in
+ *     `supabase/migrations/`, and `documents.reviewed_at` / `reviewed_by` had no
  *     trigger to fill them. A PATCH of `status` alone would record half a
  *     review, so the Approval Queue is a register and says so.
  *  3. NO ACKNOWLEDGEMENT WAIVER. `ck_da__waive_reason` needs `waived_by` +
@@ -60,6 +66,7 @@ import {
   lt,
   lte,
   paginate,
+  rpcOne,
   selectCount,
   selectMany,
   softDelete,
@@ -1218,4 +1225,36 @@ export function unresolvedTokensOf(problem: unknown): string[] {
     if (token !== "" && !out.includes(token)) out.push(token);
   }
   return out;
+}
+
+// =============================================================================
+// REVIEW DECISION (migration 087)
+// =============================================================================
+
+/**
+ * Approve or reject a document that is awaiting review.
+ *
+ * The server owns every rule and this function argues with none of them: only a
+ * `pending_review` row can be decided, a rejection needs a ten-character reason, and
+ * authority is `app.is_admin()` within scope. Its refusals arrive as plain sentences
+ * and are surfaced unchanged — the server's wording is the accurate one.
+ *
+ * Returns the decision instant, which is also what lands in `reviewed_at`.
+ */
+export async function decideDocumentReview(
+  documentId: string,
+  decision: "approved" | "rejected",
+  comment?: string,
+): Promise<string> {
+  const at = await rpcOne(
+    "decide_document_review",
+    {
+      p_document_id: documentId,
+      p_decision: decision,
+      p_comment: comment ?? null,
+    },
+    z.string(),
+  );
+  if (at === null) throw new Error("The review decision could not be recorded.");
+  return at;
 }

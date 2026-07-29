@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip } from "@/shared/ui/StatusChip";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { DOCUMENT_STATUS_CHIP } from "@/features/admin/documents/labels";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
@@ -162,6 +163,14 @@ export default function ProfileDocumentsPage() {
                         {t("profile.docs.expires", { date: fmtCivilDate(d.expiry_date) })}
                       </span>
                     ) : null}
+                    {/*
+                      An employee could upload their Aadhaar here and then never see it
+                      again — the list showed the metadata and offered no way to open the
+                      file. That was not laziness: storage grants no self SELECT on the
+                      bucket, so the only route in is a signed URL from `document-access`,
+                      which did not exist until now. It does, so the button does.
+                    */}
+                    <DocumentOpenButtons documentId={d.id} title={d.title} variant="icon" />
                   </div>
                 </li>
               ))}

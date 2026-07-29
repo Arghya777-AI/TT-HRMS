@@ -30,6 +30,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { StatusChip } from "@/shared/ui/StatusChip";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { dash, formatNumber } from "@/lib/format";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
@@ -268,6 +269,22 @@ export default function DocumentRepositoryPage() {
               : t("admin.docs.repo.byPerson")}
           </span>
         </span>
+      ),
+    },
+    {
+      /*
+        OPEN THE FILE. The vault listed nine facts about a document and offered no
+        way to look at it — HR could see that an Aadhaar existed, its size and its
+        scan state, but not the thing itself. Storage grants no browser-side read on
+        this bucket, so the link has to be minted by `document-access`, which did not
+        exist until now. Every open is logged before the URL exists.
+      */
+      key: "open",
+      header: "",
+      align: "right",
+      width: "9rem",
+      render: (row) => (
+        <DocumentOpenButtons documentId={row.id} title={row.title} variant="icon" />
       ),
     },
   ];

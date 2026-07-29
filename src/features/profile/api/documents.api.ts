@@ -379,7 +379,17 @@ export async function uploadProfileDocument(
         checksum_sha256: checksum,
         current_version: 1,
         // Every literal below is required by documents__self__insert.
-        status: "pending_review",
+        //
+        // The STATUS is the one thing that is no longer a literal. The type says
+        // whether a human has anything to check: an Aadhaar or a bank proof asserts
+        // something the company would otherwise take on trust, so it waits for HR; a
+        // photograph asserts nothing, so it is approved on arrival. Putting a photo in
+        // the review queue was not merely useless — it trains people to clear the
+        // queue without looking, which is how a real Aadhaar mismatch gets waved
+        // through. Migration 086 sets the flag and the RLS policy enforces exactly
+        // this expression, so a mismatch here is rejected rather than silently
+        // accepted.
+        status: input.type.requires_approval ? "pending_review" : "approved",
         virus_scan_status: "pending",
         is_system_generated: false,
         is_confidential: false,

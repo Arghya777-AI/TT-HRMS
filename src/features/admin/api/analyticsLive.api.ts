@@ -25,6 +25,40 @@
  * multiple times"), and it would present as a dashboard that is silently not live in
  * development only. A serial makes the overlap harmless.
  */
+/*
+  ─────────────────────────────────────────────────────────────────────────────
+  LIVE UPDATES DO NOT CURRENTLY ARRIVE, AND THE CAUSE IS NOT IN THIS FILE
+  ─────────────────────────────────────────────────────────────────────────────
+  Measured, not guessed: subscribe as a signed-in user, insert a real row by SQL, count
+  the events. ZERO arrive — for punches, for `ai_messages`, for `ai_conversations`, on a
+  parent-table binding and on a partition binding alike. So nothing below is at fault and
+  no amount of rebinding will help.
+
+  WHAT IS ACTUALLY WRONG. While a client reports `SUBSCRIBED`, `realtime.subscription`
+  holds ZERO rows. The websocket join succeeds — that only needs the publishable key — but
+  the `postgres_changes` BINDING is never registered, so the server has nothing to match
+  WAL changes against. The replication slot is healthy and 0 bytes behind, so the WAL is
+  being read and then discarded.
+
+  Why the binding is refused: the user's access token is signed `ES256` with a `kid` — the
+  project has moved to asymmetric JWT signing keys. Realtime's postgres_changes path
+  verifies user JWTs with the project's legacy HS256 secret and cannot verify an ES256
+  token, so it declines to register and says nothing.
+
+  THE FIX IS A PROJECT SETTING, not code: either keep a legacy HS256 shared secret enabled
+  alongside the asymmetric keys (Supabase supports both during migration), or run a
+  Realtime version that verifies via JWKS. Until one of those happens, every subscription
+  in this codebase is inert — including `subscribeToMyAttendanceDays` on the home page,
+  which has the same problem and has presumably never worked either.
+
+  ONE REAL MISCONFIGURATION WAS FOUND AND FIXED on the way, and it would have bitten
+  immediately afterwards: `supabase_realtime` had `publish_via_partition_root = false`, so
+  punch changes published under the PARTITION's identity (`attendance_punches_2026_07`).
+  The binding below names the parent, so it could never have matched, and Realtime's
+  per-row RLS check would have run against a partition that carries no policies of its
+  own. It is `true` now and the publication reports `attendance_punches` — the name used
+  below. `sessions_audit` was added at the same time so sign-ins and sign-outs can stream.
+*/
 import { supabase } from "@/lib/supabase";
 import { ANALYTICS_LIVE_TABLES, type AnalyticsLiveTable } from "../analyticsLive";
 

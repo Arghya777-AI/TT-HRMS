@@ -22,6 +22,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { recordSignOut } from "@/features/auth/api/signin.api";
 import { capsForRoles, type Capability } from "@/shared/auth/capabilities";
 
 export interface EmployeeIdentity {
@@ -209,6 +210,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyIdentity]);
 
   const signOut = useCallback(async () => {
+    /*
+      RECORD FIRST, THEN DESTROY THE SESSION. `recordSignOut` authorises from the caller's
+      JWT, so once `supabase.auth.signOut()` has run there is no token left to write the row
+      with — the audit row has to be written while the session still exists.
+
+      Awaited rather than fired and forgotten: a `void` call here would race the token
+      teardown and lose the row much of the time, which is the same outcome as not calling
+      it. It never throws and never blocks — a failed audit write must not leave somebody
+      signed in on a machine they are walking away from.
+    */
+    await recordSignOut();
     await supabase.auth.signOut();
     setSession(null);
     setEmployee(null);

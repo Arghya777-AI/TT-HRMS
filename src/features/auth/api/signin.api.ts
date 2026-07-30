@@ -317,6 +317,48 @@ export async function recordPasswordSignIn(geo: SignInGeo | null): Promise<boole
   }
 }
 
+/**
+ * Record a sign-OUT.
+ *
+ * NOTHING EVER CALLED THIS, WHICH IS WHY LOGOUTS WERE MISSING. `sessions_audit` accepts a
+ * `logout` event and the edge function has always listed it in CLIENT_EVENTS — but
+ * `AuthProvider.signOut` called `supabase.auth.signOut()` and stopped there, so the table
+ * held 52 `login_success` rows against 3 `logout` rows, and those three were seed data.
+ * Every sign-out since the product shipped went unrecorded.
+ *
+ * That is not a cosmetic gap on a shared machine: "was this person still signed in at
+ * 19:00" is exactly the question a session trail exists to answer, and a trail with only
+ * one half of it invites the wrong answer.
+ *
+ * IT MUST RUN BEFORE `supabase.auth.signOut()`. The edge function authorises from the
+ * caller's JWT; once the session is gone there is no JWT and the row cannot be written at
+ * all. So the order in `signOut` is: record, then destroy.
+ *
+ * NEVER THROWS, and never blocks the sign-out. A failure to write the audit row must not
+ * leave somebody stuck signed in on a machine they are walking away from — the sign-out is
+ * the safety-critical half, the record is the accounting.
+ */
+export async function recordSignOut(): Promise<boolean> {
+  const deviceId = browserDeviceId();
+  try {
+    const res = await invokeEdgeFn(
+      SESSION_RECORD_FN,
+      {
+        event: "logout",
+        // The method that ENDED the session, which is always the button. `authMethod` is
+        // constrained by `ck_sessions_audit__auth_method`; `password` is the value that
+        // means "the ordinary portal path" and the one a password sign-in already uses.
+        authMethod: "password",
+        ...(deviceId !== null ? { deviceId } : {}),
+      },
+      recordedSchema,
+    );
+    return res.recorded;
+  } catch {
+    return false;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 1 · identify
 // ─────────────────────────────────────────────────────────────────────────────

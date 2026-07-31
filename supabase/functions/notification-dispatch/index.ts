@@ -554,6 +554,9 @@ export function decideFanOut(
   row: {
     priority: string;
     event_code: string;
+    payload?: Record<string, unknown> | null;
+    title?: string | null;
+    body?: string | null;
     is_transactional: boolean | null;
     pref_enabled: boolean | null;
     pref_digest: string | null;
@@ -562,6 +565,24 @@ export function decideFanOut(
   },
   config: { quietStart: string | null; quietEnd: string | null; digestHourIst: number },
 ): FanOutDecision {
+  // Admin email policy: send email notification ONLY if leave is for 3 or more days
+  const isLeaveEvent =
+    row.event_code.toUpperCase().includes("LEAVE") ||
+    row.event_code.toUpperCase().includes("APPROVAL") ||
+    (row.title !== undefined && row.title !== null && /leave/i.test(row.title));
+
+  if (isLeaveEvent) {
+    const totalDays = Number(
+      row.payload?.total_days ??
+        row.payload?.totalDays ??
+        row.payload?.days ??
+        (row.body ? (row.body.match(/(\d+(\.\d+)?)\s*day/i)?.[1] ?? 0) : 0),
+    );
+    if (totalDays > 0 && totalDays < 3) {
+      return { status: "suppressed", scheduledFor: null, detail: "leave_duration_under_3_days" };
+    }
+  }
+
   const exempt = row.is_transactional === true ||
     row.priority === "critical" ||
     QUIET_HOURS_EXEMPT_CODES.has(row.event_code.toUpperCase());

@@ -227,8 +227,16 @@ export const attendancePolicySchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   is_active: z.boolean(),
-  grace_in_minutes: dbInt,
-  grace_out_minutes: dbInt,
+  /*
+    NULLABLE since migration 039100. NULL means "this policy does not assert a grace
+    period — use the shift's", which is what the engine's
+    COALESCE(pol.grace_in_minutes, sh.grace_in_minutes, 10) was always written to do and
+    could never reach while these columns were NOT NULL DEFAULT 10. Declaring them
+    required here would turn a legitimately cleared policy into a parse error that blanks
+    the screen.
+  */
+  grace_in_minutes: dbIntNullable,
+  grace_out_minutes: dbIntNullable,
   late_after_grace_counts_full: z.boolean(),
   max_late_days_before_deduction: dbIntNullable,
   late_deduction_leave_days: dbNumericNullable,

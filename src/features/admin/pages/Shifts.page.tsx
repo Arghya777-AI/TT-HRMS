@@ -253,13 +253,26 @@ export default function ShiftsPage() {
       hideBelow: "md",
       render: (row) => fmtDurationHm(row.unpaid_break_minutes),
     },
+    /*
+      GRACE IS NO LONGER HIDDEN BELOW `lg`. It is one of the two numbers an
+      administrator opens this screen to check — "9:30, and five minutes' grace" — and
+      hiding it on every tablet and half-width laptop window is why it read as missing.
+      Rendered with its units and direction rather than `5 / 10`, which required knowing
+      the column order to interpret.
+    */
     {
       key: "grace",
       header: t("admin.time.shift.col.grace"),
-      width: "9rem",
+      width: "11rem",
       align: "right",
-      hideBelow: "lg",
-      render: (row) => `${row.grace_in_minutes} / ${row.grace_out_minutes}`,
+      render: (row) => (
+        <span className="num whitespace-nowrap">
+          {t("admin.time.grace.inOut", {
+            in: String(row.grace_in_minutes),
+            out: String(row.grace_out_minutes),
+          })}
+        </span>
+      ),
     },
     {
       key: "thresholds",
@@ -309,7 +322,16 @@ export default function ShiftsPage() {
       companyId={companyId}
       retire="archive"
       promptOnSave
-      banner={<MasterBanner>{t("admin.time.shift.banner")}</MasterBanner>}
+      /*
+        The banner now names the precedence, because the grace fields on this form were
+        silently outranked. See migration 039100: `attendance_policies.grace_*` was NOT
+        NULL DEFAULT 10, so the engine's COALESCE could never fall through to the shift.
+      */
+      banner={
+        <MasterBanner>
+          {t("admin.time.shift.banner")} {t("admin.time.grace.precedence")}
+        </MasterBanner>
+      }
       formBanner={<MasterBanner>{t("admin.time.shift.banner")}</MasterBanner>}
       derivedDisplay={(values) => {
         const duration = paidDuration(values);

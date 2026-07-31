@@ -60,12 +60,18 @@ const groups: FieldGroup[] = [
   {
     title: t("admin.time.pol.group.lateness"),
     fields: [
+      /*
+        NOT required, since migration 039100. The engine reads
+        `COALESCE(pol.grace_in_minutes, sh.grace_in_minutes, 10)`, and while these
+        columns were NOT NULL DEFAULT 10 the shift branch was unreachable — every
+        policy silently overrode every shift's grace, so per-shift grace did nothing
+        for anybody with a policy. Left EMPTY, the shift now decides.
+      */
       {
         name: "grace_in_minutes",
         label: t("admin.time.pol.field.graceIn"),
         kind: "number",
-        help: t("admin.time.pol.help.graceIn"),
-        required: true,
+        help: t("admin.time.grace.policyOptional"),
         min: 0,
         max: 240,
       },
@@ -73,8 +79,7 @@ const groups: FieldGroup[] = [
         name: "grace_out_minutes",
         label: t("admin.time.pol.field.graceOut"),
         kind: "number",
-        help: t("admin.time.pol.help.graceOut"),
-        required: true,
+        help: t("admin.time.grace.policyOptionalOut"),
         min: 0,
         max: 240,
       },
@@ -416,7 +421,12 @@ const columns: DataGridColumn<AttendancePolicy>[] = [
     header: t("admin.time.pol.col.grace"),
     width: "7rem",
     align: "right",
-    render: (row) => fmtDurationHm(row.grace_in_minutes),
+    /* NULL is not zero grace — it means the shift decides. `fmtDurationHm(null)` would
+       render 0:00 and read as "no grace at all", the opposite of the truth. */
+    render: (row) =>
+      row.grace_in_minutes === null
+        ? t("admin.time.grace.fromShift")
+        : fmtDurationHm(row.grace_in_minutes),
   },
   {
     key: "lateRule",
@@ -475,8 +485,10 @@ export default function AttendancePoliciesPage() {
       groups={groups}
       createDefaults={{
         is_active: "true",
-        grace_in_minutes: "15",
-        grace_out_minutes: "15",
+        /* Empty, deliberately: a new policy that asserted a grace period would override
+           every shift's, which is the bug migration 039100 fixed. */
+        grace_in_minutes: "",
+        grace_out_minutes: "",
         late_after_grace_counts_full: "true",
         max_late_days_before_deduction: "3",
         late_deduction_leave_days: "0.5",

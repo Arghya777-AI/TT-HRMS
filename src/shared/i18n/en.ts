@@ -26,7 +26,12 @@ import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
 import { keysEnrolmentStatus } from "./keys/enrolment-status";
 import { keysAdminPresence, keysOrgOther } from "./keys/admin-presence";
 import { keysHomeCalendar } from "./keys/home-calendar";
-import { keysOvertimeRules, keysAssignShift } from "./keys/overtime-rules";
+import {
+  keysOvertimeRules,
+  keysAssignShift,
+  keysGrace,
+  keysGraceGrid,
+} from "./keys/overtime-rules";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
@@ -68,6 +73,8 @@ export const en = {
   ...keysHomeCalendar,
   ...keysOvertimeRules,
   ...keysAssignShift,
+  ...keysGrace,
+  ...keysGraceGrid,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

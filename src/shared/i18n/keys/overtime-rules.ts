@@ -81,3 +81,25 @@ export const keysAssignShift = {
   "timeAudit.assignShift.reasonBody":
     "This changes what counts as late, what counts as overtime and what the gate expects of {name}. The reason is recorded against the assignment.",
 } as const;
+
+/**
+ * Grace-period wording, shared by the Shifts and Attendance Policies screens.
+ *
+ * These sentences exist because the two screens disagreed in practice: a shift's grace
+ * was overridden by every policy's, silently, and neither screen said so. Migration
+ * 039100 made the policy's grace optional; the copy is what makes the new behaviour
+ * discoverable instead of being a second surprise.
+ */
+export const keysGrace = {
+  "admin.time.grace.inOut": "{in} min in / {out} min out",
+  "admin.time.grace.precedence":
+    "Grace set here applies unless the employee's attendance policy sets its own — a policy's grace overrides the shift's. Clear the policy's grace to hand control back to the shift.",
+  "admin.time.grace.policyOptional":
+    "Minutes after shift start that are not counted late. Leave EMPTY to use the shift's own grace — that is now the way to control grace shift by shift.",
+  "admin.time.grace.policyOptionalOut":
+    "Minutes before shift end that are not counted an early exit. Leave EMPTY to use the shift's own grace.",
+} as const;
+
+export const keysGraceGrid = {
+  "admin.time.grace.fromShift": "From the shift",
+} as const;

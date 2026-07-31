@@ -83,6 +83,7 @@ const STATE_CHIP: Readonly<Record<EnrolmentState, StatusChipEntry>> = {
     tone: "info",
   },
   consent_withdrawn: { label: t("admin.enrolStatus.state.consent_withdrawn"), tone: "neutral" },
+  excluded: { label: t("admin.enrolStatus.state.excluded"), tone: "neutral" },
 };
 
 /** The next action, in the same order as the states. */
@@ -91,6 +92,7 @@ const STATE_NEXT: Readonly<Record<EnrolmentState, string>> = {
   no_consent: t("admin.enrolStatus.next.no_consent"),
   consented_not_enrolled: t("admin.enrolStatus.next.consented_not_enrolled"),
   consent_withdrawn: t("admin.enrolStatus.next.consent_withdrawn"),
+  excluded: t("admin.enrolStatus.next.excluded"),
 };
 
 const FILTER_LABEL: Readonly<Record<EnrolmentFilter, string>> = {
@@ -100,6 +102,7 @@ const FILTER_LABEL: Readonly<Record<EnrolmentFilter, string>> = {
   no_consent: t("admin.enrolStatus.filter.no_consent"),
   consented_not_enrolled: t("admin.enrolStatus.filter.consented_not_enrolled"),
   consent_withdrawn: t("admin.enrolStatus.filter.consent_withdrawn"),
+  excluded: t("admin.enrolStatus.filter.excluded"),
 };
 
 type GapFilter = "all" | "no_consent" | "consented_not_enrolled" | "consent_withdrawn";
@@ -280,23 +283,26 @@ export default function EnrolmentQueuePage() {
       <KioskLinkCard />
 
       {/*
-        The roster comes FIRST, above the action console, because it answers the
-        question an administrator actually arrives with — who is enrolled and who is
-        not — and because the gap grid further down cannot: it lists only people with
-        something missing, so a well-covered venue rendered a page with nothing on it
-        but a column of Enrol buttons.
-      */}
-      <EnrolmentStatusRoster />
-
-      {/*
        * The per-employee console. It supersedes the bare capture panel that used
        * to sit here: the capture is one of its actions, alongside consent, the
        * admin-initiated request, approval and revocation, and it is pointed at
        * ONE employee rather than at a second, independent employee picker.
+       *
+       * It sits FIRST by request: enrolling somebody is what an administrator comes
+       * to this screen to DO, so the doing surface leads and the reporting surface
+       * follows.
        */}
       <div className="mt-4">
         <FaceEnrolmentConsole />
       </div>
+
+      {/*
+        The roster, below the console: who is enrolled, who is not, and what each
+        person is waiting on. The gap grid further down cannot answer that — it lists
+        only people with something missing, so a well-covered venue rendered a page
+        with nothing on it but a column of Enrol buttons.
+      */}
+      <EnrolmentStatusRoster />
 
       <StateBoundary
         loading={gaps.isLoading}
@@ -568,7 +574,12 @@ function EnrolmentStatusRoster() {
         }}
         skeletonRows={5}
       >
-        <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/*
+          Five tiles, so `enrolled + not enrolled + not on attendance` visibly adds up
+          to the total. The excluded tile is not decoration: leaving that state without
+          one is exactly how the console's own tiles came to sum to 77 of 78 people.
+        */}
+        <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <KpiTile
             label={t("admin.enrolStatus.kpi.total")}
             value={formatNumber(tally.total)}
@@ -582,8 +593,14 @@ function EnrolmentStatusRoster() {
           <KpiTile
             label={t("admin.enrolStatus.kpi.notEnrolled")}
             value={formatNumber(tally.notEnrolled)}
-            hint={t("admin.enrolStatus.kpi.withdrawnHint")}
+            hint={t("admin.enrolStatus.kpi.notEnrolledHint")}
             tone={tally.notEnrolled > 0 ? "warn" : "success"}
+          />
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.excluded")}
+            value={formatNumber(tally.excluded)}
+            hint={t("admin.enrolStatus.kpi.excludedHint")}
+            tone="neutral"
           />
           <KpiTile
             label={t("admin.enrolStatus.kpi.coverage")}

@@ -23,6 +23,7 @@ export const keysEnrolmentStatus = {
   "admin.enrolStatus.filter.no_consent": "Consent not recorded",
   "admin.enrolStatus.filter.consented_not_enrolled": "Consented, no capture",
   "admin.enrolStatus.filter.consent_withdrawn": "Consent withdrawn",
+  "admin.enrolStatus.filter.excluded": "Not on attendance",
   "admin.enrolStatus.filter.aria": "Filter the roster by enrolment status",
 
   // ── The status words ──────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ export const keysEnrolmentStatus = {
   "admin.enrolStatus.state.no_consent": "Not enrolled — consent not recorded",
   "admin.enrolStatus.state.consented_not_enrolled": "Not enrolled — awaiting capture",
   "admin.enrolStatus.state.consent_withdrawn": "Not enrolled — consent withdrawn",
+  "admin.enrolStatus.state.excluded": "Not on attendance",
 
   "admin.enrolStatus.next.enrolled": "Face is live at the gate.",
   "admin.enrolStatus.next.no_consent":
@@ -38,6 +40,8 @@ export const keysEnrolmentStatus = {
     "Consent is on file. Capture five poses, then a second administrator approves.",
   "admin.enrolStatus.next.consent_withdrawn":
     "Nothing to do — this person punches by another method and is never chased.",
+  "admin.enrolStatus.next.excluded":
+    "Nothing to do — excluded from attendance, so the gate never looks for them.",
 
   // ── Columns ───────────────────────────────────────────────────────────────
   "admin.enrolStatus.col.employee": "Employee",
@@ -55,8 +59,11 @@ export const keysEnrolmentStatus = {
   "admin.enrolStatus.kpi.enrolled": "Enrolled",
   "admin.enrolStatus.kpi.notEnrolled": "Not enrolled",
   "admin.enrolStatus.kpi.coverage": "Coverage",
-  "admin.enrolStatus.kpi.coverageHint": "Enrolled ÷ everyone who has not withdrawn consent",
-  "admin.enrolStatus.kpi.withdrawnHint": "Withdrawn consents are excluded — they are not a shortfall",
+  "admin.enrolStatus.kpi.coverageHint":
+    "Enrolled ÷ everyone except withdrawn consents and attendance exclusions",
+  "admin.enrolStatus.kpi.notEnrolledHint": "Consent missing, awaiting capture, or withdrawn",
+  "admin.enrolStatus.kpi.excluded": "Not on attendance",
+  "admin.enrolStatus.kpi.excludedHint": "Excluded from attendance — never a shortfall",
 
   // ── Download ──────────────────────────────────────────────────────────────
   "admin.enrolStatus.download": "Download this list",

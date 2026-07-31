@@ -92,6 +92,53 @@ describe("buildEnrolmentStatusRows", () => {
   });
 });
 
+describe("attendance exclusion — the state that made two screens disagree", () => {
+  /**
+   * The live case: TT0017 is excluded from attendance AND carries a
+   * `face_enrolled_at` stamp. `v_enrolment_coverage` only covers non-excluded
+   * employees, so he is absent from it — and reading that absence as enrolment made
+   * this module say 60 enrolled while the console's own state machine said 59.
+   */
+  const excluded = { ...person("v", "TT0017"), exclude_from_attendance: true };
+
+  it("classifies an excluded employee as excluded, not enrolled, even when stamped", () => {
+    const stamped = { ...excluded, face_enrolled_at: "2026-07-31T05:00:00Z" };
+    const rows = buildEnrolmentStatusRows([stamped], []);
+    expect(rows[0]?.state).toBe("excluded");
+  });
+
+  it("outranks every gap kind, matching enrolmentState()'s own order", () => {
+    const rows = buildEnrolmentStatusRows([excluded], [gap("v", "no_consent")]);
+    expect(rows[0]?.state).toBe("excluded");
+  });
+
+  it("is counted in neither enrolled nor notEnrolled, and the three still sum to total", () => {
+    const rows = buildEnrolmentStatusRows(
+      [person("a", "1"), person("b", "2"), excluded],
+      [gap("b", "no_consent")],
+    );
+    const tally = tallyEnrolment(rows);
+    expect(tally.total).toBe(3);
+    expect(tally.enrolled).toBe(1);
+    expect(tally.notEnrolled).toBe(1);
+    expect(tally.excluded).toBe(1);
+    expect(tally.enrolled + tally.notEnrolled + tally.excluded).toBe(tally.total);
+  });
+
+  it("stays out of the coverage denominator, like a withdrawn consent", () => {
+    const rows = buildEnrolmentStatusRows([person("a", "1"), excluded], []);
+    // 1 enrolled ÷ 1 eligible, not ÷ 2.
+    expect(tallyEnrolment(rows).coveragePct).toBe(100);
+  });
+
+  it("is not swept into the 'not enrolled' filter", () => {
+    const rows = buildEnrolmentStatusRows([excluded], []);
+    expect(matchesEnrolmentFilter(rows[0]!, "not_enrolled")).toBe(false);
+    expect(matchesEnrolmentFilter(rows[0]!, "excluded")).toBe(true);
+    expect(matchesEnrolmentFilter(rows[0]!, "all")).toBe(true);
+  });
+});
+
 describe("matchesEnrolmentFilter", () => {
   const rows = buildEnrolmentStatusRows(
     [person("a", "1"), person("b", "2"), person("c", "3"), person("d", "4")],

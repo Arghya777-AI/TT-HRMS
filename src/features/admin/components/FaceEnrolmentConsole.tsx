@@ -647,7 +647,16 @@ export function FaceEnrolmentConsole() {
         }
         skeletonRows={4}
       >
-        <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {/*
+          SIX TILES, ONE PER STATE. There were five, and `excluded` — a real state this
+          machine assigns, with its own filter — had none. So the tiles summed to 77 of
+          78 people and disagreed with the roster below by exactly the one employee
+          excluded from attendance (TT0017, who is also stamped enrolled, so he was
+          counted here as neither enrolled nor anything else visible). A state the
+          machine can assign must have somewhere to be counted, or the arithmetic on
+          screen is quietly wrong.
+        */}
+        <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <KpiTile
             label={t("admin.faceEnrol.kpi.enrolled")}
             value={formatNumber(counts.enrolled)}
@@ -674,6 +683,12 @@ export function FaceEnrolmentConsole() {
             label={t("admin.faceEnrol.kpi.withdrawn")}
             value={formatNumber(counts.consent_withdrawn)}
             hint={t("admin.faceEnrol.kpi.withdrawnHint")}
+            tone="neutral"
+          />
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.excluded")}
+            value={formatNumber(counts.excluded)}
+            hint={t("admin.enrolStatus.kpi.excludedHint")}
             tone="neutral"
           />
         </section>

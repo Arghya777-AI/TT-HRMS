@@ -21,7 +21,7 @@
  * @route /me/documents
  */
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { FileText, Inbox, PenLine, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -252,7 +252,22 @@ export default function MyDocumentsPage() {
               />
             }
           >
-            <p className="mb-3 text-sm text-muted-foreground">{t("docs.upload.unavailable")}</p>
+            {/*
+              This said "self-upload is not switched on yet — send it to HR via the Help
+              Desk", which stopped being true when `/me/profile/documents` shipped its
+              upload form and `documents__self__insert` was granted. It was telling
+              employees to raise a ticket for something they could already do themselves.
+              Uploading lives in the profile and only there; this console reads.
+            */}
+            <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {t("docs.upload.whereToUpload")}
+              <Button asChild size="sm" variant="outline" className="h-7">
+                <Link to="/me/profile/documents">
+                  <Upload className="mr-1.5 size-3.5" aria-hidden />
+                  {t("docs.upload.goToProfile")}
+                </Link>
+              </Button>
+            </p>
             <DataGrid
               columns={uploadColumns}
               rows={uploads}

@@ -101,7 +101,7 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
       dueOn: gap.expiry_date,
       dueIsTimestamp: false,
       overdue: gap.compliance_status === "expired",
-      to: "/me/documents",
+      to: "/me/profile/documents",
     });
   }
 

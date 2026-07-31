@@ -53,22 +53,43 @@ export function FirstRunGate({ children }: { children: ReactNode }) {
   // wizard whose second step has nothing to confirm.
   if (employee && (employee.mustChangePassword || employee.profileConfirmedAt === null)) {
     /*
-      `/me/documents` IS ALLOWED THROUGH, and that is not a hole.
+      THE DOCUMENTS SCREEN IS ALLOWED THROUGH, and that is not a hole.
 
       The onboarding form asks for documents — Aadhaar, PAN, bank proof, a photograph — and
       uploading them happens on the documents screen. A gate that let the joiner see the
       checklist but not reach the place to satisfy it would be a dead end: the only way out
-      would be to sign out. So the two screens the wizard needs are reachable and nothing
-      else is.
+      would be to sign out.
+
+      IT USED TO NAME THE WRONG ROUTE. The allowlist held `/me/documents`, which lists
+      documents and cannot upload one — it even printed "self-upload is not switched on
+      yet". The screen that actually has the form is `/me/profile/documents`, and it was
+      redirected straight back to /first-run. So a new joiner was told to upload their
+      documents and then prevented from reaching the only place they could. Both are
+      allowed now: the old path redirects to the new one, and a redirect the gate refuses
+      is the same dead end by a longer route.
 
       This gate was never the security boundary in any case — RLS is, and it does not care
       which route somebody is on. See the fail-open note above.
     */
-    const allowed = location.pathname === "/first-run" || location.pathname === "/me/documents";
+    const allowed = (FIRST_RUN_ALLOWED as readonly string[]).includes(location.pathname);
     if (!allowed) return <Navigate to="/first-run" replace />;
   }
   return <>{children}</>;
 }
+
+/**
+ * The only paths a half-onboarded user may reach.
+ *
+ * `/me/profile/documents` is the screen with the upload form. `/me/documents` lists
+ * documents and cannot upload; it is kept here because it is a route people have
+ * bookmarked and it links onward to the form. Exported so a test can assert the upload
+ * route is on it — see firstRunAllowlist.test.ts for the loop this prevents.
+ */
+export const FIRST_RUN_ALLOWED = [
+  "/first-run",
+  "/me/profile/documents",
+  "/me/documents",
+] as const;
 
 /** Capability gate for a route subtree. Renders an honest refusal, not a 404. */
 export function RequireCap({ cap, children }: { cap: Capability; children: ReactNode }) {

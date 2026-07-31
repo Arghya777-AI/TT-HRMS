@@ -271,7 +271,7 @@ export function detailTargetFor(request: Ticket): DetailTarget | null {
     case "employee_salary_revisions":
       return { to: "/me/profile/salary", rowSpecific: false };
     case "contracts":
-      return { to: "/me/documents", rowSpecific: false };
+      return { to: "/me/profile/documents", rowSpecific: false };
     default:
       return null;
   }

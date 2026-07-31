@@ -80,12 +80,12 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/profile/payment", title: "Payment", hint: "Statutory ids and bank account — masked, change via approval.", cap: "me.view", domain: "profile", phase: "P1", icon: UserRound },
   { path: "/me/profile/personal", title: "Personal", hint: "Contacts, addresses, emergency contacts, dependents.", cap: "me.view", domain: "profile", phase: "P1", icon: UserRound },
   { path: "/me/profile/custom", title: "Additional details", hint: "Venue-specific fields such as uniform and transport.", cap: "me.view", domain: "profile", phase: "P1", icon: UserRound },
+  { path: "/me/documents", title: "My documents", hint: "Issued to you, your uploads, and things you've signed. Uploading happens in your profile.", cap: "me.view", domain: "docs", phase: "P1", icon: FileText },
   { path: "/me/profile/documents", title: "Profile documents", hint: "Documents attached to your employee record.", cap: "me.view", domain: "profile", phase: "P1", icon: UserRound },
   { path: "/me/profile/salary", title: "Salary structure", hint: "Your current structure and revision history, masked.", cap: "me.view", domain: "profile", phase: "P1.5", icon: UserRound },
   { path: "/me/profile/history", title: "Record history", hint: "Every change to your record, who made it, and why.", cap: "me.view", domain: "profile", phase: "P1", icon: UserRound },
   { path: "/me/payslips", title: "Salary & payslips", hint: "This financial year's totals and every published payslip.", cap: "me.view", domain: "pay", phase: "P1.5", icon: Banknote },
   { path: "/me/payslips/:period", title: "Payslip", hint: "Earnings, deductions, net pay and the attendance it used.", cap: "me.view", domain: "pay", phase: "P1.5", icon: Banknote },
-  { path: "/me/documents", title: "My documents", hint: "Issued to you, your uploads, and things you've signed.", cap: "me.view", domain: "docs", phase: "P1", icon: FileText },
   { path: "/me/apply", title: "Apply", hint: "Start a request, and track everything already in flight.", cap: "me.view", domain: "apply", phase: "P1", icon: ClipboardList },
   { path: "/me/apply/web-punch", title: "Web punch", hint: "Punch from outside the gate when you're entitled to.", cap: "me.view", domain: "apply", phase: "P1.5", icon: ScanFace },
   { path: "/me/apply/claim", title: "Local claim", hint: "Expense claim with receipts and per-grade caps.", cap: "me.view", domain: "apply", phase: "P1.5", icon: ClipboardList },
@@ -322,6 +322,7 @@ export const REDIRECTS: readonly { from: string; to: string }[] = [
   { from: "/employee/*", to: "/me" },
   { from: "/manager/*", to: "/team" },
   { from: "/me/profile", to: "/me/profile/basic" },
+
   { from: "/admin/documents/vault", to: "/admin/documents/repository" },
 ];
 

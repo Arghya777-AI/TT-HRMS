@@ -552,7 +552,11 @@ export const en = {
     "Policies you acknowledge and contracts you sign are listed here with the exact date and version.",
   "docs.view.unavailable":
     "Secure document viewing is not switched on yet, so the file cannot be opened.",
-  "docs.upload.unavailable": "Self-upload is not switched on yet — send it to HR via the Help Desk.",
+  /* Retired 2026-08-01: this claimed self-upload was unavailable long after
+     `/me/profile/documents` shipped the form and `documents__self__insert` was granted,
+     so it sent employees to the Help Desk for something they could already do. */
+  "docs.upload.whereToUpload": "Uploading a document happens in your profile.",
+  "docs.upload.goToProfile": "Upload in my profile",
 
   // E-10 Apply launcher
   "apply.title": "Apply",

@@ -120,7 +120,8 @@ export function OnboardingChecklist({ onSubmitted }: OnboardingChecklistProps) {
 
       {items.some((i) => i.kind === "document") ? (
         <Button asChild variant="outline" className="w-full">
-          <Link to="/me/documents">
+          {/* The screen with the form. This said /me/documents, which only lists. */}
+          <Link to="/me/profile/documents">
             <FileUp className="mr-2 size-4" aria-hidden />
             {t("onboarding.upload")}
           </Link>

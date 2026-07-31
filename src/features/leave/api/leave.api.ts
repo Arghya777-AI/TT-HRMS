@@ -154,39 +154,61 @@ export const leaveBalanceSchema = z.object({
 export type LeaveBalance = z.infer<typeof leaveBalanceSchema>;
 
 /**
- * Normalizes Sick Leave (SL) balance to reflect monthly accrual policy (1 day per month).
- * 12 days per year total, added at 1 day per month for elapsed months in the current year.
+ * Governed Leave Balance Policy:
+ * 1. Sick Leave (SL): 1 day accrued per month (0 opening, 7 accrued for Jan-Jul = 7 available).
+ * 2. Earned Leave (EL): Keep active balance intact.
+ * 3. All other leave types (CL, BL, ML, PL, MRL, etc.): Set balance permanently to ZERO (0 opening, 0 accrued, 0 available).
  */
-export function normalizeSickLeaveBalance(b: LeaveBalance): LeaveBalance {
-  if (b.leave_type_code.toUpperCase() !== "SL" && !/sick/i.test(b.leave_type_name)) {
-    return b;
+export function normalizeLeaveBalance(b: LeaveBalance): LeaveBalance {
+  const code = b.leave_type_code.toUpperCase();
+  const name = b.leave_type_name.toLowerCase();
+  const leave_type_name = code === "MRL" || name.includes("marriage") ? "Week-off" : b.leave_type_name;
+
+  // 1. Sick Leave: 1 day per month monthly accrual
+  if (code === "SL" || name.includes("sick")) {
+    /*
+      THE MONTH MUST COME FROM IST, not from `new Date().getMonth()`. That reads the BROWSER's
+      timezone, so on the 1st of a month an employee whose laptop sits behind IST still sees
+      the previous month and accrues a day less sick leave than the person beside them. The
+      whole system is pinned to IST for exactly this reason, which is why the lint rule
+      forbids a bare `new Date()`.
+    */
+    const currentMonth = Number.parseInt(istToday().slice(5, 7), 10);
+    const accruedMonthly = Math.min(12, currentMonth);
+
+    const opening_days = 0;
+    const accrued_days = accruedMonthly;
+    const entitlement_days = opening_days + accrued_days + b.carried_forward_days + b.adjusted_days;
+    const available_days = Math.max(0, entitlement_days - b.availed_days - b.encashed_days - b.lapsed_days);
+    const available_after_pending = Math.max(0, available_days - b.pending_days);
+
+    return {
+      ...b,
+      leave_type_name,
+      opening_days,
+      accrued_days,
+      entitlement_days,
+      available_days,
+      available_after_pending,
+    };
   }
 
-  /*
-    Monthly accrual: 1 day added each month elapsed in the current year.
+  // 2. Earned Leave: Keep actual balance
+  if (code === "EL" || name.includes("earned")) {
+    return { ...b, leave_type_name };
+  }
 
-    THE MONTH MUST COME FROM IST, not from `new Date().getMonth()`. That reads the BROWSER's
-    timezone, so on the 1st of a month an employee whose laptop is set to anything behind IST
-    still sees the previous month — and accrues a day less than the person beside them. The
-    whole system is pinned to IST for exactly this reason, which is why the lint rule forbids a
-    bare `new Date()`.
-  */
-  const currentMonth = Number.parseInt(istToday().slice(5, 7), 10);
-  const accruedMonthly = Math.min(12, currentMonth);
-
-  const opening_days = 0;
-  const accrued_days = accruedMonthly;
-  const entitlement_days = opening_days + accrued_days + b.carried_forward_days + b.adjusted_days;
-  const available_days = Math.max(0, entitlement_days - b.availed_days - b.encashed_days - b.lapsed_days);
-  const available_after_pending = Math.max(0, available_days - b.pending_days);
-
+  // 3. All other leave types: Set to zero
   return {
     ...b,
-    opening_days,
-    accrued_days,
-    entitlement_days,
-    available_days,
-    available_after_pending,
+    leave_type_name,
+    opening_days: 0,
+    accrued_days: 0,
+    carried_forward_days: 0,
+    adjusted_days: 0,
+    entitlement_days: 0,
+    available_days: 0,
+    available_after_pending: 0,
   };
 }
 
@@ -201,7 +223,7 @@ export async function fetchLeaveBalances(
     limit: 50,
     ...(signal ? { signal } : {}),
   });
-  return rows.map(normalizeSickLeaveBalance);
+  return rows.map(normalizeLeaveBalance);
 }
 
 /** One type's balance — for the apply form's live "after this request" panel. */
@@ -216,7 +238,7 @@ export async function fetchLeaveBalanceForType(
     [eq("employee_id", employeeId), eq("leave_type_id", leaveTypeId)],
     signal ? { signal } : {},
   );
-  return row ? normalizeSickLeaveBalance(row) : null;
+  return row ? normalizeLeaveBalance(row) : null;
 }
 
 // -----------------------------------------------------------------------------

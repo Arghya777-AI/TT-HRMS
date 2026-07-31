@@ -66,7 +66,7 @@ import { readBool, readList, readText, useAuditUrlFilters } from "../audit/url-s
 export default function AuditTimelinePage() {
   const navigate = useNavigate();
   const { can, employee } = useAuth();
-  const isSuper = can("admin.super");
+  const isSuper = can("admin.super") || can("admin.access");
 
   const { params, preset, window, patch, clearAll, hasActiveFilters } = useAuditUrlFilters("d30");
 

@@ -76,6 +76,14 @@ export interface FieldSpec {
   readonly derived?: boolean;
   /** Full-width in the two-column grid. */
   readonly wide?: boolean;
+  /**
+   * A closed lookup that also offers "Other", with a name box that becomes a real
+   * master row on save. Only meaningful for `kind: "select"`; the entity names which
+   * table the new row goes into. See `people/orgOther.ts` for what each table demands
+   * and why a new Section needs a Department first.
+   */
+  readonly allowOther?: boolean;
+  readonly otherEntity?: string;
 }
 
 export interface FieldGroup {

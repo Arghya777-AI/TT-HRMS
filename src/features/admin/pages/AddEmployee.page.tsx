@@ -26,6 +26,7 @@
  * @route /admin/people/new
  */
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CheckCircle2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,13 @@ import {
 } from "../people/fields";
 import { usePeopleRefs } from "../hooks/usePeople";
 import { insertEmployee } from "../api/employees.api";
+import {
+  OTHER_FIELDS,
+  OTHER_VALUE,
+  OtherFieldError,
+  applyResolvedOthers,
+  resolveOtherMasters,
+} from "../people/orgOther";
 import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
 import { mutationUserMessage } from "@/shared/api/query";
 import { useDefaultCompanyId } from "../hooks/useMasters";
@@ -84,6 +92,9 @@ export default function AddEmployeePage() {
    */
   const [account, setAccount] = useState<AccountCreated | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
+  /** A failure creating an "Other" master, before any employee exists. */
+  const [otherError, setOtherError] = useState<string | null>(null);
+  const qc = useQueryClient();
 
   const step: WizardStepId = WIZARD_STEPS[stepIndex] ?? "identity";
   const isReview = step === "review";
@@ -186,12 +197,56 @@ export default function AddEmployeePage() {
     setReasonOpen(true);
   };
 
+  /*
+    "Other" on the four org lookups is resolved BEFORE the employee is inserted.
+
+    Order is deliberate. `department_id` and friends are foreign keys, so the master row
+    has to exist first — and resolving it first also means a failure (a duplicate code,
+    a section with no department) leaves NOTHING created: the employee has not been
+    written yet, so the wizard can put the message against the field and let the admin
+    fix it. Doing it the other way round would give us an employee with a dangling
+    placeholder and a message about a department.
+
+    On success the org lookups are invalidated, which is what makes the new entry appear
+    in every other screen's dropdown without a reload.
+  */
   const submit = (reason: string) => {
-    const payload = coerceValues(everyGroup, values, "create", null);
-    // company_id is NOT NULL and is not a field the admin picks — there is one
-    // employing entity per install and the wizard must not offer a wrong one.
-    if (companyId !== null) payload["company_id"] = companyId;
-    create.save(payload, reason);
+    setOtherError(null);
+    void (async () => {
+      let resolved: Record<string, string> = {};
+      if (OTHER_FIELDS.some((spec) => values[spec.field] === OTHER_VALUE)) {
+        if (companyId === null) return;
+        try {
+          resolved = await resolveOtherMasters(
+            { values, companyId, existingGradeCount: refs.grades.length },
+            reason,
+          );
+        } catch (error) {
+          if (error instanceof OtherFieldError) {
+            setErrors((prev) => ({ ...prev, [error.field]: error.message }));
+            // Placement is step 2; send them back to the field that failed.
+            const failing = WIZARD_STEPS.findIndex((step) =>
+              wizardStepGroups(step, refs).some((g) =>
+                g.fields.some((f) => f.name === error.field),
+              ),
+            );
+            if (failing >= 0) setStepIndex(failing);
+          } else {
+            setOtherError(mutationUserMessage(error));
+          }
+          return;
+        }
+        // What makes the new entry appear in every other dropdown without a reload.
+        await qc.invalidateQueries({ queryKey: ["admin", "org"] });
+      }
+
+      const merged = applyResolvedOthers(values, resolved);
+      const payload = coerceValues(everyGroup, merged, "create", null);
+      // company_id is NOT NULL and is not a field the admin picks — there is one
+      // employing entity per install and the wizard must not offer a wrong one.
+      if (companyId !== null) payload["company_id"] = companyId;
+      create.save(payload, reason);
+    })();
   };
 
   // ---------------------------------------------------------------------------
@@ -376,6 +431,15 @@ export default function AddEmployeePage() {
       {crossFieldError !== null ? (
         <div className="mt-4">
           <Notice tone="error">{crossFieldError}</Notice>
+        </div>
+      ) : null}
+
+      {/* An "Other" master that could not be created — a duplicate code, most likely.
+          Shown here rather than against a field because the cause is the org master,
+          not the value typed: nothing was created and nothing was saved. */}
+      {otherError !== null ? (
+        <div className="mt-4">
+          <Notice tone="error">{otherError}</Notice>
         </div>
       ) : null}
 

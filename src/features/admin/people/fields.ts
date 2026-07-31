@@ -361,6 +361,8 @@ export function orgPlacementGroup(refs: PeopleRefs, excludeSelf?: string): Field
         kind: "select",
         help: t("admin.people.help.department"),
         options: refs.departments,
+        allowOther: true,
+        otherEntity: "departments",
       },
       {
         name: "section_id",
@@ -368,6 +370,8 @@ export function orgPlacementGroup(refs: PeopleRefs, excludeSelf?: string): Field
         kind: "select",
         help: t("admin.people.help.section"),
         options: refs.sections,
+        allowOther: true,
+        otherEntity: "sections",
       },
       {
         name: "designation_id",
@@ -375,6 +379,8 @@ export function orgPlacementGroup(refs: PeopleRefs, excludeSelf?: string): Field
         kind: "select",
         help: t("admin.people.help.designation"),
         options: refs.designations,
+        allowOther: true,
+        otherEntity: "designations",
       },
       {
         name: "grade_id",
@@ -382,6 +388,8 @@ export function orgPlacementGroup(refs: PeopleRefs, excludeSelf?: string): Field
         kind: "select",
         help: t("admin.people.help.grade"),
         options: refs.grades,
+        allowOther: true,
+        otherEntity: "grades",
       },
       {
         name: "location_id",

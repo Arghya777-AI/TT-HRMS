@@ -18,8 +18,10 @@
  * how '' ends up in a NOT NULL column.
  */
 import { Label } from "@/components/ui/label";
+import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
 import type { FieldErrors, FieldGroup, FieldSpec, FormValues } from "../masters/fields";
+import { OTHER_VALUE, otherNameKey } from "../people/orgOther";
 import { SelectField, TextField } from "./Field";
 
 export interface FieldGroupSectionProps {
@@ -38,12 +40,17 @@ function Control({
   error,
   disabled,
   onChange,
+  otherName,
+  onOtherNameChange,
 }: {
   field: FieldSpec;
   value: string;
   error: string | undefined;
   disabled: boolean;
   onChange: (value: string) => void;
+  /** The typed name when this select is set to "Other". Empty otherwise. */
+  otherName: string;
+  onOtherNameChange: (value: string) => void;
 }) {
   // A derived column is the database's to compute; show it, never send it.
   if (field.derived === true) {
@@ -95,18 +102,44 @@ function Control({
   }
 
   if (field.kind === "select") {
+    /*
+      "Other" is appended to the options rather than being a separate control, because
+      it is the same question: which department is this. The name box appears only once
+      it is chosen, and its value lives under a companion key (`…__otherName`) that
+      `applyResolvedOthers` strips before the row is sent — it is form state, not a
+      column, and posting it would name a column that does not exist.
+    */
+    const withOther = field.allowOther === true
+      ? [...(field.options ?? []), { value: OTHER_VALUE, label: t("admin.people.other.option") }]
+      : (field.options ?? []);
+    const isOther = field.allowOther === true && value === OTHER_VALUE;
+
     return (
-      <SelectField
-        label={field.label}
-        value={value}
-        options={field.options ?? []}
-        onChange={onChange}
-        placeholder={field.required === true ? undefined : "—"}
-        disabled={disabled}
-        {...(field.required === true ? { required: true } : {})}
-        {...(field.help !== undefined ? { hint: field.help } : {})}
-        {...(error !== undefined ? { error } : {})}
-      />
+      <div className="min-w-0 space-y-2">
+        <SelectField
+          label={field.label}
+          value={value}
+          options={withOther}
+          onChange={onChange}
+          placeholder={field.required === true ? undefined : "—"}
+          disabled={disabled}
+          {...(field.required === true ? { required: true } : {})}
+          {...(field.help !== undefined ? { hint: field.help } : {})}
+          {...(error !== undefined && !isOther ? { error } : {})}
+        />
+        {isOther ? (
+          <TextField
+            label={t("admin.people.other.nameLabel", { field: field.label })}
+            value={otherName}
+            onChange={onOtherNameChange}
+            disabled={disabled}
+            required
+            hint={t("admin.people.other.nameHint")}
+            placeholder={t("admin.people.other.namePlaceholder")}
+            {...(error !== undefined ? { error } : {})}
+          />
+        ) : null}
+      </div>
     );
   }
 
@@ -155,6 +188,8 @@ export function FieldGroupSection({
               error={errors[field.name]}
               disabled={disabled}
               onChange={(next) => onChange(field.name, next)}
+              otherName={values[otherNameKey(field.name)] ?? ""}
+              onOtherNameChange={(next) => onChange(otherNameKey(field.name), next)}
             />
           </div>
         ))}

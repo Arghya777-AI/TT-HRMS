@@ -34,3 +34,24 @@ export const keysAdminPresence = {
   "admin.cc.calendar.yearAria": "Choose the year",
   "admin.cc.calendar.noneOnDay": "Nobody is on leave on this day.",
 } as const;
+
+/**
+ * "Other…" on the four org lookups in Add Employee / Employee 360.
+ *
+ * The hint states the consequence out loud — a new master row, visible to everyone
+ * from then on — because an admin typing into a box that looks like free text has no
+ * other way to know they are editing the org structure.
+ */
+export const keysOrgOther = {
+  "admin.people.other.option": "Other — add a new one",
+  "admin.people.other.nameLabel": "New {field}",
+  "admin.people.other.nameHint":
+    "This is added to the org master, so it appears in this list for everyone from now on.",
+  "admin.people.other.namePlaceholder": "e.g. Banquet Operations",
+  "admin.people.other.newGradeLevel":
+    "New grades are added at the bottom of the band ladder. Reorder them in Org · Grades.",
+  "admin.people.other.needName": "Type a name for the new entry, or pick one from the list.",
+  "admin.people.other.needDepartment":
+    "Choose a department first — a new section has to belong to one.",
+  "admin.people.other.created": "{name} was added to the list.",
+} as const;

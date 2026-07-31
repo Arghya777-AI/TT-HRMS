@@ -43,6 +43,8 @@ import {
   fetchPublishedRosterSlot,
   fetchRefsByIds,
   fetchShiftAssignments,
+  insertShiftAssignment,
+  endShiftAssignment,
   fetchShiftDetail,
   insertPolicyAssignment,
   resolveIsWeeklyOff,
@@ -238,6 +240,52 @@ export function useAssignmentEndDate(
 ): AuditedMutationResult<PolicyAssignment, AssignmentEndDateInput> {
   return useAuditedMutation<PolicyAssignment, AssignmentEndDateInput>({
     mutationFn: (input, reason) => endDatePolicyAssignment(input, reason),
+    invalidate: INVALIDATE_TIME_POLICY,
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    ...(onDone ? { onSuccess: onDone } : {}),
+  });
+}
+
+export interface ShiftAssignInput {
+  readonly employeeId: string;
+  readonly shiftId: string;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+}
+
+/**
+ * Put ONE employee on a different shift from a date.
+ *
+ * The reason is held to `SENSITIVE_REASON_LENGTH` like every other assignment write:
+ * this changes what counts as late, what counts as overtime and what the gate expects of
+ * one named person, and "shift change" is not a record of why.
+ *
+ * `INVALIDATE_TIME_POLICY` is the same key set the policy-assignment writes use, so the
+ * resolver trace, the roster and the employee's own screens all re-read rather than
+ * showing the old answer beside the new row.
+ */
+export function useShiftAssign(
+  onDone?: (row: ShiftAssignment) => void,
+): AuditedMutationResult<ShiftAssignment, ShiftAssignInput> {
+  return useAuditedMutation<ShiftAssignment, ShiftAssignInput>({
+    mutationFn: (input, reason) => insertShiftAssignment(input, reason),
+    invalidate: INVALIDATE_TIME_POLICY,
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    ...(onDone ? { onSuccess: onDone } : {}),
+  });
+}
+
+export interface ShiftAssignEndInput {
+  readonly id: string;
+  readonly effectiveTo: string;
+}
+
+/** End a standing per-employee shift, leaving the row and its history intact. */
+export function useShiftAssignEnd(
+  onDone?: (row: ShiftAssignment) => void,
+): AuditedMutationResult<ShiftAssignment, ShiftAssignEndInput> {
+  return useAuditedMutation<ShiftAssignment, ShiftAssignEndInput>({
+    mutationFn: (input, reason) => endShiftAssignment(input.id, input.effectiveTo, reason),
     invalidate: INVALIDATE_TIME_POLICY,
     minReasonLength: SENSITIVE_REASON_LENGTH,
     ...(onDone ? { onSuccess: onDone } : {}),

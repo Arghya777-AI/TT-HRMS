@@ -54,3 +54,30 @@ export const keysOvertimeRules = {
   "leave.otRules.noPolicy":
     "No attendance policy resolves for you, so the system's built-in defaults apply. Ask HR to assign a policy.",
 } as const;
+
+/**
+ * Per-employee shift override, on the policy resolver.
+ *
+ * The precedence sentence is the important one: an administrator who does not know a
+ * published roster slot outranks this will read an unchanged shift as a bug.
+ */
+export const keysAssignShift = {
+  "timeAudit.assignShift.title": "Put this employee on a different shift",
+  "timeAudit.assignShift.hint":
+    "{name} is currently on {shift}. A shift set here applies to them alone — it does not change the shift master or anybody else on their designation.",
+  "timeAudit.assignShift.hintNoCurrent":
+    "{name} has no shift resolving today. A shift set here applies to them alone — it does not change the shift master or anybody else on their designation.",
+  "timeAudit.assignShift.rosterWins":
+    "A published roster slot already decides this date, and a roster slot outranks a standing assignment. This override will apply on dates the roster does not cover.",
+  "timeAudit.assignShift.shift": "Shift",
+  "timeAudit.assignShift.shiftHint": "Its timings and grace come from the shift itself.",
+  "timeAudit.assignShift.from": "From",
+  "timeAudit.assignShift.fromHint": "The first day it applies.",
+  "timeAudit.assignShift.to": "Until (optional)",
+  "timeAudit.assignShift.toHint": "Leave empty for an open-ended change.",
+  "timeAudit.assignShift.action": "Assign this shift",
+  "timeAudit.assignShift.done": "Assigned, effective {from}.",
+  "timeAudit.assignShift.reasonTitle": "Why is this shift changing?",
+  "timeAudit.assignShift.reasonBody":
+    "This changes what counts as late, what counts as overtime and what the gate expects of {name}. The reason is recorded against the assignment.",
+} as const;

@@ -512,6 +512,67 @@ export function fetchShiftAssignments(
   });
 }
 
+/**
+ * Give ONE employee a different shift from a date.
+ *
+ * WHY THIS WRITE DID NOT EXIST. `shift_assignments` has been in the schema since
+ * migration 014, `resolve_shift_for_date` has read it as step 2 of five all along, and
+ * `fetchShiftAssignments` above has displayed it — but nothing in the product could
+ * create a row, so the table held zero of them. Changing one person's hours meant
+ * changing their designation's default shift, which moves everybody on that designation,
+ * or editing the shift master itself, which moves the whole venue.
+ *
+ * PRECEDENCE, so the caller knows what this does and does not beat: roster slot →
+ * **shift_assignments** → `employees.shift_id` → `designations.default_shift_id` → the
+ * company's 'G' shift. A published roster slot still wins, which is correct — a slot is a
+ * decision about a named day and this is a standing arrangement.
+ *
+ * `effective_to` is optional and open-ended by design: "from Monday, Asha works the
+ * evening shift" is the common case and has no end date. `ex_shift_assignments__no_overlap`
+ * refuses a second overlapping row for the same employee, so a mistake surfaces as a
+ * constraint violation rather than two live answers — which is why this does not close the
+ * previous assignment for the caller. Ending one is a separate, deliberate act.
+ */
+export function insertShiftAssignment(
+  input: {
+    readonly employeeId: string;
+    readonly shiftId: string;
+    readonly effectiveFrom: string;
+    readonly effectiveTo?: string | null;
+  },
+  reason: string,
+  signal?: AbortSignal,
+): Promise<ShiftAssignment> {
+  return insertRow(
+    SHIFT_ASSIGNMENTS_TABLE,
+    {
+      employee_id: input.employeeId,
+      shift_id: input.shiftId,
+      effective_from: input.effectiveFrom,
+      effective_to: input.effectiveTo ?? null,
+      reason,
+    },
+    shiftAssignmentSchema,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+}
+
+/** End a standing assignment on a date, leaving the row and its history intact. */
+export function endShiftAssignment(
+  id: string,
+  effectiveTo: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<ShiftAssignment> {
+  return updateRow(
+    SHIFT_ASSIGNMENTS_TABLE,
+    [eq("id", id)],
+    { effective_to: effectiveTo },
+    shiftAssignmentSchema,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+}
+
 export const designationShiftSchema = z.object({
   id: dbUuid,
   name: z.string(),

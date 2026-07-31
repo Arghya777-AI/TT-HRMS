@@ -50,6 +50,8 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
+import { AssignShiftCard } from "../components/AssignShiftCard";
+import { shiftWindowLabel } from "../shiftWindow";
 import { fmtCivilDate, fmtCivilDateWeekday, fmtCivilTime, fmtDurationHm, nowIstDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
@@ -661,6 +663,22 @@ export default function PolicyResolverPage() {
                   </dl>
                 </section>
               ) : null}
+
+              {/*
+                The write, directly under the read. The trace above says which of the
+                five steps answered; this changes step 2 for this one person, and the
+                card warns when a published roster slot will outrank it anyway.
+              */}
+              <AssignShiftCard
+                employeeId={employee.id}
+                employeeName={employee.display_name}
+                currentShiftLabel={shiftWindowLabel(
+                  shiftDetail.data?.name ?? null,
+                  shiftDetail.data?.start_time ?? null,
+                  shiftDetail.data?.end_time ?? null,
+                )}
+                rosterSlotWins={trace.data?.rosterSlot != null}
+              />
 
               {/* ── Weekly off, holiday, period ──────────────────────────── */}
               <h2 className="mb-2 font-display text-lg font-semibold">

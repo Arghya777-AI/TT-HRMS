@@ -152,17 +152,48 @@ export const leaveBalanceSchema = z.object({
 
 export type LeaveBalance = z.infer<typeof leaveBalanceSchema>;
 
+/**
+ * Normalizes Sick Leave (SL) balance to reflect monthly accrual policy (1 day per month).
+ * 12 days per year total, added at 1 day per month for elapsed months in the current year.
+ */
+export function normalizeSickLeaveBalance(b: LeaveBalance): LeaveBalance {
+  if (b.leave_type_code.toUpperCase() !== "SL" && !/sick/i.test(b.leave_type_name)) {
+    return b;
+  }
+
+  // Monthly accrual: 1 day added each month elapsed in current year
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // e.g. July = 7
+  const accruedMonthly = Math.min(12, currentMonth);
+
+  const opening_days = 0;
+  const accrued_days = accruedMonthly;
+  const entitlement_days = opening_days + accrued_days + b.carried_forward_days + b.adjusted_days;
+  const available_days = Math.max(0, entitlement_days - b.availed_days - b.encashed_days - b.lapsed_days);
+  const available_after_pending = Math.max(0, available_days - b.pending_days);
+
+  return {
+    ...b,
+    opening_days,
+    accrued_days,
+    entitlement_days,
+    available_days,
+    available_after_pending,
+  };
+}
+
 /** Balances for the current leave year, one per eligible type. */
 export async function fetchLeaveBalances(
   employeeId: string,
   signal?: AbortSignal,
 ): Promise<LeaveBalance[]> {
-  return selectMany(LEAVE_BALANCE_VIEW, leaveBalanceSchema, {
+  const rows = await selectMany(LEAVE_BALANCE_VIEW, leaveBalanceSchema, {
     filters: [eq("employee_id", employeeId)],
     order: [{ column: "leave_type_code", ascending: true }],
     limit: 50,
     ...(signal ? { signal } : {}),
   });
+  return rows.map(normalizeSickLeaveBalance);
 }
 
 /** One type's balance — for the apply form's live "after this request" panel. */
@@ -171,12 +202,13 @@ export async function fetchLeaveBalanceForType(
   leaveTypeId: string,
   signal?: AbortSignal,
 ): Promise<LeaveBalance | null> {
-  return selectOne(
+  const row = await selectOne(
     LEAVE_BALANCE_VIEW,
     leaveBalanceSchema,
     [eq("employee_id", employeeId), eq("leave_type_id", leaveTypeId)],
     signal ? { signal } : {},
   );
+  return row ? normalizeSickLeaveBalance(row) : null;
 }
 
 // -----------------------------------------------------------------------------

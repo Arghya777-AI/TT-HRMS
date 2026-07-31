@@ -25,6 +25,7 @@ import { keysSigninActivity } from "./keys/signin-activity";
 import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
 import { keysEnrolmentStatus } from "./keys/enrolment-status";
 import { keysAdminPresence, keysOrgOther } from "./keys/admin-presence";
+import { keysHomeCalendar } from "./keys/home-calendar";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
@@ -63,6 +64,7 @@ export const en = {
   ...keysEnrolmentStatus,
   ...keysAdminPresence,
   ...keysOrgOther,
+  ...keysHomeCalendar,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

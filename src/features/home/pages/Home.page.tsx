@@ -46,6 +46,7 @@ import { GreetingBand } from "../components/GreetingBand";
 import { TodayCard } from "../components/TodayCard";
 import { EqualHeightRow } from "../components/EqualHeightRow";
 import { AttentionCard } from "../components/AttentionCard";
+import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { MonthStrip } from "../components/MonthStrip";
 import { CompOffCard, LeaveBalancesCard } from "../components/BalancesCards";
 import {
@@ -191,6 +192,17 @@ export default function HomePage() {
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
         <AttentionCard query={attentionQuery} nowMs={nowMs} />
       </EqualHeightRow>
+
+      {/*
+        The calendar sits directly under today's shift and the punch card, which is
+        where it was asked for and where it belongs: those two answer "what am I doing
+        now", and this answers "what has the month looked like". It is full width rather
+        than a third of a row, because a seven-column grid squeezed into one column of
+        three is unreadable on a laptop and impossible on a phone.
+      */}
+      <div className="mt-4">
+        <MyMonthCalendar />
+      </div>
 
       <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
 

@@ -66,6 +66,20 @@ export const keysDocumentOpen = {
   "admin.roles.role.noLogin": "No login yet",
   "admin.roles.adminOnly": "Only an admin can change this",
   "admin.roles.noAccount": "No login yet, so no access level to set",
+  // ── Provisioning a portal login ───────────────────────────────────────────
+  // Adding somebody in People never created an account, so this turns a dead-end
+  // ("no login yet") into the action that fixes it.
+  "admin.roles.login.create": "Create login",
+  "admin.roles.login.creating": "Creating…",
+  "admin.roles.login.emailPlaceholder": "Login email (optional)",
+  "admin.roles.login.created": "Login created for {email}. They must change this on first sign-in.",
+  "admin.roles.login.copy": "Copy password",
+  "admin.roles.login.copied": "Copied",
+  // No second chance, so it says so rather than letting somebody navigate away.
+  "admin.roles.login.onceOnly":
+    "Shown once only — copy it now and hand it over. If it is lost, issue a password reset; it cannot be read again.",
+  "admin.roles.login.replayed":
+    "This login already existed, so no new password was issued. Use a password reset if they need one.",
   // Each mismatch names its own fix, because they are different fixes.
   "admin.roles.check.teamNoRole": "People report to them but they have no manager access",
   "admin.roles.check.managerNoTeam": "Has manager access but nobody reports to them",

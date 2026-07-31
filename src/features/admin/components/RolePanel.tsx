@@ -23,7 +23,10 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, TriangleAlert, Users } from "lucide-react";
+import { KeyRound, ShieldCheck, TriangleAlert, Users } from "lucide-react";
+import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -42,6 +45,7 @@ import {
   type EffectiveRole,
   type EmployeeRoleRow,
 } from "../api/roles.api";
+import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
 
 const KEY = ["admin", "employee-roles"] as const;
 
@@ -53,6 +57,130 @@ const ROLE_CHIP: Readonly<Record<EffectiveRole, StatusChipEntry>> = {
   super_admin: { label: t("admin.roles.role.superAdmin"), tone: "warn" },
   no_login: { label: t("admin.roles.role.noLogin"), tone: "neutral" },
 };
+
+/**
+ * Provision a login for an employee who has none.
+ *
+ * MOUNTED WHERE THE PROBLEM APPEARS. This cell used to read "No login yet, so no access level
+ * to set" — a true statement and a dead end. Adding somebody in People creates the employee row
+ * and nothing else, because nothing ever called `employee-account-create`, so a live confirmed
+ * employee could sit there indefinitely with no way into the portal and no way to be enrolled
+ * for face sign-in either (consent and templates both hang off a profile).
+ *
+ * THE PASSWORD IS SHOWN ONCE AND CANNOT BE RE-READ. The function returns it a single time and
+ * nulls it on an idempotent replay, so it is rendered here the moment it arrives, selectable,
+ * with a copy button and a plain warning. No mail is sent — `emailSent` comes back false — so
+ * the screen says the slip has to be handed over rather than implying one is in flight.
+ */
+function CreateLoginCell({ row, onDone }: { row: EmployeeRoleRow; onDone: () => void }) {
+  const [email, setEmail] = useState("");
+  const [issued, setIssued] = useState<AccountCreated | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const stepUp = useStepUp();
+
+  /*
+    STEP-UP IS PART OF THIS ACTION, NOT AN ERROR FROM IT.
+
+    `employee-account-create` is a D-21 write and refuses with MFA_STEP_UP_REQUIRED unless the
+    session is aal2 — confirmed by calling it: HTTP 403, "Confirm your identity with your
+    authenticator app to continue." Without this, the button would show that sentence and stop,
+    leaving the operator to guess that an authenticator prompt was what they needed. So a
+    step-up refusal opens the prompt and retries the SAME request, which is exactly what the
+    face-enrolment capture already does.
+  */
+  const provision = async (): Promise<AccountCreated> =>
+    createEmployeeAccount({
+      employeeId: row.employee_id,
+      ...(email.trim() !== "" ? { loginEmail: email.trim() } : {}),
+      reason: `provisioning a portal login for ${row.employee_code ?? "this employee"}`,
+    });
+
+  const create = useMutation({
+    mutationFn: async () => {
+      try {
+        return await provision();
+      } catch (err) {
+        if (!isStepUpRequired(err)) throw err;
+        const upgraded = await stepUp.ensureAal2();
+        if (!upgraded) throw err;
+        return await provision();
+      }
+    },
+    onSuccess: (result) => {
+      setError(null);
+      setIssued(result);
+      onDone();
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
+  if (issued !== null) {
+    return (
+      <div className="flex flex-col items-end gap-1 text-right">
+        <span className="text-xs font-medium text-success">
+          {t("admin.roles.login.created", { email: issued.account.email ?? "" })}
+        </span>
+        {issued.tempPassword !== null ? (
+          <>
+            <code className="select-all rounded bg-muted px-2 py-1 text-sm">{issued.tempPassword}</code>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                void navigator.clipboard.writeText(issued.tempPassword ?? "").then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1_500);
+                }).catch(() => {
+                  // Clipboard refused; the password is selectable on screen.
+                });
+              }}
+            >
+              {copied ? t("admin.roles.login.copied") : t("admin.roles.login.copy")}
+            </button>
+            {/* Said plainly, because it is true and there is no second chance. */}
+            <span className="max-w-[18rem] text-xs text-warning">
+              {t("admin.roles.login.onceOnly")}
+            </span>
+          </>
+        ) : (
+          <span className="max-w-[18rem] text-xs text-muted-foreground">
+            {t("admin.roles.login.replayed")}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {/* Only asked for when there is nothing on file to fall back to. */}
+      <Input
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder={t("admin.roles.login.emailPlaceholder")}
+        className="h-8 max-w-[14rem] text-xs"
+        disabled={create.isPending}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={create.isPending}
+        onClick={() => create.mutate()}
+      >
+        <KeyRound className="mr-2 size-4" aria-hidden />
+        {create.isPending ? t("admin.roles.login.creating") : t("admin.roles.login.create")}
+      </Button>
+      {error !== null ? (
+        <span className="max-w-[18rem] text-right text-xs text-destructive">{error}</span>
+      ) : null}
+      {/* Without this mounted, `ensureAal2` has no prompt to show. */}
+      {stepUp.dialog}
+    </div>
+  );
+}
 
 function RoleCell({ row }: { row: EmployeeRoleRow }) {
   const qc = useQueryClient();
@@ -74,8 +202,12 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
     return <span className="text-xs text-muted-foreground">{t("admin.roles.adminOnly")}</span>;
   }
   if (row.profile_id === null) {
-    // Not a refusal to be discovered after clicking: there is genuinely no account.
-    return <span className="text-xs text-muted-foreground">{t("admin.roles.noAccount")}</span>;
+    /*
+      No account — so instead of saying so and stopping, offer to make one. Adding somebody in
+      People never created a login, which is why a confirmed employee could have no way in at
+      all. Once the login exists this cell becomes the ordinary role picker on the next refetch.
+    */
+    return <CreateLoginCell row={row} onDone={() => void qc.invalidateQueries({ queryKey: KEY })} />;
   }
 
   return (

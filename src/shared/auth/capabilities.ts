@@ -28,6 +28,20 @@ export type RoleName = "employee" | "manager" | "admin" | "super_admin" | "kiosk
  * Role → capability, mirroring the DB hierarchy in `app.has_role()`
  * (super_admin ⊃ admin ⊃ manager ⊃ employee, migration 005).
  *
+ * `admin` carries `admin.super` BY PRODUCT DECISION (2026-07-31). An admin and a
+ * super admin are meant to see one identical console: when somebody is promoted to
+ * admin they must be able to find every screen, not a subset whose gaps they cannot
+ * see to report. Tier "S" in `route-manifest` therefore no longer hides a route from
+ * an admin.
+ *
+ * WHAT THIS DOES NOT DO, and must not be read as doing. This map is nav/route
+ * shaping only. A handful of operations are gated in Postgres by
+ * `app.is_super_admin()` DIRECTLY rather than by a capability — granting a role,
+ * revoking one, and purging biometric templates among them — and those still refuse
+ * a plain admin at the server, with the server's own message. Showing the screen and
+ * being allowed to press the button are two different promises; this file can only
+ * keep the first.
+ *
  * `admin` carries `team.view` deliberately. HR IS the admin role — there is no
  * `hr` value in `public.app_role` — and `app.has_cap('team.view')` returns true
  * for an admin because `app.has_role('manager')` does. Omitting it here made the
@@ -41,7 +55,7 @@ export type RoleName = "employee" | "manager" | "admin" | "super_admin" | "kiosk
 const ROLE_CAPS: Record<RoleName, readonly Capability[]> = {
   employee: ["me.view"],
   manager: ["me.view", "team.view"],
-  admin: ["me.view", "team.view", "admin.access"],
+  admin: ["me.view", "team.view", "admin.access", "admin.super"],
   super_admin: ["me.view", "team.view", "admin.access", "admin.super"],
   kiosk_operator: ["me.view", "kiosk.operate"],
 };

@@ -1,24 +1,34 @@
 /**
- * A-KIOSK-03 · /admin/kiosk/enrolment — the operational gap list (spec-admin §5.10,
- * view §9.3).
+ * A-KIOSK-03 · /admin/kiosk/enrolment — face enrolment, from both ends (spec-admin
+ * §5.10, view §9.3).
  *
- * `v_enrolment_coverage` already IS the queue: its predicate is
- * `(no active consent) OR (no active template)` over non-excluded active
- * employees, so an empty grid means full coverage rather than a failed read. The
- * screen therefore never filters the list down itself and never counts "who is
- * enrolled" — that denominator is not in the view and inventing it is how a
- * coverage figure starts disagreeing with the gate.
+ * TWO GRIDS, AND THE ORDER IS THE POINT.
+ *
+ * `EnrolmentStatusRoster` comes first: every enrollable employee with the enrolment
+ * question answered, filterable by enrolled/not-enrolled and downloadable as exactly
+ * the filter on screen. It exists because this page used to be the gap grid ALONE, and
+ * `v_enrolment_coverage` is a gap list by construction — its predicate is `(no active
+ * consent) OR (no active template)`. That view genuinely cannot show an enrolled
+ * person, so the screen could not answer "who is enrolled", had no denominator, and at
+ * a venue with good coverage rendered as an empty page beside a column of Enrol
+ * buttons. Reported exactly that way by an administrator who thought it was broken.
+ *
+ * The gap grid stays, unchanged, below it — it is still the right shape for the
+ * chase-list, and it carries the consent and template columns the roster does not.
+ * `buildEnrolmentStatusRows` joins the two rather than recomputing enrolment: absence
+ * from the coverage view IS enrolment, so the roster cannot disagree with the gate.
  *
  * The one product rule this screen must not get wrong (§5.10): a WITHDRAWN
  * consent is a distinct gap kind and is not a to-do. Those employees punch by
  * another method and are never chased. They are shown, tinted neutral, with the
- * reason said out loud — and they are excluded from the "needs action" tile.
+ * reason said out loud — and they are excluded from the "needs action" tile and from
+ * the coverage denominator.
  *
  * @route /admin/kiosk/enrolment
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ScanFace, ShieldCheck, UserCheck } from "lucide-react";
+import { Download, Loader2, ScanFace, ShieldCheck, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
@@ -26,7 +36,19 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
-import { StatusChip } from "@/shared/ui/StatusChip";
+import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
+import { exportReport, type ExportColumn, type ExportFormat } from "@/lib/exportReport";
+import { defaultFilters } from "@/lib/analyticsFilters";
+import { useEnrolmentRoster } from "../hooks/useFaceEnrolment";
+import {
+  buildEnrolmentStatusRows,
+  matchesEnrolmentFilter,
+  tallyEnrolment,
+  ENROLMENT_FILTERS,
+  type EnrolmentFilter,
+  type EnrolmentState,
+  type EnrolmentStatusRow,
+} from "../enrolmentStatus";
 import { useFaceLoginAccess, useSetFaceLogin } from "../../settings/hooks/useFaceLogin";
 import type { FaceLoginAccess } from "../../settings/api/faceLogin.api";
 import { PersonCell } from "../components/PersonCell";
@@ -45,6 +67,40 @@ import { gapChip, qualityChip, requestViaLabel } from "../kiosk-display";
 import { KioskSectionNav } from "../components/KioskSectionNav";
 import { KioskLinkCard } from "../components/KioskLinkCard";
 import { asArray } from "@/lib/asArray";
+
+/**
+ * The four enrolment states as words and colour.
+ *
+ * `consent_withdrawn` is deliberately NEUTRAL, not a warning: that employee has
+ * lawfully declined biometrics and punches by another method. Tinting it amber would
+ * put a permanent to-do on the screen for something nobody should ever act on (§5.10).
+ */
+const STATE_CHIP: Readonly<Record<EnrolmentState, StatusChipEntry>> = {
+  enrolled: { label: t("admin.enrolStatus.state.enrolled"), tone: "success" },
+  no_consent: { label: t("admin.enrolStatus.state.no_consent"), tone: "warn" },
+  consented_not_enrolled: {
+    label: t("admin.enrolStatus.state.consented_not_enrolled"),
+    tone: "info",
+  },
+  consent_withdrawn: { label: t("admin.enrolStatus.state.consent_withdrawn"), tone: "neutral" },
+};
+
+/** The next action, in the same order as the states. */
+const STATE_NEXT: Readonly<Record<EnrolmentState, string>> = {
+  enrolled: t("admin.enrolStatus.next.enrolled"),
+  no_consent: t("admin.enrolStatus.next.no_consent"),
+  consented_not_enrolled: t("admin.enrolStatus.next.consented_not_enrolled"),
+  consent_withdrawn: t("admin.enrolStatus.next.consent_withdrawn"),
+};
+
+const FILTER_LABEL: Readonly<Record<EnrolmentFilter, string>> = {
+  all: t("admin.enrolStatus.filter.all"),
+  enrolled: t("admin.enrolStatus.filter.enrolled"),
+  not_enrolled: t("admin.enrolStatus.filter.not_enrolled"),
+  no_consent: t("admin.enrolStatus.filter.no_consent"),
+  consented_not_enrolled: t("admin.enrolStatus.filter.consented_not_enrolled"),
+  consent_withdrawn: t("admin.enrolStatus.filter.consent_withdrawn"),
+};
 
 type GapFilter = "all" | "no_consent" | "consented_not_enrolled" | "consent_withdrawn";
 
@@ -224,6 +280,15 @@ export default function EnrolmentQueuePage() {
       <KioskLinkCard />
 
       {/*
+        The roster comes FIRST, above the action console, because it answers the
+        question an administrator actually arrives with — who is enrolled and who is
+        not — and because the gap grid further down cannot: it lists only people with
+        something missing, so a well-covered venue rendered a page with nothing on it
+        but a column of Enrol buttons.
+      */}
+      <EnrolmentStatusRoster />
+
+      {/*
        * The per-employee console. It supersedes the bare capture panel that used
        * to sit here: the capture is one of its actions, alongside consent, the
        * admin-initiated request, approval and revocation, and it is pointed at
@@ -351,6 +416,257 @@ export default function EnrolmentQueuePage() {
 
       <FaceLoginRoster />
     </div>
+  );
+}
+
+/**
+ * Every enrollable employee with the enrolment question answered, filterable and
+ * downloadable.
+ *
+ * WHY IT IS NOT THE GAP GRID. `v_enrolment_coverage` is a gap list — it cannot show an
+ * enrolled person, so it cannot answer "who is enrolled", and at a venue with good
+ * coverage it renders as an empty screen beside an Enrol button. This grid puts the
+ * roster on the spine and joins coverage onto it, so an enrolled employee has a row
+ * and a date, and a not-enrolled one says WHICH of the three things is missing.
+ *
+ * THE DOWNLOAD IS THE VISIBLE FILTER, never the whole table. Somebody who filters to
+ * "Not enrolled" and presses download is asking for that list — writing all 78 rows
+ * would be a different document than the one on screen, and they would not find out
+ * until they opened it. The row count is printed next to the buttons for the same
+ * reason.
+ */
+function EnrolmentStatusRoster() {
+  const roster = useEnrolmentRoster();
+  const gaps = useEnrolmentGaps();
+  const [filter, setFilter] = useState<EnrolmentFilter>("all");
+  const [busy, setBusy] = useState<ExportFormat | null>(null);
+
+  const rows = useMemo(
+    () => buildEnrolmentStatusRows(asArray(roster.data), asArray(gaps.data)),
+    [roster.data, gaps.data],
+  );
+  const tally = useMemo(() => tallyEnrolment(rows), [rows]);
+  const visible = useMemo(
+    () => rows.filter((row) => matchesEnrolmentFilter(row, filter)),
+    [rows, filter],
+  );
+
+  const columns: DataGridColumn<EnrolmentStatusRow>[] = [
+    {
+      key: "employee",
+      header: t("admin.enrolStatus.col.employee"),
+      sortable: true,
+      sortValue: (row) => row.display_name,
+      render: (row) => <PersonCell name={row.display_name} code={row.employee_code} />,
+    },
+    {
+      key: "department_name",
+      header: t("admin.enrolStatus.col.department"),
+      hideBelow: "md",
+      sortable: true,
+      render: (row) => dash(row.department_name),
+    },
+    {
+      key: "state",
+      header: t("admin.enrolStatus.col.status"),
+      width: "16rem",
+      sortable: true,
+      sortValue: (row) => STATE_CHIP[row.state].label,
+      render: (row) => <StatusChip status={row.state} map={STATE_CHIP} />,
+    },
+    {
+      key: "next",
+      header: t("admin.enrolStatus.col.next"),
+      hideBelow: "lg",
+      render: (row) => (
+        <span className="text-xs text-muted-foreground">{STATE_NEXT[row.state]}</span>
+      ),
+    },
+    {
+      key: "face_enrolled_at",
+      header: t("admin.enrolStatus.col.since"),
+      hideBelow: "lg",
+      sortable: true,
+      render: (row) => dash(row.face_enrolled_at, fmtDateTime),
+    },
+    {
+      key: "date_of_join",
+      header: t("admin.enrolStatus.col.joined"),
+      hideBelow: "lg",
+      sortable: true,
+      render: (row) => <span className="num">{fmtCivilDate(row.date_of_join)}</span>,
+    },
+  ];
+
+  async function download(format: ExportFormat): Promise<void> {
+    const exportColumns: ExportColumn<EnrolmentStatusRow>[] = [
+      { key: "employee_code", header: t("admin.enrolStatus.col.employee"), format: "text" },
+      { key: "display_name", header: t("admin.enrolStatus.col.employee"), format: "text" },
+      {
+        key: "department_name",
+        header: t("admin.enrolStatus.col.department"),
+        format: (row) => row.department_name ?? "",
+      },
+      {
+        key: "designation_name",
+        header: t("admin.enrolStatus.col.designation"),
+        format: (row) => row.designation_name ?? "",
+      },
+      {
+        key: "state",
+        header: t("admin.enrolStatus.col.status"),
+        format: (row) => STATE_CHIP[row.state].label,
+      },
+      {
+        key: "next",
+        header: t("admin.enrolStatus.col.next"),
+        format: (row) => STATE_NEXT[row.state],
+      },
+      {
+        key: "consent_granted_at",
+        header: t("admin.enrolStatus.col.consent"),
+        format: (row) => (row.consent_granted_at === null ? "" : fmtDateTime(row.consent_granted_at)),
+      },
+      {
+        key: "face_enrolled_at",
+        header: t("admin.enrolStatus.col.since"),
+        format: (row) => (row.face_enrolled_at === null ? "" : fmtDateTime(row.face_enrolled_at)),
+      },
+      {
+        key: "date_of_join",
+        header: t("admin.enrolStatus.col.joined"),
+        format: (row) => (row.date_of_join === null ? "" : fmtCivilDate(row.date_of_join)),
+      },
+      { key: "work_email", header: t("admin.enrolStatus.col.email"), format: (row) => row.work_email ?? "" },
+    ];
+
+    await exportReport<EnrolmentStatusRow>({
+      title: t("admin.enrolStatus.download.title"),
+      subtitle: FILTER_LABEL[filter],
+      columns: exportColumns,
+      rows: visible,
+      format,
+      filename: `face-enrolment-${filter}`,
+      // Not the result of the analytics filter bar. `defaultFilters()` gives the writer
+      // a well-formed period for its heading instead of a fabricated narrowing — the
+      // same reason the conversation export passes it.
+      filters: defaultFilters(),
+    });
+  }
+
+  return (
+    <section className="mt-6">
+      <h2 className="font-display text-lg font-semibold">{t("admin.enrolStatus.title")}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t("admin.enrolStatus.subtitle")}</p>
+
+      <StateBoundary
+        loading={roster.isPending || gaps.isLoading}
+        error={roster.error ?? gaps.error ?? undefined}
+        onRetry={() => {
+          void roster.refetch();
+          void gaps.refetch();
+        }}
+        skeletonRows={5}
+      >
+        <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.total")}
+            value={formatNumber(tally.total)}
+            tone="neutral"
+          />
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.enrolled")}
+            value={formatNumber(tally.enrolled)}
+            tone="success"
+          />
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.notEnrolled")}
+            value={formatNumber(tally.notEnrolled)}
+            hint={t("admin.enrolStatus.kpi.withdrawnHint")}
+            tone={tally.notEnrolled > 0 ? "warn" : "success"}
+          />
+          <KpiTile
+            label={t("admin.enrolStatus.kpi.coverage")}
+            value={tally.coveragePct === null ? "—" : `${formatNumber(tally.coveragePct)}%`}
+            hint={t("admin.enrolStatus.kpi.coverageHint")}
+            tone={tally.coveragePct !== null && tally.coveragePct >= 90 ? "success" : "info"}
+          />
+        </section>
+
+        <div className="mt-4">
+          <DataGrid
+            columns={columns}
+            rows={visible}
+            rowKey={(row) => row.employee_id}
+            pageSize={25}
+            toolbar={
+              <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                <div
+                  className="flex flex-wrap gap-1"
+                  role="group"
+                  aria-label={t("admin.enrolStatus.filter.aria")}
+                >
+                  {ENROLMENT_FILTERS.map((key) => (
+                    <Button
+                      key={key}
+                      size="sm"
+                      variant={filter === key ? "default" : "outline"}
+                      aria-pressed={filter === key}
+                      onClick={() => setFilter(key)}
+                    >
+                      {FILTER_LABEL[key]}
+                      <span className="ml-1.5 text-xs opacity-70">
+                        {formatNumber(rows.filter((row) => matchesEnrolmentFilter(row, key)).length)}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {t("admin.enrolStatus.downloadCount", { n: formatNumber(visible.length) })}
+                  </span>
+                  {(["csv", "pdf"] as const).map((format) => (
+                    <Button
+                      key={format}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null || visible.length === 0}
+                      onClick={() => {
+                        setBusy(format);
+                        void download(format).finally(() => setBusy(null));
+                      }}
+                    >
+                      {busy === format ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Download className="mr-2 size-4" aria-hidden />
+                      )}
+                      {format === "csv"
+                        ? t("admin.enrolStatus.download.excel")
+                        : t("admin.enrolStatus.download.pdf")}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            }
+            emptyState={
+              <EmptyState
+                icon={UserCheck}
+                title={t("admin.enrolStatus.empty.title")}
+                hint={t("admin.enrolStatus.empty.hint")}
+                action={
+                  <Button variant="outline" onClick={() => setFilter("all")}>
+                    {t("admin.enrolStatus.filter.all")}
+                  </Button>
+                }
+              />
+            }
+          />
+        </div>
+      </StateBoundary>
+    </section>
   );
 }
 

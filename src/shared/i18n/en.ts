@@ -23,6 +23,7 @@ import { keysAuthLogin } from "./keys/auth-login";
 import { keysAuthFaceFn } from "./keys/auth-face-fn";
 import { keysSigninActivity } from "./keys/signin-activity";
 import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
+import { keysEnrolmentStatus } from "./keys/enrolment-status";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
@@ -58,6 +59,7 @@ export const en = {
   ...keysAuthFaceFn,
   ...keysSigninActivity,
   ...keysAdminFaceEnrol,
+  ...keysEnrolmentStatus,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

@@ -210,24 +210,25 @@ export async function fetchMyEmployeeProfile(
  * Stamp first-run completion (`must_change_password=false`,
  * `profile_confirmed_at=now()`) on the caller's own `profiles` row.
  *
- * KNOWN SERVER GAP — this cannot succeed from the browser today, and the caller
- * must handle the rejection rather than assume success. Migration 006b §6 does
- * `REVOKE UPDATE ON public.profiles FROM authenticated` and re-grants only
- * `(full_name, avatar_url, phone, locale, timezone)`, with the stated reason
- * that "the password/confirmation flags are HR/system-owned". Both columns this
- * writes are therefore outside the grant, so Postgres refuses with `42501`
- * (→ `kind: "no_permission"`) even though `profiles__self_update` allows the
- * ROW. Nothing in `supabase/functions/` or any RPC clears these flags either, so
- * the completion stamp has no server-side owner yet.
+ * THIS WRITE IS PERMITTED, and an earlier version of this comment said it was
+ * not. The claim was that migration 006b §6 (`REVOKE UPDATE ON public.profiles
+ * FROM authenticated`, re-granting only full_name/avatar_url/phone/locale/
+ * timezone) put both columns out of reach, so the stamp had "no server-side owner
+ * yet". That revoke is real but it is not the last word: migration 048
+ * (`grants_final`) then re-grants `SELECT, INSERT, UPDATE ON public.profiles TO
+ * authenticated` table-wide, and it runs after 006b. Verified against the live
+ * project rather than reasoned about — a plain-employee session PATCHing both
+ * columns on its own row is accepted, and `profiles__self_update`
+ * (`id = app.ctx_actor_id()`) is what confines it to that row.
  *
- * It is written through `updateOne` regardless, because that is the contract for
- * a client write and because the refusal must be a thrown `QueryError` the UI
- * can tell the user about. The previous implementation issued the same UPDATE
- * inline from the page and discarded the `{ error }` PostgREST returns, so the
- * wizard reported success, the flags never cleared, and `FirstRunGate` — gated
- * on `must_change_password OR profile_confirmed_at IS NULL` — put the user back
- * into the wizard on the next sign-in. Closing this needs a
- * `SECURITY DEFINER` RPC (or an edge function) that owns the two columns.
+ * So no RPC is needed here, and the wizard's inability to finish was never about
+ * permission. What it WAS about: the page issued this UPDATE inline and discarded
+ * the `{ error }`, and — the actual trap — the wizard always restarted at step 1,
+ * so a joiner who left for the documents screen to satisfy step 4 could never get
+ * back to the step that calls this. See `FirstRun`.
+ *
+ * `profiles` is not in `audit.reason_required_tables`, so no `x-reason` is
+ * required; the audit trigger still records the change.
  */
 export async function markFirstRunComplete(
   profileId: string,

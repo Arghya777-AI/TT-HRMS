@@ -15,10 +15,15 @@
  *     proposed as an `employee_change_requests` row for HR to approve
  *     (`submitSelfChangeRequest`). The wizard says so on screen — it does not
  *     claim the number is live.
- *   * the completion flags on `profiles` are HR/system-owned and currently have
- *     no server-side writer at all (see `markFirstRunComplete`). The failure is
- *     surfaced, never swallowed: if the stamp does not land, the user is told
- *     that they will see this wizard again, which is the truth.
+ *   * the completion flags on `profiles` go through `markFirstRunComplete`, whose
+ *     failure is surfaced rather than swallowed: if the stamp does not land the
+ *     user is told, and is NOT navigated onward, because `FirstRunGate` would only
+ *     send them straight back here.
+ *
+ * The reported loop was not either of those, though — see `initialStep`. The
+ * wizard restarted at step 1 after the trip to /me/documents that step 4 requires,
+ * and step 1 cannot be passed without setting a new password, so the last step was
+ * unreachable and the gate never opened.
  */
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +35,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { nowInstantIso } from "@/lib/datetime";
+import { mutationUserMessage } from "@/shared/api/query";
+import { markFirstRunComplete } from "@/features/profile/api/profile.api";
 import { passwordIssues } from "@/shared/auth/password";
 import { t } from "@/shared/i18n/en";
 import { AuthLayout } from "./AuthLayout";
@@ -38,10 +44,55 @@ import { OnboardingChecklist } from "@/features/onboarding/components/Onboarding
 
 type Step = 1 | 2 | 3 | 4;
 
+/**
+ * Where to resume — and why this is not just `useState(1)`.
+ *
+ * REPORTED LOOP: "when i click to anywhere it redirect to set-password page, when
+ * i reach to step then it redirect to [/me/documents] and it continue again and
+ * again."
+ *
+ * Step 4 asks for documents, and uploading them happens on /me/documents — the one
+ * other route `FirstRunGate` lets through, deliberately (see OnboardingChecklist:
+ * re-implementing upload inside a wizard step would be a second path to the same
+ * bucket). But leaving unmounts this page, so `step` reset to 1, and step 1 cannot
+ * be passed without SETTING A NEW PASSWORD: `submitPassword` requires a valid,
+ * confirmed password and calls `auth.updateUser`. So the joiner came back from
+ * uploading, landed on "Set your password" again, and the only way back to step 4
+ * was to invent another password. `finish()` — the sole writer of
+ * `profile_confirmed_at` — was unreachable, the gate kept redirecting, forever.
+ *
+ * Two things fix it, both here:
+ *   * remember the step across the trip to the documents screen (sessionStorage,
+ *     not state: a full page load happens in between). Session-scoped, so it does
+ *     not follow the user into a later sign-in.
+ *   * never resume ONTO step 1 once the password is the user's own. If
+ *     `must_change_password` is false there is nothing for that step to do, and
+ *     demanding a new password to walk past it is what closed the trap.
+ */
+const STEP_KEY = "firstRun.step";
+
+function isStep(n: number): n is Step {
+  return n === 1 || n === 2 || n === 3 || n === 4;
+}
+
+function initialStep(mustChangePassword: boolean): Step {
+  const floor: Step = mustChangePassword ? 1 : 2;
+  const raw = Number.parseInt(sessionStorage.getItem(STEP_KEY) ?? "", 10);
+  if (!isStep(raw)) return floor;
+  return raw < floor ? floor : raw;
+}
+
 export default function FirstRun() {
   const navigate = useNavigate();
   const { employee, user, refresh } = useAuth();
-  const [step, setStep] = useState<Step>(1);
+  const [step, setStepState] = useState<Step>(() =>
+    initialStep(employee?.mustChangePassword === true),
+  );
+
+  const setStep = (next: Step) => {
+    sessionStorage.setItem(STEP_KEY, String(next));
+    setStepState(next);
+  };
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [mobile, setMobile] = useState("");
@@ -106,17 +157,28 @@ export default function FirstRun() {
     }
   }
 
+  /*
+    Through the api module (D-01), and the error is NOT discarded. This write used
+    to be an inline `supabase.from("profiles").update(...)` whose `{ error }` was
+    thrown away, so a refusal looked exactly like success: the page navigated to
+    /me, `FirstRunGate` saw the flags unchanged and sent the user back here.
+
+    Do not navigate unless the stamp actually landed. Being told plainly that it
+    failed beats a silent bounce between two screens.
+  */
   async function finish() {
     setBusy(true);
     try {
-      if (user?.id) {
-        await supabase
-          .from("profiles")
-          .update({ must_change_password: false, profile_confirmed_at: nowInstantIso() })
-          .eq("id", user.id);
-      }
+      if (!user?.id) throw new Error("No signed-in profile to stamp");
+      await markFirstRunComplete(user.id);
+      sessionStorage.removeItem(STEP_KEY);
       await refresh();
       navigate("/me", { replace: true });
+    } catch (e) {
+      toast.error(mutationUserMessage(e), {
+        description:
+          "We could not record that you finished setting up, so you will see this screen again. Tell HR if it keeps happening.",
+      });
     } finally {
       setBusy(false);
     }

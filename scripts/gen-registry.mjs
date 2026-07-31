@@ -27,8 +27,11 @@
  */
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+// fileURLToPath, not .pathname: a URL keeps spaces percent-encoded, so a repo
+// checked out under a directory like "Tamarind Tree" would look for "…%20Tree".
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FEATURES = join(ROOT, "src/features");
 const MANIFEST = join(ROOT, "src/app/route-manifest.ts");
 const REGISTRY = join(ROOT, "src/features/registry.ts");

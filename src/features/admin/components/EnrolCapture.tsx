@@ -39,7 +39,6 @@ import { nowInstantIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { t, type MessageKey } from "@/shared/i18n/en";
 import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
-import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import {
   DESCRIPTOR_INPUT_SIZE,
   loadFaceModels,
@@ -233,7 +232,6 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
   const [cameraError, setCameraError] = useState(false);
   const [samples, setSamples] = useState<EnrolSampleInput[]>([]);
   const [guidance, setGuidance] = useState<string | null>(null);
-  const [reasonOpen, setReasonOpen] = useState(false);
   const [stepUpPending, setStepUpPending] = useState(false);
 
   const locked = lockedId !== undefined && lockedId !== "";
@@ -366,14 +364,31 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
 
   /**
    * Submit once; on a step-up refusal verify and submit the SAME capture again.
-   * The dialog stays open on any other failure with the server's own sentence in
-   * it (`ReasonDialog.errorMessage`), so the typed reason is never lost either.
+   *
+   * There is no dialog to keep open any more — a failure leaves the five captured samples
+   * in state and puts the server's own sentence in the notice beside the button, so the
+   * whole capture is never thrown away by a refusal that a second press can clear.
    */
-  const submit = (reason: string) => {
+  /**
+   * The audit sentence, written here rather than typed by the operator.
+   *
+   * ASKED FOR: the reason dialog is gone. The SERVER still requires 15 characters on a
+   * biometric write (`SENSITIVE_REASON_LENGTH`) and that floor is not something the client
+   * can waive, so a sentence still has to be sent — the only choice is what it says.
+   *
+   * It says what it is. An auditor reading `audit_log` months from now must not be able to
+   * mistake this for a justification somebody stood behind, so the sentence names itself as
+   * automatic: the row is honest about being unattributed rather than quietly looking like a
+   * considered note. The WHO and the WHEN are still recorded by the audit engine from the
+   * caller's identity, which is the part that matters for accountability.
+   */
+  const AUTOMATIC_REASON =
+    "Supervised face enrolment captured at the admin console; no operator note was requested.";
+
+  const submit = (reason: string = AUTOMATIC_REASON) => {
     void (async () => {
       try {
         await enrol.saveAsync({ employeeId, samples }, reason);
-        setReasonOpen(false);
         return;
       } catch (error) {
         if (!isStepUpRequired(error)) return;
@@ -383,7 +398,6 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
         const upgraded = await stepUp.ensureAal2();
         if (!upgraded) return;
         await enrol.saveAsync({ employeeId, samples }, reason);
-        setReasonOpen(false);
       } catch {
         // Surfaced on `enrol.userMessage`; the dialog stays open.
       } finally {
@@ -544,7 +558,7 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
           </ol>
 
           {done ? (
-            <Button className="w-full" disabled={enrol.isPending} onClick={() => setReasonOpen(true)}>
+            <Button className="w-full" disabled={enrol.isPending} onClick={() => submit()}>
               {enrol.isPending ? t("admin.enrolCap.submitting") : t("admin.enrolCap.submit")}
             </Button>
           ) : null}
@@ -560,7 +574,7 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
               })}
             </Notice>
           ) : null}
-          {enrol.userMessage !== null && !reasonOpen ? (
+          {enrol.userMessage !== null ? (
             <Notice tone="error">{enrol.userMessage}</Notice>
           ) : null}
         </div>
@@ -586,18 +600,6 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
           </div>
         </div>
       </div>
-
-      <ReasonDialog
-        open={reasonOpen}
-        title={t("admin.enrolCap.reason.title")}
-        description={t("admin.enrolCap.reason.description")}
-        confirmLabel={t("admin.enrolCap.reason.confirm")}
-        minLength={enrol.minReasonLength}
-        pending={enrol.isPending || stepUpPending}
-        errorMessage={enrol.userMessage}
-        onConfirm={submit}
-        onCancel={() => setReasonOpen(false)}
-      />
 
       {stepUp.dialog}
     </section>

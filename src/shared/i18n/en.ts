@@ -5968,10 +5968,6 @@ export const en = {
   "admin.enrolCap.submit": "Submit for approval",
   "admin.enrolCap.submitting": "Submitting…",
   "admin.enrolCap.done": "Captured set submitted for {name}. It appears below as pending — activate it to make the face matchable.",
-  "admin.enrolCap.reason.title": "Submit this enrolment",
-  "admin.enrolCap.reason.description":
-    "Five samples will be stored and parked pending approval. Say why you are enrolling this person — the sentence lands in the audit log.",
-  "admin.enrolCap.reason.confirm": "Submit enrolment",
 
   // E-07.4 Personal — /me/profile/personal
   "profile.personal.title": "Personal",

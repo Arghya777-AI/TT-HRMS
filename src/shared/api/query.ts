@@ -28,6 +28,8 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { nowInstantIso } from "@/lib/datetime";
 import { t, type MessageKey } from "@/shared/i18n/en";
+// Safe: `invoke.ts` does not import from this module, so this is not a cycle.
+import { TTApiError } from "./invoke";
 
 // -----------------------------------------------------------------------------
 // Errors
@@ -849,6 +851,30 @@ export function mutationUserMessage(e: unknown): string {
   if (e instanceof QueryError) {
     if (e.isOffline) return t("write.error.offline");
     if (e.isNoPermission) return t("write.error.permissionDenied");
+    return t("write.error.unknown");
+  }
+  /*
+    AN EDGE-FUNCTION REFUSAL, WHOSE OWN SENTENCE WAS BEING THROWN AWAY.
+
+    Every write that goes through `invokeEdgeFn` throws `TTApiError`, and this function
+    knew only about `MutationError` and `QueryError` — so it fell through to
+    "The change could not be saved. Try again, and report it if it keeps failing."
+
+    That sentence is wrong twice over. It tells somebody to RETRY when the server has
+    usually refused for a reason retrying cannot fix, and it discards the one thing that
+    would have told them what to do. A face enrolment refused for missing biometric
+    consent, or because a pending enrolment already exists, said nothing at all — and the
+    administrator's only option was to press the button again.
+
+    `problem.detail` is written by the side that refused and is more specific than anything
+    this function could compose, so it is shown as-is. `problem.title` is the fallback for a
+    problem with no detail; the generic sentence is the last resort rather than the first.
+  */
+  if (e instanceof TTApiError) {
+    const detail = e.problem.detail;
+    if (typeof detail === "string" && detail.trim() !== "") return detail;
+    const title = e.problem.title;
+    if (typeof title === "string" && title.trim() !== "") return ensureStop(title);
     return t("write.error.unknown");
   }
   return t("write.error.unknown");

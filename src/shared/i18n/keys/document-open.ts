@@ -184,4 +184,9 @@ export const keysDocumentOpen = {
     "The assistant built an answer this screen could not read, so nothing is shown rather than something wrong. Ask again — it usually succeeds on a second attempt.",
   "ai.error.server": "The assistant could not answer that just now. Try again shortly.",
   "ai.error.unknown": "Something went wrong while answering. Try again shortly.",
+
+  // ── Face enrolment: the frame is too close ────────────────────────────────
+  // The server gates on how much of the frame the face fills; this is the other end of
+  // "move closer", and it had no message because the client never checked it.
+  "admin.enrolCap.tooClose": "Too close — move back a little so your whole head is in frame.",
 } as const;

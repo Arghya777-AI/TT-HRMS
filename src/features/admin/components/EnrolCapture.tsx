@@ -63,6 +63,7 @@ const CAPTURE_GUIDANCE: Readonly<Record<CaptureComplaint, MessageKey>> = {
   pitch: "admin.enrolCap.poseTooFarPitch",
   roll: "admin.enrolCap.poseTooFarRoll",
   tooFar: "admin.enrolCap.tooFar",
+  tooClose: "admin.enrolCap.tooClose",
   tooDark: "admin.enrolCap.tooDark",
   tooBright: "admin.enrolCap.tooBright",
   tooBlurry: "admin.enrolCap.tooBlurry",
@@ -118,6 +119,21 @@ const POSE_MARGIN = 0.85;
  * scanner genuinely should accept a face at 120 px across a gate.
  */
 const ENROL_GATES = {
+  /*
+    FACE FRACTION WAS THE MISSING GATE, and it is why enrolment failed as "Only 4 of 5
+    captures passed" with every pose ticked green. `face-enrol` gates on how much of the
+    frame the face fills — `minFaceFraction` 0.06, `maxFaceFraction` 0.6 — and this mirror
+    did not carry it, though `facePipeline` has computed `face_fraction` all along. So the
+    camera accepted a frame the server then dropped, and it depended on how close the
+    subject happened to lean: the same person passed five times sitting back and four
+    leaning in. That is what made it feel random.
+
+    `face_px` does NOT cover this. A face can be 300px across and still fill 70% of a small
+    frame, or 200px and fill 4% of a large one — one is an absolute size, the other a
+    proportion, and the server checks both.
+  */
+  minFaceFraction: 0.06,
+  maxFaceFraction: 0.6,
   minFacePx: 160,
   minBrightness: 0.3,
   maxBrightness: 0.85,
@@ -132,6 +148,7 @@ export type CaptureComplaint =
   | "pitch"
   | "roll"
   | "tooFar"
+  | "tooClose"
   | "tooDark"
   | "tooBright"
   | "tooBlurry"
@@ -163,6 +180,7 @@ export function captureComplaint(quality: {
   pitch: number;
   roll: number;
   face_px: number;
+  face_fraction: number;
   brightness: number;
   contrast: number;
   sharpness: number;
@@ -170,6 +188,9 @@ export function captureComplaint(quality: {
 }): CaptureComplaint | null {
   if (quality.detection_score < ENROL_GATES.minDetectionScore) return "lowScore";
   if (quality.face_px < ENROL_GATES.minFacePx) return "tooFar";
+  // Both directions, and before pose: "move back" is more actionable than "turn less".
+  if (quality.face_fraction < ENROL_GATES.minFaceFraction) return "tooFar";
+  if (quality.face_fraction > ENROL_GATES.maxFaceFraction) return "tooClose";
   if (quality.brightness < ENROL_GATES.minBrightness) return "tooDark";
   if (quality.brightness > ENROL_GATES.maxBrightness) return "tooBright";
   if (quality.sharpness < ENROL_GATES.minSharpness) return "tooBlurry";

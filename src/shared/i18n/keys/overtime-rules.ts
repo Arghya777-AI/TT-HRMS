@@ -122,3 +122,33 @@ export const keysGrace = {
 export const keysGraceGrid = {
   "admin.time.grace.fromShift": "From the shift",
 } as const;
+
+/**
+ * The admin attaching documents to an employee, on the Add Employee success screen.
+ *
+ * `approvedNote` says out loud that an HR upload is already verified. Leaving that
+ * implicit would have HR wondering why their own upload is not in the review queue.
+ */
+export const keysAttachDocs = {
+  "admin.attachDocs.title": "Attach documents",
+  "admin.attachDocs.hint":
+    "If you were handed anything for {name} — Aadhaar, PAN, a certificate, a photograph — add it now. One file at a time, because each needs its own type and dates.",
+  "admin.attachDocs.type": "Document type",
+  "admin.attachDocs.typeHint": "Decides where it files and whether an expiry is needed.",
+  "admin.attachDocs.docTitle": "Title",
+  "admin.attachDocs.docTitlePlaceholder": "e.g. Aadhaar card",
+  "admin.attachDocs.issue": "Issued on (optional)",
+  "admin.attachDocs.expiry": "Expires on (optional)",
+  "admin.attachDocs.expiryRequired": "Expires on",
+  "admin.attachDocs.expiryHint":
+    "Required for this type — without it the document cannot appear in the expiry report.",
+  "admin.attachDocs.note": "Where it came from (optional)",
+  "admin.attachDocs.noteHint": "Recorded with the document, so the next person knows.",
+  "admin.attachDocs.notePlaceholder": "e.g. original seen at the desk, photocopy taken",
+  "admin.attachDocs.pick": "Choose a file",
+  "admin.attachDocs.action": "Attach this document",
+  "admin.attachDocs.noActor":
+    "Your profile could not be read, so an upload cannot be recorded against your name. Sign out and back in.",
+  "admin.attachDocs.approvedNote":
+    "A document you attach is recorded as verified by you — it does not go into the review queue, because you are the person that queue asks.",
+} as const;

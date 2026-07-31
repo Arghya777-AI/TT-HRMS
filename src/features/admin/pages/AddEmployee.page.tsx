@@ -39,6 +39,7 @@ import { nowIstDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { FieldGroupSection } from "../components/FieldGroupSection";
+import { AttachDocumentsCard } from "../components/AttachDocumentsCard";
 import {
   coerceValues,
   validateFields,
@@ -300,6 +301,22 @@ export default function AddEmployeePage() {
               </p>
             </div>
           ) : null}
+          {/*
+            DOCUMENTS, HERE, BECAUSE THIS IS THE FIRST MOMENT THEY CAN EXIST.
+            `documents.employee_id` is NOT NULL for an employee subject, so nothing can be
+            attached until the INSERT has happened — which is now. Holding files in memory
+            across the four earlier steps would look tidier and would risk the one failure
+            this flow must not have: an employee created and their paperwork lost because
+            an upload failed after the point of no return.
+          */}
+          <div className="mt-5">
+            <AttachDocumentsCard
+              employeeId={created.id}
+              employeeLabel={created.employee_code}
+              companyId={companyId}
+            />
+          </div>
+
           <div className="mt-6 flex flex-wrap gap-2">
             <Button onClick={() => void navigate(`/admin/people/${created.employee_code}`)}>
               {t("admin.people.add.done.open")}

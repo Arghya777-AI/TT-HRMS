@@ -31,10 +31,12 @@ import { Link } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
+import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { formatNumber } from "@/lib/format";
 import {
+  fmtCivilDayMonthWeekday,
   fmtCivilWeekday,
   fmtMonthLong,
   istMonthDates,
@@ -295,39 +297,58 @@ export function LeaveCalendarBand() {
             })}
           </div>
 
-          {/* The tapped day's people, in full. One panel, so a phone and a desktop
-              reveal the same detail in the same place. */}
-          {openCell !== null ? (
-            <div className="mt-3 rounded-lg border bg-background/60 p-3">
-              <p className="text-sm font-medium">
-                {openCell.date} · {t("admin.cc.calendar.peopleOnLeave", {
-                  n: formatNumber(openCell.people),
-                })}
-              </p>
-              {openCell.rows.length === 0 ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("admin.cc.calendar.noneOnDay")}
-                </p>
-              ) : (
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {openCell.rows.map((row) => (
-                    <li
-                      key={row.leave_request_day_id}
-                      className="flex items-center gap-1.5 rounded-full border bg-card px-2 py-1 text-xs"
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
-                      />
-                      <span className="font-medium">{row.display_name}</span>
-                      <span className="text-muted-foreground">{row.leave_type_name}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : null}
+          {/*
+            THE DAY OPENS IN A MODAL, not a block under the grid. A panel below put the
+            answer off-screen on a phone — a tap looked like it did nothing — and pushed
+            everything after the calendar down, so the page moved under the reader.
+          */}
+          <DayDetailDialog
+            open={openCell !== null}
+            onClose={() => setOpenDate(null)}
+            title={openCell === null ? "" : fmtCivilDayMonthWeekday(openCell.date)}
+            subtitle={
+              openCell === null
+                ? null
+                : t("admin.cc.calendar.peopleOnLeave", {
+                    n: formatNumber(openCell.people),
+                  })
+            }
+            footer={
+              <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
+                <Link to={ADMIN_ROUTES.orgLeaveCalendar}>
+                  {t("admin.cc.calendar.openFull")}
+                </Link>
+              </Button>
+            }
+          >
+            {openCell === null || openCell.rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("admin.cc.calendar.noneOnDay")}</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {openCell.rows.map((row) => (
+                  <li
+                    key={row.leave_request_day_id}
+                    className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2"
+                  >
+                    <span
+                      aria-hidden
+                      className="size-2.5 shrink-0 rounded-full ring-2 ring-background"
+                      style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {row.display_name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {row.leave_type_name}
+                        {row.department_name === null ? "" : ` · ${row.department_name}`}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DayDetailDialog>
         </StateBoundary>
       </div>
     </section>

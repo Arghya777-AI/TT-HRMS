@@ -27,10 +27,12 @@ import { Link } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
+import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import {
   addIstMonths,
+  fmtCivilDayMonthWeekday,
   fmtCivilWeekday,
   fmtDurationHm,
   fmtMonthLong,
@@ -216,68 +218,76 @@ export function MyMonthCalendar() {
           })}
         </div>
 
-        {openCell !== null ? (
-          <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-sm">
-            <p className="font-medium">{openCell.date}</p>
-            {openCell.day === null ? (
-              <p className="mt-1 text-xs text-muted-foreground">{t("home.cal.noRecord")}</p>
-            ) : (
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <dt className="text-muted-foreground">{t("home.cal.field.status")}</dt>
-                <dd className="font-medium">
-                  {STATUS_STYLE[openCell.day.status] === undefined
-                    ? openCell.day.status
-                    : t(STATUS_STYLE[openCell.day.status]!.key as never)}
-                </dd>
+        {/* A modal, not a panel underneath: on a phone the panel was below the fold, so a
+            tap read as "nothing happened", and opening it shoved the rest of the page down. */}
+        <DayDetailDialog
+          open={openCell !== null}
+          onClose={() => setOpenDate(null)}
+          title={openCell === null ? "" : fmtCivilDayMonthWeekday(openCell.date)}
+          subtitle={
+            openCell === null || openCell.day === null
+              ? null
+              : STATUS_STYLE[openCell.day.status] === undefined
+                ? openCell.day.status
+                : t(STATUS_STYLE[openCell.day.status]!.key as never)
+          }
+          footer={
+            <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
+              <Link to="/me/attendance">{t("home.cal.openAttendance")}</Link>
+            </Button>
+          }
+        >
+          {openCell === null || openCell.day === null ? (
+            <p className="text-sm text-muted-foreground">{t("home.cal.noRecord")}</p>
+          ) : (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">{t("home.cal.field.shift")}</dt>
+              <dd className="text-right font-medium">{openCell.day.shift_display_label ?? "—"}</dd>
 
-                <dt className="text-muted-foreground">{t("home.cal.field.shift")}</dt>
-                <dd>{openCell.day.shift_display_label ?? "—"}</dd>
+              <dt className="text-muted-foreground">{t("home.cal.field.inOut")}</dt>
+              <dd className="num text-right font-medium tabular-nums">
+                {openCell.day.first_in_hm ?? "—"} → {openCell.day.last_out_hm ?? "—"}
+              </dd>
 
-                <dt className="text-muted-foreground">{t("home.cal.field.inOut")}</dt>
-                <dd className="num tabular-nums">
-                  {openCell.day.first_in_hm ?? "—"} → {openCell.day.last_out_hm ?? "—"}
-                </dd>
+              <dt className="text-muted-foreground">{t("home.cal.field.worked")}</dt>
+              <dd className="num text-right font-medium tabular-nums">
+                {fmtDurationHm(openCell.day.total_worked_minutes ?? 0)}
+              </dd>
 
-                <dt className="text-muted-foreground">{t("home.cal.field.worked")}</dt>
-                <dd className="num tabular-nums">
-                  {fmtDurationHm(openCell.day.total_worked_minutes ?? 0)}
-                </dd>
+              {openCell.day.is_late ? (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.late")}</dt>
+                  <dd className="num text-right font-medium tabular-nums text-warning">
+                    {fmtDurationHm(openCell.day.late_minutes ?? 0)}
+                  </dd>
+                </>
+              ) : null}
 
-                {openCell.day.is_late ? (
-                  <>
-                    <dt className="text-muted-foreground">{t("home.cal.field.late")}</dt>
-                    <dd className="num tabular-nums">
-                      {fmtDurationHm(openCell.day.late_minutes ?? 0)}
-                    </dd>
-                  </>
-                ) : null}
+              {(openCell.day.overtime_minutes ?? 0) > 0 ? (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.overtime")}</dt>
+                  <dd className="num text-right font-medium tabular-nums">
+                    {fmtDurationHm(openCell.day.overtime_minutes ?? 0)}
+                  </dd>
+                </>
+              ) : null}
 
-                {(openCell.day.overtime_minutes ?? 0) > 0 ? (
-                  <>
-                    <dt className="text-muted-foreground">{t("home.cal.field.overtime")}</dt>
-                    <dd className="num tabular-nums">
-                      {fmtDurationHm(openCell.day.overtime_minutes ?? 0)}
-                    </dd>
-                  </>
-                ) : null}
+              {openCell.day.leave_type_name !== null ? (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.leaveType")}</dt>
+                  <dd className="text-right font-medium">{openCell.day.leave_type_name}</dd>
+                </>
+              ) : null}
 
-                {openCell.day.leave_type_name !== null ? (
-                  <>
-                    <dt className="text-muted-foreground">{t("home.cal.field.leaveType")}</dt>
-                    <dd>{openCell.day.leave_type_name}</dd>
-                  </>
-                ) : null}
-
-                {openCell.day.holiday_name !== null ? (
-                  <>
-                    <dt className="text-muted-foreground">{t("home.cal.field.holiday")}</dt>
-                    <dd>{openCell.day.holiday_name}</dd>
-                  </>
-                ) : null}
-              </dl>
-            )}
-          </div>
-        ) : null}
+              {openCell.day.holiday_name !== null ? (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.holiday")}</dt>
+                  <dd className="text-right font-medium">{openCell.day.holiday_name}</dd>
+                </>
+              ) : null}
+            </dl>
+          )}
+        </DayDetailDialog>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2">
           <p className="text-xs text-muted-foreground">

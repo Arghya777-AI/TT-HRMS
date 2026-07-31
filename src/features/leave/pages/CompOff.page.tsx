@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { KpiTile } from "@/shared/ui/KpiTile";
+import { OvertimeRulesCard } from "../components/OvertimeRulesCard";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -207,6 +208,15 @@ export default function CompOffPage() {
           </>
         }
       />
+
+      {/*
+        The rules come BEFORE the credits. Somebody opening this page either wants to
+        spend a credit or wants to know why they did not get one, and the second question
+        had no answer anywhere in the product — the arithmetic was correct and invisible.
+      */}
+      <div className="mb-6">
+        <OvertimeRulesCard />
+      </div>
 
       <StateBoundary
         loading={balance.isLoading}

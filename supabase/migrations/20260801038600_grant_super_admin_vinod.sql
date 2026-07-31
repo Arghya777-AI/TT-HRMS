@@ -1,5 +1,5 @@
 -- =============================================================================
--- 090 · vinodmaurya0410@gmail.com becomes a super admin
+-- 092 · vinodmaurya0410@gmail.com becomes a super admin
 --
 -- WHY A MIGRATION AND NOT THE ROLES SCREEN
 -- ----------------------------------------
@@ -10,10 +10,20 @@
 --      (migration 089). An admin can grant `admin`; nobody but a super_admin can
 --      grant `super_admin`, which is the point of the lesser role.
 --   2. the SCOPE — a `public.employee_role_assignments` row, which is what
---      `app.admin_scope_covers()` looks for. Migration 006 revokes INSERT on that
---      table from `authenticated` outright and leaves only
---      `era__super_admin_write` behind, so NO session — not even a super admin's —
---      can write it. The service role or a migration is the only pen.
+--      `app.admin_scope_covers()` looks for. Migration 006b revokes INSERT on that
+--      table from `authenticated`, but 048 (`grants_final`) re-grants it and adds
+--      `era__super__insert`, so the barrier is the POLICY, not the privilege: a
+--      super_admin session can write this row, and anyone below it gets 42501 from
+--      RLS ("new row violates row-level security policy" — not "permission
+--      denied", which is how you tell the two apart).
+--
+--   Neither is reachable from an `admin` session, which is the position this
+--   deployment was in: `admin` is the highest role anybody's known password
+--   reaches, and an admin can grant neither of these. Hence a migration. With a
+--   super_admin login in hand, `/admin/settings/roles` (the RolePanel on the
+--   directory) does the same job through `set_employee_role` with no SQL at all —
+--   and since `admin_scope_covers()` short-circuits on `app.is_super_admin()`,
+--   promoting somebody to super_admin needs no scope row whatsoever.
 --
 -- Skipping (2) is a documented trap in this project, not a hypothetical:
 -- DEMO-ACCOUNTS.md records that the HR admin could open every admin screen and
@@ -40,7 +50,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 090: grant super_admin and the global admin scope to vinodmaurya0410@gmail.com', true);
+SELECT set_config('app.reason', 'migration 092: grant super_admin and the global admin scope to vinodmaurya0410@gmail.com', true);
 SELECT set_config('app.source', 'migration', true);
 
 DO $$
@@ -78,7 +88,7 @@ BEGIN
   */
   UPDATE public.user_roles
      SET revoked_at    = now(),
-         revoke_reason = 'migration 090: superseded by the super_admin grant',
+         revoke_reason = 'migration 092: superseded by the super_admin grant',
          updated_at    = now()
    WHERE user_id = v_profile
      AND revoked_at IS NULL
@@ -90,7 +100,7 @@ BEGIN
   ) THEN
     INSERT INTO public.user_roles (user_id, role, granted_by, granted_at, granted_reason)
     VALUES (v_profile, 'super_admin', NULL, now(),
-            'migration 090: platform owner account, granted out of band because only a super_admin may grant super_admin');
+            'migration 092: platform owner account, granted out of band because only a super_admin may grant super_admin');
   END IF;
 
   IF NOT EXISTS (

@@ -26,6 +26,7 @@ import type { AnalyticsProvenance } from "../api/analytics.api";
  */
 const CAVEAT_TONE: Readonly<Record<string, NoticeTone>> = {
   "analytics.caveat.truncated": "warning",
+  "analytics.caveat.unattributable": "warning",
   "analytics.caveat.departmentUnknown": "warning",
   "analytics.caveat.locationUnknown": "warning",
   "analytics.caveat.departmentAmbiguous": "warning",

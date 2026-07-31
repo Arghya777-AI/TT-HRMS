@@ -322,8 +322,21 @@ export function fetchEmployeePeriodSummary(
 export const punchRowSchema = z.object({
   id: dbUuid,
   employee_id: dbUuid,
-  employee_code: z.string(),
-  display_name: z.string(),
+  /*
+    NULLABLE. `v_attendance_punch_detail` labels a punch through
+    `LEFT JOIN public.v_employee_ref`, and that view filters
+    `WHERE e.deleted_at IS NULL` — so an archived employee's punches survive
+    (correctly: the scan happened) with no name attached. Live count at the time
+    of writing: 591 of 674 punches, all belonging to archived staff.
+
+    Every sibling schema over this view — `attendancePunchSchema`,
+    `leaveCalendarRowSchema`, `payslipLineSchema`, `varianceRowSchema`,
+    `custodyRowSchema` — already declares both nullable. This one did not, so the
+    punch log threw a parse error and rendered "Something went wrong" instead of
+    the log.
+  */
+  employee_code: z.string().nullable(),
+  display_name: z.string().nullable(),
   punched_at: dbTimestamp,
   ist_date: dbDate,
   ist_time: z.string(),

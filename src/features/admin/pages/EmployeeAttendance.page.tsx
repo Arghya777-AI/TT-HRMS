@@ -339,10 +339,12 @@ export default function EmployeeAttendancePage() {
       />
 
       {/* The joining date is still the floor: there is no attendance before it, and
-          "previous" must not walk into a window that cannot contain a record. */}
+          "previous" must not walk into a window that cannot contain a record.
+          A joiner with no agreed start date has no floor to impose, so the bar is
+          left unbounded rather than clamped to a date nobody has decided. */}
       <PeriodBar
         className="mb-4"
-        {...(person !== null ? { minDate: person.date_of_join } : {})}
+        {...(person?.date_of_join ? { minDate: person.date_of_join } : {})}
       />
 
       <StateBoundary

@@ -51,3 +51,10 @@ supabase/tests/harness/pgdata*/
 # knows which VITE_ vars a build needs. `vercel link` added the broad `.env*` above,
 # which would otherwise silently stop a fresh checkout from tracking it.
 !.env.example
+
+# Employee data exports. The joining sheets carry PAN, Aadhaar, dates of birth and
+# phone numbers for real staff — statutory identifiers that must not enter git
+# history, where a rewrite is the only way to remove them. Keep them on disk, load
+# them, and leave them untracked.
+docs/*.xlsx
+docs/*.csv

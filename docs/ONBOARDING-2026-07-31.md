@@ -64,9 +64,15 @@ is on TT0016.
 
 ## The 32 incomplete records
 
-Loaded with `employment_status = pre_joining` rather than `active`, so they are
-filterable in the directory as visibly unfinished. They now carry a department (their `Type`); each still needs a joining
-date and designation before it means anything for attendance or payroll.
+Loaded as `pre_joining` so the gaps were visible, then set to **`active` on
+instruction** — all 78 people on the roster now read Active (bar TT0002, which is
+`confirmed`, a more specific state that says the same thing).
+
+They carry a department (their `Type`), but each still needs a **joining date** and
+**designation**, and those two absences now matter more than they did: an active
+employee with no joining date is one the attendance and payroll engines will consider
+in scope. `employment_type` is also still the column default `probation` for all 32 —
+the sheet does not say, and inventing it would be a guess, so it was left alone.
 
 | Code | Name | Category | Still missing |
 |---|---|---|---|
@@ -160,3 +166,52 @@ is a one-field correction per person on their profile.
   location it belongs in `locations` and on those employees' `location_id` instead.
 - `settings.seed_demo_data` is still `true` on this project. DEMO-ACCOUNTS.md says to set
   it `false` before real employee data lands. Real employee data has now landed.
+
+## Attendance start times
+
+| Group | Shift | Starts (shown) | Counted late after |
+|---|---|---|---|
+| Ground (43) | `GRD` Ground General 09:00–18:00 | 09:00 | **09:00** — no grace |
+| Everyone else (33) | `G` General 09:30–18:30 | 09:30 | **09:35** — 5-minute grace |
+
+"9:35 but show 9:30" is `start_time = 09:30` with `grace_in_minutes = 5`: the shift
+start is what every screen displays, the grace is what lateness is measured against.
+Ground was given no grace because 9am was named as the mark itself — say so if it
+should have a grace too, it is one field.
+
+All 76 employees are assigned. `GRD` was created new; `G` already existed at 09:30
+and only its grace changed (10 → 5).
+
+## Documents only HR may upload
+
+Aadhaar, PAN and Bank Proof were already `is_required_for_onboarding`. Bank Proof is
+the single bank requirement — a cancelled cheque or passbook page satisfies it, so
+`CANCELLED_CHEQUE` stays optional rather than demanding a second document.
+
+The upload restriction is live now via `visible_to_employee = false`, which is the
+flag the insert policy checks. That also hides the document from the employee, which
+is the wrong trade — so migration **093** adds a dedicated `employee_uploadable`
+column, restores visibility, and moves the restriction there.
+
+093 also amends `v_my_onboarding_pack`. Without that, a required document the
+employee cannot upload would make `submit_onboarding()` refuse forever — the same
+shape as the first-run loop. HR still sees all three as outstanding, because
+`v_onboarding_admin` counts `is_required_for_onboarding` alone.
+
+## Demo data
+
+Migration **094** removes it: 674 punches, 540 attendance days, 14 payslip lines, the
+leave rows, 12 salary revisions, the draft payroll run and roster week, and the
+archived demo employee records with their satellites. Master and configuration data
+is kept.
+
+It cannot be done from the app — `DELETE` is revoked from `authenticated` on every
+table — and several tables refuse DELETE by design (`attendance_days` carries
+`trg_attendance_days__no_delete`, the ledgers carry their own). 094 lifts exactly
+those guards, by catalogue lookup rather than a hard-coded list, and restores them in
+the same transaction. Audit triggers stay on, so the purge is itself recorded in
+`public.audit_log`.
+
+Two interlocks: it only runs while `settings.seed_demo_data` is true, and it sets
+that flag false, so it cannot fire twice. Verified 11/11 in the harness, including
+that a real row added after the purge survives a re-run.

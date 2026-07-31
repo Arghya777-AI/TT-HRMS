@@ -30,7 +30,6 @@
 import { z } from "zod";
 import {
   SENSITIVE_REASON_LENGTH,
-  dbDate,
   dbDateNullable,
   dbInt,
   dbIntNullable,
@@ -383,7 +382,14 @@ export const archivedEmployeeSchema = z.object({
   work_email: z.string().nullable(),
   employment_status: z.string(),
   employment_type: z.string(),
-  date_of_join: dbDate,
+  /*
+    NULLABLE, because `employees.date_of_join` is (migration 008 declares it
+    `date_of_join date` with no NOT NULL). A joiner recorded before their start
+    date is agreed genuinely has none, and the bulk load of the venue's roster
+    brought in 32 such records. Declaring it required turned that into a parse
+    error that replaced the whole screen with "Something went wrong".
+  */
+  date_of_join: dbDateNullable,
   last_working_day: dbDateNullable,
   exit_type: z.string().nullable(),
   deleted_at: dbTimestamp,

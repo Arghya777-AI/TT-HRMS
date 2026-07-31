@@ -9,7 +9,7 @@
  * Anything absent here renders <PageStub> from the route manifest metadata, so
  * the route always exists, is deep-linkable, and never 404s mid-build.
  *
- * 187 of 190 routes are built.
+ * 188 of 191 routes are built.
  */
 import type { ComponentType, LazyExoticComponent } from "react";
 

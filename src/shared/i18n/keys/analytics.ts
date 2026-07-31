@@ -67,6 +67,8 @@ export const keysAnalytics = {
     "More than one active department is named “{name}”. The day view records the department name, not its id, so these figures cover every department with that name.",
   "analytics.caveat.locationAmbiguous":
     "More than one active location is named “{name}”. The day view records the location name, not its id, so these figures cover every location with that name.",
+  "analytics.caveat.unattributable":
+    "Some day records in this period belong to employees who have since been archived, or who fall outside what you may see, so they carry no name. They are left out of these figures rather than counted against nobody.",
   "analytics.caveat.departmentUnknown":
     "That department could not be found, so nothing is shown — rather than showing the whole organisation under one department's heading.",
   "analytics.caveat.locationUnknown":

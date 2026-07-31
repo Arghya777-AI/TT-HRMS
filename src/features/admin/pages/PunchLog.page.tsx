@@ -329,8 +329,12 @@ export default function PunchLogPage() {
                   punchedAt: row.punched_at,
                   voidReasonCode: voidCode,
                   idempotencyKey: newVoidIdempotencyKey(),
-                  employeeName: row.display_name,
-                  employeeCode: row.employee_code,
+                  // Null for an archived employee — the punch survives them, the
+                  // label view does not. Voiding is still legitimate (a wrong
+                  // scan is wrong whoever it belonged to), so the dialog names
+                  // what it can rather than refusing the action.
+                  employeeName: row.display_name ?? t("admin.punch.archivedEmployee"),
+                  employeeCode: row.employee_code ?? "—",
                   punchedAtLabel: fmtDateTime(row.punched_at),
                 })
               }

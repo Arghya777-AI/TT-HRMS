@@ -7,10 +7,18 @@ Run locally: `npm run dev` → http://localhost:8080
 
 | Account | Password |
 |---|---|
-| `arghya.ghosh@machanigroup.com` (owner, super admin) | `TamarindSuper#2026` |
+| `arghya.ghosh@machanigroup.com` (owner, super admin) | `TamarindSuper#2026` — **stale**, see below |
 | every `@tamarindtree.co` account below | `TamarindDemo#2026` |
+| `vinodmaurya0410@gmail.com` (owner's admin) | `TamarindAdmin#2026`, must be changed on first sign-in |
 
 Also in `.secrets/supabase.env` (gitignored).
+
+The owner password above no longer authenticates on the live project —
+`/auth/v1/token` answers `invalid_credentials` for it, so it has been changed out
+of band since this file was written. Every `@tamarindtree.co` password still
+works. This matters beyond a walkthrough: `super_admin` is the only role that can
+grant `super_admin` or write an `employee_role_assignments` row, so while nobody
+holds that password, both of those go through a migration or the dashboard.
 
 ## Who to sign in as, and what each one proves
 
@@ -22,6 +30,7 @@ Also in `.secrets/supabase.env` (gitignored).
 | **Admin** | `priya.menon@tamarindtree.co` | Everyone (13) + 38 capabilities. TT0002 HR Executive with a global admin scope. |
 | **Security guard / kiosk operator** | `manjunath.r@tamarindtree.co` | Only himself in the app — gate access is through the kiosk edge function, never through his session. TT0006, registered operator on `TT-GATE-01`. |
 | **Super admin (owner)** | `arghya.ghosh@machanigroup.com` | Everything (13) + all 50 capabilities. TT0013. |
+| **Owner's own admin** | `vinodmaurya0410@gmail.com` | TT0017 Vinod Maurya, HR & Admin. Holds `admin` now; migration `20260801038500` raises it to `super_admin` and adds the global scope row. Excluded from attendance and payroll — it is an access account, not a roster line. |
 
 ## Seeded data behind those screens
 

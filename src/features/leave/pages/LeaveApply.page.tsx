@@ -24,7 +24,7 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ErrorState } from "@/shared/ui/ErrorState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
-import { fmtCivilDate, fmtDateTime, nowIstDate } from "@/lib/datetime";
+import { addIstDays, fmtCivilDate, fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -75,6 +75,7 @@ export default function LeaveApplyPage() {
   const context = useMyLeaveContext();
 
   const today = nowIstDate();
+  const maxAllowedDate = addIstDays(today, 30);
   const [leaveTypeId, setLeaveTypeId] = useState<string>(params.get("type") ?? "");
   const [mode, setMode] = useState<WhenMode>("one");
   const [fromDate, setFromDate] = useState<string>(today);
@@ -108,10 +109,19 @@ export default function LeaveApplyPage() {
   const signature = signatureOf(leaveTypeId, fromDate, effectiveTo, portion);
   const isStale = preview !== null && previewSignature !== signature;
   const rangeInvalid = mode === "range" && effectiveTo < fromDate;
+  const exceedsMaxRange = fromDate > maxAllowedDate || effectiveTo > maxAllowedDate;
+  const isSickLeave =
+    rule !== undefined &&
+    (rule.code.toUpperCase() === "SL" ||
+      rule.code.toUpperCase() === "SICK" ||
+      /sick/i.test(rule.name));
 
   const probationLocked = rule !== undefined && isProbationLocked(rule, context.data ?? null);
   const contactInvalid = contact.trim().length > 0 && !MOBILE_RE.test(contact.trim());
-  const reasonTooShort = reason.trim().length < 10;
+  const reasonRequired = isSickLeave;
+  const reasonTooShort = reasonRequired
+    ? reason.trim().length < 10
+    : reason.trim().length > 0 && reason.trim().length < 10;
   const allocatesNothing = preview !== null && preview.totalDays <= 0;
 
   const blockers: string[] = [];
@@ -119,11 +129,12 @@ export default function LeaveApplyPage() {
   if (preview === null) blockers.push(t("leave.apply.blocked.preview"));
   else if (isStale) blockers.push(t("leave.apply.blocked.stale"));
   else if (allocatesNothing) blockers.push(t("leave.apply.blocked.zero"));
+  if (exceedsMaxRange) blockers.push(t("leave.apply.blocked.maxRange"));
   if (reasonTooShort) blockers.push(t("leave.apply.blocked.reason"));
   if (contactInvalid) blockers.push(t("leave.apply.blocked.contact"));
 
   const canPreview =
-    leaveTypeId.length > 0 && fromDate.length === 10 && !rangeInvalid && !probationLocked;
+    leaveTypeId.length > 0 && fromDate.length === 10 && !rangeInvalid && !exceedsMaxRange && !probationLocked;
   const canSubmit = blockers.length === 0 && preview !== null;
 
   function runPreview() {
@@ -344,6 +355,7 @@ export default function LeaveApplyPage() {
                       type="date"
                       className="mt-1.5 h-11"
                       value={fromDate}
+                      max={maxAllowedDate}
                       onChange={(e) => {
                         setFromDate(e.target.value);
                         setPreview(null);
@@ -359,6 +371,8 @@ export default function LeaveApplyPage() {
                         type="date"
                         className="mt-1.5 h-11"
                         value={toDate}
+                        min={fromDate}
+                        max={maxAllowedDate}
                         onChange={(e) => {
                           setToDate(e.target.value);
                           setPreview(null);
@@ -389,6 +403,11 @@ export default function LeaveApplyPage() {
 
                 {rangeInvalid ? (
                   <p className="mt-2 text-sm text-destructive">{t("leave.apply.rangeInvalid")}</p>
+                ) : null}
+                {exceedsMaxRange ? (
+                  <p className="mt-2 text-sm font-medium text-destructive">
+                    {t("leave.apply.maxRangeError", { maxDate: fmtCivilDate(maxAllowedDate) })}
+                  </p>
                 ) : null}
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -475,7 +494,14 @@ export default function LeaveApplyPage() {
               <SectionHeading step={4}>{t("leave.apply.step.details")}</SectionHeading>
               <div className="space-y-4 rounded-lg border bg-card p-4">
                 <div>
-                  <Label htmlFor="leave-reason">{t("leave.apply.reason")}</Label>
+                  <Label htmlFor="leave-reason" className="flex items-center gap-1 font-medium">
+                    <span>{t("leave.apply.reason")}</span>
+                    {isSickLeave ? (
+                      <span className="font-bold text-destructive" title="Required for Sick Leave">*</span>
+                    ) : (
+                      <span className="text-xs font-normal text-muted-foreground">(Optional)</span>
+                    )}
+                  </Label>
                   <textarea
                     id="leave-reason"
                     value={reason}
@@ -484,10 +510,13 @@ export default function LeaveApplyPage() {
                     maxLength={500}
                     placeholder={t("leave.apply.reason.placeholder")}
                     aria-describedby="leave-reason-hint"
-                    className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      "mt-1.5 w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      reasonTooShort ? "border-destructive/60" : "border-input",
+                    )}
                   />
-                  <p id="leave-reason-hint" className="mt-1 text-xs text-muted-foreground">
-                    {t("leave.apply.reason.hint")}
+                  <p id="leave-reason-hint" className={cn("mt-1 text-xs", reasonTooShort ? "font-medium text-destructive" : "text-muted-foreground")}>
+                    {isSickLeave ? t("leave.apply.reason.hint.required") : t("leave.apply.reason.hint.optional")}
                   </p>
                 </div>
 

@@ -371,8 +371,22 @@ const ANALYTICS_DAY_COLUMNS = [
  */
 export const analyticsDaySchema = z.object({
   employee_id: dbUuid,
-  employee_code: z.string(),
-  display_name: z.string(),
+  /*
+    NULLABLE, and the paragraph above does not cover these two: they are not
+    columns of `attendance_days` at all. `v_attendance_day_enriched` reaches them
+    through `LEFT JOIN public.v_employee_ref`, and that view carries
+    `WHERE e.deleted_at IS NULL` plus a visibility predicate — so the label is
+    null for an attendance day whose employee has since been archived, or who
+    falls outside the caller's scope. The join is LEFT precisely so the day still
+    exists; the label going missing is the designed behaviour, not drift.
+
+    Declaring them `z.string()` turned that into a thrown parse error that took
+    down the whole panel with "Something went wrong" — one archived employee with
+    history was enough. Reported after the demo staff were archived and their
+    seeded attendance days outlived them.
+  */
+  employee_code: z.string().nullable(),
+  display_name: z.string().nullable(),
   ist_date: dbDate,
   status: attendanceStatusSchema,
   department_name: z.string().nullable(),
@@ -419,15 +433,21 @@ function provenanceFor(
   rowsScanned: number,
   cap: number,
   relation: string,
+  unattributable = 0,
 ): AnalyticsProvenance {
   const truncated = rowsScanned >= cap;
+  const caveats = [...scope.caveats];
+  if (truncated) caveats.push("analytics.caveat.truncated");
+  // Dropping rows without saying so would make every figure quietly smaller than
+  // the truth. Same reasoning as the truncation caveat.
+  if (unattributable > 0) caveats.push("analytics.caveat.unattributable");
   return {
     relation,
     computedBy: "client",
     rowsScanned,
     rowCap: cap,
     truncated,
-    caveats: truncated ? [...scope.caveats, "analytics.caveat.truncated"] : scope.caveats,
+    caveats,
   };
 }
 
@@ -453,7 +473,7 @@ export async function fetchAnalyticsDays(
     };
   }
 
-  const rows = await selectMany(V_DAY_ENRICHED, analyticsDaySchema, {
+  const scanned = await selectMany(V_DAY_ENRICHED, analyticsDaySchema, {
     columns: ANALYTICS_DAY_COLUMNS,
     filters: scope.filters,
     order: [
@@ -464,11 +484,26 @@ export async function fetchAnalyticsDays(
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
 
+  /*
+    A day whose employee label is null cannot be attributed to anybody the caller
+    can see — the employee is archived, or outside their scope. It is dropped
+    rather than counted: it would move a headcount and a late-percentage against a
+    person who does not appear anywhere else on the screen, and `groupByEmployee`
+    would key them all together under one null name.
+
+    Dropping is reported through the caveat above, never silently. Narrowing this
+    in the query instead (`employee_code=not.is.null`) would hide the same rows
+    without any count to report.
+  */
+  const rows = scanned.filter(
+    (r): r is AnalyticsDayRow => r.employee_code !== null && r.display_name !== null,
+  );
+
   return {
     rows,
     scope,
     period: filters.period,
-    provenance: provenanceFor(scope, rows.length, cap, V_DAY_ENRICHED),
+    provenance: provenanceFor(scope, scanned.length, cap, V_DAY_ENRICHED, scanned.length - rows.length),
   };
 }
 

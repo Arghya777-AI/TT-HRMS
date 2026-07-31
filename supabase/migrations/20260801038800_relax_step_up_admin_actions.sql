@@ -1,5 +1,5 @@
 -- =============================================================================
--- 090 · Drop the second-factor prompt from account creation and role grants
+-- 092 · Drop the second-factor prompt from account creation and role grants
 --
 -- NOT YET APPLIED. Written for review because it REMOVES a security control, and that is a
 -- decision to take deliberately rather than as a side effect of unblocking a screen.
@@ -35,7 +35,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 090: drop the second-factor prompt from account creation and role grants, on request', true);
+SELECT set_config('app.reason', 'migration 092: drop the second-factor prompt from account creation and role grants, on request', true);
 SELECT set_config('app.source', 'migration', true);
 
 UPDATE public.role_capabilities

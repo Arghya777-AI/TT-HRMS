@@ -1,5 +1,5 @@
 -- =============================================================================
--- 089 · Voiding a punch was impossible, for everybody
+-- 091 · Voiding a punch was impossible, for everybody
 --
 -- `attendance_punches` is append-only: DELETE is refused outright and UPDATE is refused
 -- unless it changes ONLY the four void columns. The guard enforced that by comparing the
@@ -28,7 +28,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 089: the append-only guard ignored generated columns, making every void impossible', true);
+SELECT set_config('app.reason', 'migration 091: the append-only guard ignored generated columns, making every void impossible', true);
 SELECT set_config('app.source', 'migration', true);
 
 CREATE OR REPLACE FUNCTION public.attendance_punches_append_only()
@@ -39,7 +39,7 @@ DECLARE
     GENERATED ALWAYS columns are NULL in NEW inside a BEFORE trigger while OLD holds the
     stored value, so leaving them in the diff made it unsatisfiable. They cannot be written
     by anyone, so ignoring them here removes noise and no protection. Keep this list in step
-    with the table: ist_date, ist_time and effective_date are generated as of migration 089.
+    with the table: ist_date, ist_time and effective_date are generated as of migration 091.
   */
   v_generated text[] := ARRAY['ist_date','ist_time','effective_date'];
   v_ignore    text[] := v_void_cols || v_generated;
@@ -61,6 +61,6 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.attendance_punches_append_only() IS
-  'Append-only guard: DELETE never, UPDATE only when it changes the four void columns. Generated columns (ist_date, ist_time, effective_date) are excluded from the comparison because a BEFORE trigger sees them as NULL in NEW — including them made every void impossible, which is the bug migration 089 fixes. They cannot be written by any caller, so excluding them weakens nothing.';
+  'Append-only guard: DELETE never, UPDATE only when it changes the four void columns. Generated columns (ist_date, ist_time, effective_date) are excluded from the comparison because a BEFORE trigger sees them as NULL in NEW — including them made every void impossible, which is the bug migration 091 fixes. They cannot be written by any caller, so excluding them weakens nothing.';
 
 COMMIT;

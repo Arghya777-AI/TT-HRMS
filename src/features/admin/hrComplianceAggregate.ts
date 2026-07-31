@@ -346,7 +346,8 @@ export interface EnrolmentGapRow {
   readonly employee_code: string;
   readonly display_name: string;
   readonly department_name: string | null;
-  readonly date_of_join: string;
+  /** Null for a joiner with no agreed start date — the column allows it. */
+  readonly date_of_join: string | null;
   readonly gap_kind: string | null;
 }
 

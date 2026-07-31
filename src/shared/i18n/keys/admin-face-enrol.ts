@@ -248,4 +248,8 @@ export const keysAdminFaceEnrol = {
   "admin.punch.location.inside": "Inside the venue",
   "admin.punch.location.outside": "Outside the venue — flagged",
   "admin.punch.location.notChecked": "Not checked — venue coordinates not set",
+  // A punch outlives the employee record: the scan happened, and archiving the
+  // person does not unhappen it. The label view excludes archived employees, so
+  // the name is genuinely unavailable rather than merely missing.
+  "admin.punch.archivedEmployee": "an archived employee",
 } as const;

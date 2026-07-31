@@ -53,7 +53,7 @@
  */
 import { z } from "zod";
 import {
-  dbDate,
+  dbDateNullable,
   dbIntNullable,
   dbTimestampNullable,
   dbUuid,
@@ -120,7 +120,14 @@ export const enrolmentRosterRowSchema = z.object({
   employment_status: employmentStatusSchema,
   department_name: z.string().nullable(),
   designation_name: z.string().nullable(),
-  date_of_join: dbDate,
+  /*
+    NULLABLE, because `employees.date_of_join` is (migration 008 declares it
+    `date_of_join date` with no NOT NULL). A joiner recorded before their start
+    date is agreed genuinely has none, and the bulk load of the venue's roster
+    brought in 32 such records. Declaring it required turned that into a parse
+    error that replaced the whole screen with "Something went wrong".
+  */
+  date_of_join: dbDateNullable,
   work_email: z.string().nullable(),
   /** Set by `face-template-admin approve`; cleared by `force_reenrol`. */
   face_enrolled_at: dbTimestampNullable,

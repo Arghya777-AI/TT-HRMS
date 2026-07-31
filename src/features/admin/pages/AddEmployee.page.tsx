@@ -58,6 +58,8 @@ import {
 } from "../people/fields";
 import { usePeopleRefs } from "../hooks/usePeople";
 import { insertEmployee } from "../api/employees.api";
+import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
+import { mutationUserMessage } from "@/shared/api/query";
 import { useDefaultCompanyId } from "../hooks/useMasters";
 
 const MIN_REASON = 10;
@@ -72,6 +74,16 @@ export default function AddEmployeePage() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [reasonOpen, setReasonOpen] = useState(false);
   const [created, setCreated] = useState<{ id: string; employee_code: string } | null>(null);
+  /**
+   * The login provisioned alongside the employee, or the reason it could not be.
+   *
+   * SEPARATE FROM `created` ON PURPOSE. The employee row is committed by the time this is
+   * attempted, so a provisioning failure must never look like a failed creation — the person
+   * exists either way, and telling somebody "creation failed" when it did not is how a
+   * duplicate gets added.
+   */
+  const [account, setAccount] = useState<AccountCreated | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   const step: WizardStepId = WIZARD_STEPS[stepIndex] ?? "identity";
   const isReview = step === "review";
@@ -79,7 +91,47 @@ export default function AddEmployeePage() {
   const everyGroup = useMemo(() => allWizardGroups(refs), [refs]);
 
   const create = useAuditedMutation<{ id: string; employee_code: string }, Record<string, unknown>>({
-    mutationFn: (input, reason) => insertEmployee(input, reason),
+    /*
+      ── THE ACCOUNT IS CREATED WITH THE EMPLOYEE ──────────────────────────────────
+
+      Adding somebody used to write the master row and stop, because nothing ever called
+      `employee-account-create`. The result was live confirmed employees with no profile, no
+      email and no roles — unable to sign in, unable to be granted a role (the role screen
+      lists ACCOUNTS), and unable to be face-enrolled, since consent and templates both hang
+      off a profile. TT0016 was that, and it is what this removes.
+
+      THE PROVISIONING IS DELIBERATELY NOT ALLOWED TO FAIL THE CREATION. By the time it runs
+      the employee row is committed and cannot be rolled back from here, so a failure is
+      CAPTURED and reported beside the new employee code rather than thrown. Throwing would
+      show "could not be saved" over an employee who exists, and the next thing somebody does
+      with that message is add the person again.
+
+      It is attempted for anyone with an address to log in with. `employee-account-create`
+      falls back to work email then personal email, so the address is passed only when the
+      form supplied one — and when there is none at all the wizard says so and points at
+      People › Access level, where the same action can be run with an email typed in.
+
+      The role is `employee` by default: that is the function's own behaviour, not a choice
+      made here.
+    */
+    mutationFn: async (input, reason) => {
+      const row = await insertEmployee(input, reason);
+      const loginEmail = String(input["work_email"] ?? input["personal_email"] ?? "").trim();
+      try {
+        const provisioned = await createEmployeeAccount({
+          employeeId: row.id,
+          ...(loginEmail !== "" ? { loginEmail } : {}),
+          reason: `provisioning the portal login for ${row.employee_code}`,
+        });
+        setAccount(provisioned);
+        setAccountError(null);
+      } catch (err) {
+        // The employee exists. Say what stopped the login and where to finish it.
+        setAccount(null);
+        setAccountError(mutationUserMessage(err));
+      }
+      return row;
+    },
     invalidate: [qk.admin.employeesAll()],
     minReasonLength: MIN_REASON,
     onSuccess: (row) => {
@@ -159,6 +211,40 @@ export default function AddEmployeePage() {
           <p className="mt-4 max-w-prose text-sm text-muted-foreground">
             {t("admin.people.add.done.next")}
           </p>
+
+          {/*
+            THE LOGIN, beside the code, because this is the only moment the temporary password
+            exists to be read. The function returns it once and nulls it on replay, so there is
+            no screen to come back to — only a password reset.
+          */}
+          {account !== null ? (
+            <div className="mt-5 rounded-lg border border-success/40 bg-success/5 p-4">
+              <p className="text-sm font-medium">
+                {t("admin.people.add.done.loginCreated", { email: account.account.email ?? "" })}
+              </p>
+              {account.tempPassword !== null ? (
+                <>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {t("admin.people.add.done.tempLabel")}
+                  </p>
+                  <code className="num mt-1 inline-block select-all rounded bg-muted px-2 py-1 text-lg">
+                    {account.tempPassword}
+                  </code>
+                  <p className="mt-2 max-w-prose text-xs text-warning">
+                    {t("admin.people.add.done.tempOnce")}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          ) : accountError !== null ? (
+            <div className="mt-5 rounded-lg border border-warning/40 bg-warning/5 p-4">
+              <p className="text-sm font-medium">{t("admin.people.add.done.loginPending")}</p>
+              <p className="mt-1 max-w-prose text-xs text-muted-foreground">{accountError}</p>
+              <p className="mt-2 max-w-prose text-xs text-muted-foreground">
+                {t("admin.people.add.done.loginWhere")}
+              </p>
+            </div>
+          ) : null}
           <div className="mt-6 flex flex-wrap gap-2">
             <Button onClick={() => void navigate(`/admin/people/${created.employee_code}`)}>
               {t("admin.people.add.done.open")}
@@ -167,6 +253,8 @@ export default function AddEmployeePage() {
               variant="outline"
               onClick={() => {
                 setCreated(null);
+                setAccount(null);
+                setAccountError(null);
                 setValues(withDefaults({}, NEW_EMPLOYEE_DEFAULTS));
                 setErrors({});
                 setStepIndex(0);

@@ -69,6 +69,16 @@ export const keysDocumentOpen = {
   // ── Provisioning a portal login ───────────────────────────────────────────
   // Adding somebody in People never created an account, so this turns a dead-end
   // ("no login yet") into the action that fixes it.
+  // ── Add Employee: the login created alongside the employee ────────────────
+  "admin.people.add.done.loginCreated":
+    "Portal login created for {email}. They start with the Employee role and must change this password on first sign-in.",
+  "admin.people.add.done.tempLabel": "Temporary password",
+  // The only moment it exists to be read: the function returns it once.
+  "admin.people.add.done.tempOnce":
+    "Shown once only — copy it now and give it to them with their employee code. If it is lost, issue a password reset; it cannot be read again.",
+  "admin.people.add.done.loginPending": "The employee was created, but the login was not",
+  "admin.people.add.done.loginWhere":
+    "Finish it from People › Access level, where you can type a login email and confirm with your authenticator.",
   "admin.roles.login.create": "Create login",
   "admin.roles.login.creating": "Creating…",
   "admin.roles.login.emailPlaceholder": "Login email (optional)",

@@ -104,7 +104,22 @@ export type BoardSlice =
   | "absent"
   | "off"
   | "yet_to_reach"
-  | "overdue";
+  | "overdue"
+  /**
+   * ON LEAVE, AND ONLY ON LEAVE. `off` is not this number and never was: it is
+   * `off_today`, which the view defines as `weekly_off | holiday | on_leave |
+   * on_leave_half | comp_off_availed`. A venue with a rota has people on a weekly
+   * off every single day, so "who is on leave today" read as a much larger figure
+   * than the truth and moved when nobody's leave had changed. Counted from `status`
+   * directly, so it means what the word means.
+   */
+  | "on_leave"
+  /**
+   * Working, but not at the venue. The complement an administrator asks for
+   * immediately after the present count: of the people working today, who is on
+   * site and who is not.
+   */
+  | "work_from_home";
 
 export function boardSliceFilters(slice: BoardSlice): readonly Filter[] {
   switch (slice) {
@@ -122,6 +137,12 @@ export function boardSliceFilters(slice: BoardSlice): readonly Filter[] {
       return [isTrue("yet_to_reach")];
     case "overdue":
       return [isTrue("overdue")];
+    case "on_leave":
+      // Both halves of a leave day count as on leave — a half-day's absence is
+      // still that person not being at their post for part of it.
+      return [inList("status", ["on_leave", "on_leave_half"])];
+    case "work_from_home":
+      return [eq("status", "work_from_home")];
   }
 }
 

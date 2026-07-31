@@ -40,6 +40,7 @@ import { fmtDateWeekday, nowInstantIso } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { AlertList } from "../components/AlertList";
+import { LeaveCalendarBand } from "../components/LeaveCalendarBand";
 import { CommandKpiStrip } from "../components/CommandKpiStrip";
 import { LiveOpsBand } from "../components/LiveOpsBand";
 import { Notice } from "../components/Notice";
@@ -74,6 +75,14 @@ export default function CommandCentrePage() {
       />
 
       <div className="space-y-6">
+        {/*
+          The month leads. The counters below it answer "what is true right now"; the
+          calendar answers "what is the shape of this month", which is the question a
+          venue manager arrives with and the one the console could not answer at all —
+          the full org calendar was four clicks into the leave section.
+        */}
+        <LeaveCalendarBand />
+
         <CommandKpiStrip istDate={istDate} />
 
         <LiveOpsBand istDate={istDate} />

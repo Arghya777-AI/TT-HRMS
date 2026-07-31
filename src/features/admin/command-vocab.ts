@@ -60,6 +60,18 @@ export const ADMIN_ROUTES = {
   liveOnTime: "/admin/attendance/live?state=in",
   daysLate: (date: string) => `/admin/attendance/days?date=${date}&late=true`,
   daysAbsent: (date: string) => `/admin/attendance/days?date=${date}&status=absent`,
+  /**
+   * The two drill-downs behind "on leave today" and "working from home". Day Records
+   * is the right destination rather than the live board: it carries the person, their
+   * status, their shift, their punches and where each scan came from, which is the
+   * question an administrator is actually asking when they click a headcount.
+   * `isAttendanceStatus()` there accepts any `attendance_status`, so these need no
+   * new parsing.
+   */
+  daysOnLeave: (date: string) => `/admin/attendance/days?date=${date}&status=on_leave`,
+  daysWorkFromHome: (date: string) =>
+    `/admin/attendance/days?date=${date}&status=work_from_home`,
+  orgLeaveCalendar: "/admin/leave/calendar",
   exceptions: "/admin/attendance/exceptions",
   exceptionsOn: (date: string) => `/admin/attendance/exceptions?date=${date}`,
   punchesToReview: "/admin/attendance/punches?review=true",

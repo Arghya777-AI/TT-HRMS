@@ -160,6 +160,8 @@ export interface CommandKpiStripProps {
 export function CommandKpiStrip({ istDate }: CommandKpiStripProps) {
   const headcount = useHeadcount();
   const present = useBoardSlice("present", istDate);
+  const onLeave = useBoardSlice("on_leave", istDate);
+  const workFromHome = useBoardSlice("work_from_home", istDate);
   const late = useBoardSlice("late", istDate);
   const absent = useBoardSlice("absent", istDate);
   const exceptions = useAlertCount({});
@@ -187,6 +189,28 @@ export function CommandKpiStrip({ istDate }: CommandKpiStripProps) {
           drillLabel={t("admin.cc.kpi.present.drill")}
           source={t("admin.cc.source.board")}
           query={present}
+        />
+        {/*
+          ON LEAVE, next to present, because they are the pair an administrator reads
+          together. It is NOT the `off` chip in the ops band: that one is `off_today`,
+          which folds weekly offs, holidays and comp-off in with leave, so at a venue
+          with a rota it reads far higher than "who is on leave" every day of the week.
+        */}
+        <CountTile
+          label={t("admin.cc.kpi.onLeave")}
+          hint={t("admin.cc.kpi.onLeave.hint")}
+          to={ADMIN_ROUTES.daysOnLeave(istDate)}
+          drillLabel={t("admin.cc.kpi.onLeave.drill")}
+          source={t("admin.cc.source.board")}
+          query={onLeave}
+        />
+        <CountTile
+          label={t("admin.cc.kpi.wfh")}
+          hint={t("admin.cc.kpi.wfh.hint")}
+          to={ADMIN_ROUTES.daysWorkFromHome(istDate)}
+          drillLabel={t("admin.cc.kpi.wfh.drill")}
+          source={t("admin.cc.source.board")}
+          query={workFromHome}
         />
         <CountTile
           label={t("admin.cc.kpi.late")}

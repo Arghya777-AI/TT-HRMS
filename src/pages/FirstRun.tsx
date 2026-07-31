@@ -34,7 +34,9 @@ import { nowInstantIso } from "@/lib/datetime";
 import { passwordIssues } from "@/shared/auth/password";
 import { t } from "@/shared/i18n/en";
 import { AuthLayout } from "./AuthLayout";
+import { useQuery } from "@tanstack/react-query";
 import { OnboardingChecklist } from "@/features/onboarding/components/OnboardingChecklist";
+import { fetchMyOnboardingStatus } from "@/features/onboarding/api/onboarding.api";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -42,6 +44,26 @@ export default function FirstRun() {
   const navigate = useNavigate();
   const { employee, user, refresh } = useAuth();
   const [step, setStep] = useState<Step>(1);
+  /*
+    ── THE DOCUMENT PACK IS SKIPPED WHEN THERE IS NOTHING LEFT TO ASK ──────────────
+
+    The wizard used to render step 4 unconditionally, so somebody whose onboarding HR had
+    already WAIVED was still shown "Required — 0 of 5 done" and asked for an Aadhaar card
+    every time they signed in. The waiver said the paperwork did not apply and the screen
+    asked for it anyway — and the screen is what the reader believes.
+
+    `null` while it loads, so the wizard never flashes a step it is about to skip.
+    Defaults to SHOWING the pack if the read fails: a joiner who genuinely owes documents
+    being asked once too often is a far better failure than one who owes them never being
+    asked at all.
+  */
+  const packSettled = useQuery({
+    queryKey: ["onboarding", "status"],
+    queryFn: ({ signal }) => fetchMyOnboardingStatus(signal),
+    retry: false,
+  });
+  const skipPack = packSettled.data !== undefined &&
+    (packSettled.data.waived || packSettled.data.submitted);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [mobile, setMobile] = useState("");
@@ -139,7 +161,7 @@ export default function FirstRun() {
         {/* FOUR dots, not three. A fourth step was added (the HR-configured paperwork) and
             leaving this at three made the indicator lie: somebody on the last step saw a
             filled "3 of 3" and then another screen. */}
-        {([1, 2, 3, 4] as const).map((n) => (
+        {(skipPack ? ([1, 2, 3] as const) : ([1, 2, 3, 4] as const)).map((n) => (
           <li key={n} className="flex flex-1 items-center gap-2">
             <span
               className={
@@ -242,7 +264,11 @@ export default function FirstRun() {
           {/* Onwards to the paperwork rather than straight out: the gate holds until
               `submit_onboarding` has accepted, so finishing here would only bounce them
               back. */}
-          <Button className="w-full" onClick={() => setStep(4)} disabled={busy}>
+          <Button
+            className="w-full"
+            onClick={() => (skipPack ? void finish() : setStep(4))}
+            disabled={busy || packSettled.isPending}
+          >
             {t("auth.firstRun.finish")}
           </Button>
         </div>
@@ -253,7 +279,9 @@ export default function FirstRun() {
         (a password, a phone, how the gate works) while this step's contents are whatever HR
         configured for this employment type, and may be nothing at all.
       */}
-      {step === 4 ? <OnboardingChecklist onSubmitted={() => void finish()} /> : null}
+      {step === 4 && !skipPack
+        ? <OnboardingChecklist onSubmitted={() => void finish()} />
+        : null}
     </AuthLayout>
   );
 }

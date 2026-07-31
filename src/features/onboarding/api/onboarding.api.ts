@@ -79,3 +79,41 @@ export async function submitOnboarding(signal?: AbortSignal): Promise<string> {
     throw error;
   }
 }
+
+/**
+ * Has this person's onboarding already been dealt with?
+ *
+ * WHY THE WIZARD NEEDS TO ASK. `FirstRunGate` fires on `must_change_password ||
+ * profile_confirmed_at IS NULL`, and the wizard's last step renders the document pack
+ * unconditionally — so an employee whose onboarding HR has already WAIVED was still shown
+ * "Required — 0 of 5 done" and asked for an Aadhaar card on every visit. The waiver said one
+ * thing and the screen said another, and the screen wins with the reader.
+ *
+ * `waived` and `submitted` are returned separately because they are different facts. Waived
+ * means HR decided the paperwork does not apply; submitted means the person supplied it.
+ * Either one means the pack has nothing left to ask, which is what the wizard acts on.
+ *
+ * `onboarding__self_read` is the policy behind this, so it can only ever answer for the
+ * caller. A missing row is not an error — it is somebody who has not started.
+ */
+export async function fetchMyOnboardingStatus(
+  signal?: AbortSignal,
+): Promise<{ submitted: boolean; waived: boolean }> {
+  const rows = await selectMany(
+    "employee_onboarding",
+    z.object({
+      submitted_at: z.string().nullable(),
+      waived_at: z.string().nullable(),
+    }),
+    {
+      columns: "submitted_at, waived_at",
+      limit: 1,
+      ...(signal ? { signal } : {}),
+    },
+  );
+  const row = rows[0];
+  return {
+    submitted: row?.submitted_at !== null && row?.submitted_at !== undefined,
+    waived: row?.waived_at !== null && row?.waived_at !== undefined,
+  };
+}

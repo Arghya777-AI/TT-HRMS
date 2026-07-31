@@ -55,20 +55,22 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
  * through to a neutral dot and their own humanised name, so a status added to the enum
  * ahead of this file degrades to "shown but unstyled" rather than disappearing.
  */
-const STATUS_STYLE: Readonly<Record<string, { dot: string; mark: string; key: string }>> = {
-  present: { dot: "bg-emerald-500", mark: "P", key: "home.cal.status.present" },
-  work_from_home: { dot: "bg-teal-500", mark: "H", key: "home.cal.status.wfh" },
-  on_duty: { dot: "bg-teal-500", mark: "D", key: "home.cal.status.onDuty" },
-  half_day: { dot: "bg-amber-500", mark: "½", key: "home.cal.status.halfDay" },
-  absent: { dot: "bg-rose-500", mark: "A", key: "home.cal.status.absent" },
-  on_leave: { dot: "bg-sky-500", mark: "L", key: "home.cal.status.onLeave" },
-  on_leave_half: { dot: "bg-sky-400", mark: "L", key: "home.cal.status.onLeaveHalf" },
-  comp_off_availed: { dot: "bg-violet-500", mark: "C", key: "home.cal.status.compOff" },
-  weekly_off: { dot: "bg-muted-foreground/40", mark: "•", key: "home.cal.status.weeklyOff" },
-  holiday: { dot: "bg-indigo-400", mark: "★", key: "home.cal.status.holiday" },
-  weekly_off_worked: { dot: "bg-emerald-600", mark: "P", key: "home.cal.status.weeklyOffWorked" },
-  holiday_worked: { dot: "bg-emerald-600", mark: "P", key: "home.cal.status.holidayWorked" },
-  pending: { dot: "bg-muted-foreground/25", mark: "", key: "home.cal.status.pending" },
+const STATUS_STYLE: Readonly<
+  Record<string, { dot: string; wash: string; mark: string; key: string }>
+> = {
+  present: { dot: "bg-emerald-500", wash: "bg-emerald-500/10", mark: "P", key: "home.cal.status.present" },
+  work_from_home: { dot: "bg-teal-500", wash: "bg-teal-500/10", mark: "H", key: "home.cal.status.wfh" },
+  on_duty: { dot: "bg-teal-500", wash: "bg-teal-500/10", mark: "D", key: "home.cal.status.onDuty" },
+  half_day: { dot: "bg-amber-500", wash: "bg-amber-500/15", mark: "½", key: "home.cal.status.halfDay" },
+  absent: { dot: "bg-rose-500", wash: "bg-rose-500/15", mark: "A", key: "home.cal.status.absent" },
+  on_leave: { dot: "bg-sky-500", wash: "bg-sky-500/15", mark: "L", key: "home.cal.status.onLeave" },
+  on_leave_half: { dot: "bg-sky-400", wash: "bg-sky-400/10", mark: "L", key: "home.cal.status.onLeaveHalf" },
+  comp_off_availed: { dot: "bg-violet-500", wash: "bg-violet-500/15", mark: "C", key: "home.cal.status.compOff" },
+  weekly_off: { dot: "bg-muted-foreground/40", wash: "bg-muted/50", mark: "•", key: "home.cal.status.weeklyOff" },
+  holiday: { dot: "bg-indigo-400", wash: "bg-indigo-400/15", mark: "★", key: "home.cal.status.holiday" },
+  weekly_off_worked: { dot: "bg-emerald-600", wash: "bg-emerald-600/15", mark: "P", key: "home.cal.status.weeklyOffWorked" },
+  holiday_worked: { dot: "bg-emerald-600", wash: "bg-emerald-600/15", mark: "P", key: "home.cal.status.holidayWorked" },
+  pending: { dot: "bg-muted-foreground/25", wash: "", mark: "", key: "home.cal.status.pending" },
 };
 
 interface Cell {
@@ -189,10 +191,19 @@ export function MyMonthCalendar() {
                 }
                 onClick={() => setOpenDate(selected ? null : cell.date)}
                 className={cn(
-                  "flex aspect-square min-h-8 flex-col items-center justify-center rounded-md border text-center transition",
+                  "relative flex aspect-square min-h-9 flex-col items-center justify-center overflow-hidden",
+                  "rounded-lg border text-center transition-all duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  cell.isFuture ? "opacity-40" : "hover:border-primary/50",
-                  cell.isToday ? "border-primary ring-2 ring-primary/40" : "",
+                  cell.isFuture
+                    ? "border-dashed opacity-40"
+                    : "hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-sm",
+                  // A faint wash of the status colour behind the cell, so the month has a
+                  // readable rhythm from across the room — the letter and the dot still
+                  // carry the meaning up close.
+                  style === null ? "" : style.wash,
+                  cell.isToday
+                    ? "border-primary ring-2 ring-primary/40 ring-offset-1 ring-offset-background"
+                    : "",
                   selected ? "border-primary ring-2 ring-primary" : "",
                 )}
               >

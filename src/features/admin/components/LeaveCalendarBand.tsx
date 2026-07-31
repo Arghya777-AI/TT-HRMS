@@ -28,7 +28,7 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarDays, ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
@@ -261,8 +261,11 @@ export function LeaveCalendarBand() {
                   aria-pressed={selected}
                   onClick={() => setOpenDate(selected ? null : cell.date)}
                   className={cn(
-                    "group relative flex min-h-[3.25rem] flex-col rounded-lg border p-1.5 text-left transition",
-                    "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[4.5rem]",
+                    "group relative flex min-h-[3.5rem] flex-col overflow-hidden rounded-xl border p-1.5 text-left",
+                    // A real transition and a lift on hover: the grid should feel like a
+                    // control surface, not a table with a cursor change.
+                    "transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[5rem]",
                     intensityClass(cell.people),
                     cell.isWeekend && cell.people === 0 ? "bg-muted/40" : "",
                     // Today gets a ring AND a soft halo — the one cell that must be
@@ -283,9 +286,23 @@ export function LeaveCalendarBand() {
                   </span>
 
                   {cell.people > 0 ? (
-                    <span className="mt-auto flex items-center gap-1 text-[0.65rem] font-medium">
-                      <Users className="size-3 shrink-0" aria-hidden />
-                      <span className="num tabular-nums">{formatNumber(cell.people)}</span>
+                    <span className="mt-auto flex items-center gap-1">
+                      {/* Up to three leave-type dots, overlapped like avatars, then the
+                          count. The dots carry WHICH kinds of leave, which a single icon
+                          could not, and the number carries how many — colour is never the
+                          only thing saying it. */}
+                      <span className="flex -space-x-1" aria-hidden>
+                        {cell.rows.slice(0, 3).map((row) => (
+                          <span
+                            key={row.leave_request_day_id}
+                            className="size-2.5 rounded-full ring-[1.5px] ring-background"
+                            style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
+                          />
+                        ))}
+                      </span>
+                      <span className="num text-[0.65rem] font-semibold tabular-nums">
+                        {formatNumber(cell.people)}
+                      </span>
                     </span>
                   ) : null}
 

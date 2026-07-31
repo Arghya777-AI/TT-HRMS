@@ -32,6 +32,7 @@ import {
   keysGrace,
   keysGraceGrid,
   keysAttachDocs,
+  keysCompOffManual,
 } from "./keys/overtime-rules";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
@@ -77,6 +78,7 @@ export const en = {
   ...keysGrace,
   ...keysGraceGrid,
   ...keysAttachDocs,
+  ...keysCompOffManual,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

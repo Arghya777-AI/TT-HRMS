@@ -27,6 +27,8 @@
  * can never run for this person would be worse than no card.
  */
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { CalendarClock, Info } from "lucide-react";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { qk } from "@/shared/api/keys";
@@ -191,6 +193,35 @@ export function OvertimeRulesCard() {
               <Info className="mt-0.5 size-3 shrink-0" aria-hidden />
               {t("leave.otRules.compOff.notOvertime")}
             </p>
+
+            {/*
+              THE MANUAL ROUTE, and it deliberately fixes the CAUSE rather than the symptom.
+
+              When somebody worked an off day and it was never recorded, the missing thing
+              is the attendance, not the credit. Filing a regularization creates the
+              correction punches, and `decide_regularization` recomputes the day
+              synchronously on approval — the recompute calls `sync_comp_off_for_day`, so
+              the credit appears by the same rule as every automatic one.
+
+              A separate "claim a comp-off day" form would have been a second way to mint a
+              credit, with its own approval and no attendance behind it. Two sources of
+              truth for the same balance, and the manual one unauditable against the day it
+              claims to come from.
+            */}
+            <div className="mt-3 rounded-md border border-dashed p-2.5">
+              <p className="text-xs font-medium">{t("leave.otRules.manual.heading")}</p>
+              <p className="mt-1 text-[0.7rem] leading-relaxed text-muted-foreground">
+                {t("leave.otRules.manual.body")}
+              </p>
+              <ol className="mt-1.5 space-y-0.5 text-[0.7rem] leading-relaxed text-muted-foreground">
+                <li>{t("leave.otRules.manual.step1")}</li>
+                <li>{t("leave.otRules.manual.step2")}</li>
+                <li>{t("leave.otRules.manual.step3")}</li>
+              </ol>
+              <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                <Link to="/me/regularizations/new">{t("leave.otRules.manual.action")}</Link>
+              </Button>
+            </div>
           </div>
         </div>
 

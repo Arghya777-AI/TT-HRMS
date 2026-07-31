@@ -152,3 +152,25 @@ export const keysAttachDocs = {
   "admin.attachDocs.approvedNote":
     "A document you attach is recorded as verified by you — it does not go into the review queue, because you are the person that queue asks.",
 } as const;
+
+/**
+ * The manual comp-off route.
+ *
+ * It points at a REGULARIZATION rather than a comp-off claim form, because the missing
+ * thing is the attendance and not the credit — `decide_regularization` recomputes the day
+ * on approval and the recompute calls `sync_comp_off_for_day`, so a manually corrected day
+ * earns its credit by exactly the same rule as an automatic one. A separate claim form
+ * would be a second way to mint a balance with no attendance behind it.
+ */
+export const keysCompOffManual = {
+  "leave.otRules.manual.heading": "Worked an off day and it was never recorded?",
+  "leave.otRules.manual.body":
+    "Then the missing thing is the attendance, not the credit. Ask for the day to be corrected and the comp-off follows automatically — by the same rule, so nobody has to take your word for the amount.",
+  "leave.otRules.manual.step1":
+    "1 · Raise a correction for that date, with the hours you actually worked and why it went unrecorded.",
+  "leave.otRules.manual.step2":
+    "2 · Your manager approves it. The day is recalculated there and then.",
+  "leave.otRules.manual.step3":
+    "3 · The comp-off credit appears from the corrected day, and waits for approval like any other.",
+  "leave.otRules.manual.action": "Request a correction",
+} as const;

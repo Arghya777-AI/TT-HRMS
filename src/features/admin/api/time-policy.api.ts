@@ -557,6 +557,80 @@ export function insertShiftAssignment(
   );
 }
 
+/**
+ * Create a shift with these exact timings AND put one employee on it, in one act.
+ *
+ * WHY BOTH IN ONE FUNCTION. `shift_assignments` carries `shift_id` and no times of its
+ * own, so "this employee works 10:00–19:00" is not directly expressible: the timings have
+ * to exist as a shift first. Before this, an administrator had to leave the employee they
+ * were looking at, go to Time · Shifts, invent a code, create the shift, come back and
+ * assign it. That is the same friction the "Other" option removed from the org lookups,
+ * and the same fix applies.
+ *
+ * THE SHIFT IS REAL AND SHARED, NOT PRIVATE TO THIS PERSON. It appears in Time · Shifts
+ * like any other and can be assigned to somebody else later — because a shift IS a
+ * shared object here and pretending otherwise would need a per-employee times column
+ * the schema does not have. The naming convention the caller passes should therefore say
+ * who it was made for, or the shift list fills with anonymous windows.
+ *
+ * ORDER AND FAILURE. The shift is created first; if that fails nothing is assigned and
+ * the message belongs to the shift. If the ASSIGNMENT then fails — an overlapping
+ * standing assignment is the likely cause — the shift survives, which is deliberate: it
+ * is a valid shift the admin can assign by hand, and deleting it would throw away work
+ * to tidy up after a constraint that has already done its job.
+ */
+export async function createShiftAndAssign(
+  input: {
+    readonly companyId: string;
+    readonly employeeId: string;
+    readonly name: string;
+    readonly code: string;
+    readonly startTime: string;
+    readonly endTime: string;
+    readonly durationMinutes: number;
+    readonly unpaidBreakMinutes: number;
+    readonly graceInMinutes: number;
+    readonly graceOutMinutes: number;
+    readonly effectiveFrom: string;
+    readonly effectiveTo?: string | null;
+  },
+  reason: string,
+  signal?: AbortSignal,
+): Promise<{ shiftId: string; assignment: ShiftAssignment }> {
+  const shift = await insertRow(
+    SHIFTS_TABLE,
+    {
+      company_id: input.companyId,
+      code: input.code,
+      name: input.name,
+      start_time: input.startTime,
+      end_time: input.endTime,
+      // NOT NULL with no default; `shifts_before_write()` computes the same number, and
+      // `paidDurationMinutes` mirrors it. `crosses_midnight` is GENERATED — never sent.
+      duration_minutes: input.durationMinutes,
+      unpaid_break_minutes: input.unpaidBreakMinutes,
+      grace_in_minutes: input.graceInMinutes,
+      grace_out_minutes: input.graceOutMinutes,
+      is_active: true,
+    },
+    z.object({ id: dbUuid }),
+    { reason, ...(signal ? { signal } : {}) },
+  );
+
+  const assignment = await insertShiftAssignment(
+    {
+      employeeId: input.employeeId,
+      shiftId: shift.id,
+      effectiveFrom: input.effectiveFrom,
+      ...(input.effectiveTo == null ? {} : { effectiveTo: input.effectiveTo }),
+    },
+    reason,
+    signal,
+  );
+
+  return { shiftId: shift.id, assignment };
+}
+
 /** End a standing assignment on a date, leaving the row and its history intact. */
 export function endShiftAssignment(
   id: string,

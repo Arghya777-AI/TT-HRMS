@@ -80,6 +80,25 @@ export const keysAssignShift = {
   "timeAudit.assignShift.reasonTitle": "Why is this shift changing?",
   "timeAudit.assignShift.reasonBody":
     "This changes what counts as late, what counts as overtime and what the gate expects of {name}. The reason is recorded against the assignment.",
+
+  // ── Two modes: an existing shift, or new timings ──────────────────────────
+  "timeAudit.assignShift.modeAria": "Choose an existing shift or create new timings",
+  "timeAudit.assignShift.mode.existing": "An existing shift",
+  "timeAudit.assignShift.mode.new": "New timings",
+  "timeAudit.assignShift.newName": "Name for these timings",
+  "timeAudit.assignShift.newNameHint": "Include the person or the post — the shift is shared and will appear in Time · Shifts.",
+  "timeAudit.assignShift.newNamePlaceholder": "e.g. Front Desk late (Asha)",
+  "timeAudit.assignShift.newCode": "Will be saved with the code {code}.",
+  "timeAudit.assignShift.start": "Starts",
+  "timeAudit.assignShift.end": "Ends",
+  "timeAudit.assignShift.endHint": "An end before the start means it runs past midnight.",
+  "timeAudit.assignShift.break": "Unpaid break (minutes)",
+  "timeAudit.assignShift.graceIn": "Late grace (minutes)",
+  "timeAudit.assignShift.graceInHint": "Arriving within this is not counted late.",
+  "timeAudit.assignShift.graceOut": "Early-out grace (minutes)",
+  "timeAudit.assignShift.paid": "Paid length: {hours}.",
+  "timeAudit.assignShift.badWindow": "Enter both times as HH:MM.",
+  "timeAudit.assignShift.breakTooLong": "The unpaid break is as long as the shift — there would be no paid time left.",
 } as const;
 
 /**

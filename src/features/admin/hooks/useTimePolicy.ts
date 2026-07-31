@@ -44,6 +44,7 @@ import {
   fetchRefsByIds,
   fetchShiftAssignments,
   insertShiftAssignment,
+  createShiftAndAssign,
   endShiftAssignment,
   fetchShiftDetail,
   insertPolicyAssignment,
@@ -269,6 +270,45 @@ export function useShiftAssign(
 ): AuditedMutationResult<ShiftAssignment, ShiftAssignInput> {
   return useAuditedMutation<ShiftAssignment, ShiftAssignInput>({
     mutationFn: (input, reason) => insertShiftAssignment(input, reason),
+    invalidate: INVALIDATE_TIME_POLICY,
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    ...(onDone ? { onSuccess: onDone } : {}),
+  });
+}
+
+export interface ShiftCreateAssignInput {
+  readonly companyId: string;
+  readonly employeeId: string;
+  readonly name: string;
+  readonly code: string;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly durationMinutes: number;
+  readonly unpaidBreakMinutes: number;
+  readonly graceInMinutes: number;
+  readonly graceOutMinutes: number;
+  readonly effectiveFrom: string;
+  readonly effectiveTo?: string | null;
+}
+
+/**
+ * Create a shift with given timings and put this employee on it.
+ *
+ * Invalidates the same key set as every other assignment write, which is already the whole
+ * `["admin","org"]` subtree — so the new shift appears in Time · Shifts and in every shift
+ * dropdown without a reload, the point of it being a real shared shift.
+ */
+export function useShiftCreateAndAssign(
+  onDone?: (row: { shiftId: string; assignment: ShiftAssignment }) => void,
+): AuditedMutationResult<{ shiftId: string; assignment: ShiftAssignment }, ShiftCreateAssignInput> {
+  return useAuditedMutation<
+    { shiftId: string; assignment: ShiftAssignment },
+    ShiftCreateAssignInput
+  >({
+    mutationFn: (input, reason) => createShiftAndAssign(input, reason),
+    // `INVALIDATE_TIME_POLICY` is `qk.admin.orgAll()` = ["admin","org"], which already
+    // covers every shift dropdown and the Shifts master — the new shift appears without
+    // a reload, which is the point of it being a real shared shift.
     invalidate: INVALIDATE_TIME_POLICY,
     minReasonLength: SENSITIVE_REASON_LENGTH,
     ...(onDone ? { onSuccess: onDone } : {}),

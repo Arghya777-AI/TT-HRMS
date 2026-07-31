@@ -20,6 +20,7 @@ import type { DataGridColumn } from "@/shared/ui/DataGrid";
 import { fmtCivilTime, fmtDurationHm } from "@/lib/datetime";
 import { dash } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
+import { minutesOfTime, paidDurationMinutes, wallSpanMinutes } from "../shiftTiming";
 import type { OrgListFilters, Shift } from "../api/org.api";
 import { useDefaultCompanyId, useOrgList } from "../hooks/useMasters";
 import { MasterBanner, MasterScreen } from "../components/MasterScreen";
@@ -31,36 +32,30 @@ function useShiftRows(filters: OrgListFilters) {
 }
 
 /** 'HH:mm' → minutes past midnight, or null when it is not a wall-clock time. */
-function minutesOfTime(value: string | undefined): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec((value ?? "").trim());
-  if (!m || m[1] === undefined || m[2] === undefined) return null;
-  const hours = Number(m[1]);
-  const minutes = Number(m[2]);
-  if (hours > 23 || minutes > 59) return null;
-  return hours * 60 + minutes;
-}
-
-/**
- * The wall-clock span of the window, exactly as `shifts_before_write()` computes
- * it: modulo a day, with a zero result meaning a full 24 hours.
- */
-function wallSpanMinutes(values: FormValues): number | null {
-  const start = minutesOfTime(values["start_time"]);
-  const end = minutesOfTime(values["end_time"]);
-  if (start === null || end === null) return null;
-  const span = (end - start + 1440) % 1440;
-  return span === 0 ? 1440 : span;
-}
-
 function intOf(value: string | undefined): number {
   const n = Number.parseInt((value ?? "").trim(), 10);
   return Number.isInteger(n) ? n : 0;
 }
 
+/** `FormValues` adapter for the shared span rule. */
+function wallSpan(values: FormValues): number | null {
+  return wallSpanMinutes(values["start_time"] ?? "", values["end_time"] ?? "");
+}
+
+/**
+ * The paid length, from the shared rule in `../shiftTiming`.
+ *
+ * The arithmetic used to live here privately. It now has a second caller — the per-employee
+ * shift card, which creates a shift from typed timings — and `duration_minutes` is NOT NULL
+ * with no default, so two copies of "a window ending where it starts is a full day" was one
+ * copy too many.
+ */
 function paidDuration(values: FormValues): number | null {
-  const span = wallSpanMinutes(values);
-  if (span === null) return null;
-  return span - intOf(values["unpaid_break_minutes"]);
+  return paidDurationMinutes(
+    values["start_time"] ?? "",
+    values["end_time"] ?? "",
+    intOf(values["unpaid_break_minutes"]),
+  );
 }
 
 export default function ShiftsPage() {
@@ -335,7 +330,7 @@ export default function ShiftsPage() {
       formBanner={<MasterBanner>{t("admin.time.shift.banner")}</MasterBanner>}
       derivedDisplay={(values) => {
         const duration = paidDuration(values);
-        const span = wallSpanMinutes(values);
+        const span = wallSpan(values);
         return {
           duration_minutes: duration === null ? dash(null) : fmtDurationHm(duration),
           crosses_midnight:
@@ -347,7 +342,7 @@ export default function ShiftsPage() {
         };
       }}
       helpVars={(values): Record<string, string> => {
-        const span = wallSpanMinutes(values);
+        const span = wallSpan(values);
         const duration = paidDuration(values);
         if (span === null || duration === null) return {};
         return {
@@ -359,7 +354,7 @@ export default function ShiftsPage() {
         };
       }}
       validateForm={(values) => {
-        const span = wallSpanMinutes(values);
+        const span = wallSpan(values);
         if (span === null) return t("admin.time.shift.err.window");
         const duration = span - intOf(values["unpaid_break_minutes"]);
         if (duration <= 0) return t("admin.time.shift.err.duration");

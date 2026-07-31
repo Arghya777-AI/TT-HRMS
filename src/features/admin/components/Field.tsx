@@ -117,7 +117,13 @@ export function SelectField({
 export interface TextFieldProps extends BaseProps {
   value: string;
   onChange: (value: string) => void;
-  type?: "text" | "date" | "number";
+  /**
+   * `time` is here because the field vocabulary already has a `time` KIND (shift windows
+   * are `HH:MM`), and this atom could not render it — a caller had to choose between a
+   * free-text box that accepts "half nine" and going through MasterFormSheet. The value
+   * passes straight to the input, so this is a widening with no behaviour of its own.
+   */
+  type?: "text" | "date" | "number" | "time";
   placeholder?: string;
   inputMode?: "text" | "decimal" | "numeric";
   min?: string;

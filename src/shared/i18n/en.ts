@@ -40,6 +40,7 @@ import {
   keysAttendanceBoard,
   keysLeaveAdjust,
   keysLeaveOnBehalf,
+  keysDeptTotals,
 } from "./keys/overtime-rules";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
@@ -93,6 +94,7 @@ export const en = {
   ...keysAttendanceBoard,
   ...keysLeaveAdjust,
   ...keysLeaveOnBehalf,
+  ...keysDeptTotals,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

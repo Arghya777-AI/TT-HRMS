@@ -351,3 +351,18 @@ export const keysLeaveOnBehalf = {
   "admin.leaveFor.done": "{number} raised for {days} day(s), awaiting approval.",
   "admin.leaveFor.doneHint": "It now appears in the approver's inbox and in All leave requests.",
 } as const;
+
+/** Per-department subtotals on the attendance board. */
+export const keysDeptTotals = {
+  "admin.board.dept.caption":
+    "By department, over the {n} row(s) shown below. Change the filters above and these move with them.",
+  "admin.board.dept.department": "Department",
+  "admin.board.dept.people": "People",
+  "admin.board.dept.present": "Present",
+  "admin.board.dept.late": "Late",
+  "admin.board.dept.leave": "On leave",
+  "admin.board.dept.absent": "Absent",
+  "admin.board.dept.overtime": "Overtime",
+  "admin.board.dept.unassigned": "No department set",
+  "admin.board.dept.all": "All departments",
+} as const;

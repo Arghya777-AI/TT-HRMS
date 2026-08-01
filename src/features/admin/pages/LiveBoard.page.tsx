@@ -37,6 +37,7 @@ import {
   type BoardScope,
 } from "../attendanceBoard";
 import { flattenDayRecords, useDayRecords } from "../hooks/useAttendanceRecords";
+import { departmentTotals, grandTotal } from "../departmentTotals";
 
 /** Rows per page when reading history. One page covers a month for a small venue. */
 const DAY_PAGE = 200;
@@ -165,6 +166,11 @@ export default function LiveBoardPage() {
     [live, board.data, history.data],
   );
   const total = useBoardTotal(istDate);
+
+  /* Subtotals over the rows on screen. See departmentTotals.ts for why these are the one
+     figure on this console computed in the browser, and what is deliberately not averaged. */
+  const deptTotals = useMemo(() => departmentTotals(rows), [rows]);
+  const deptGrand = useMemo(() => grandTotal(deptTotals), [deptTotals]);
 
   // One server count per tile — the same predicate the rows use.
   const counts: Record<BoardState, ReturnType<typeof useBoardSlice>> = {
@@ -514,6 +520,115 @@ export default function LiveBoardPage() {
             />
           }
         >
+      {/*
+        ── PER-DEPARTMENT SUBTOTALS ──────────────────────────────────────────────
+        Over EXACTLY the rows below, and labelled as such. Every other figure on this
+        console is a server `count=exact`, because a browser sum over a page counts what
+        arrived rather than what matched. These are different: the set being summed is the
+        set on screen, and the reader can see it.
+
+        No averages and no percentages, deliberately. Filter the board to "late only" and a
+        per-department percentage becomes 100% everywhere — arithmetically right, completely
+        misleading. Counts shrink visibly with the filter instead.
+      */}
+      {deptTotals.length > 1 ? (
+        <section className="mt-4 overflow-x-auto rounded-lg border bg-card">
+          <table className="w-full text-sm">
+            <caption className="px-4 pt-3 text-left text-xs text-muted-foreground">
+              {t("admin.board.dept.caption", { n: formatNumber(rows.length) })}
+            </caption>
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th scope="col" className="px-4 py-2 text-left font-medium">
+                  {t("admin.board.dept.department")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.people")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.present")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.late")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.leave")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.absent")}
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  {t("admin.board.dept.overtime")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {deptTotals.map((dept) => (
+                <tr key={dept.departmentName ?? "unassigned"} className="border-b last:border-0">
+                  <td className="px-4 py-2">
+                    {dept.departmentName ?? (
+                      <span className="text-muted-foreground">
+                        {t("admin.board.dept.unassigned")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {formatNumber(dept.employees)}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {formatNumber(dept.present)}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {dept.late > 0 ? (
+                      <span className="text-warning">{formatNumber(dept.late)}</span>
+                    ) : (
+                      formatNumber(0)
+                    )}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {formatNumber(dept.onLeave)}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {dept.absent > 0 ? (
+                      <span className="text-destructive">{formatNumber(dept.absent)}</span>
+                    ) : (
+                      formatNumber(0)
+                    )}
+                  </td>
+                  <td className="num px-3 py-2 text-right tabular-nums">
+                    {dept.overtimeMinutes > 0 ? fmtDurationHm(dept.overtimeMinutes) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {/* Summed from the SAME buckets as the body, so the two provably agree. */}
+            <tfoot>
+              <tr className="border-t-2 font-semibold">
+                <td className="px-4 py-2">{t("admin.board.dept.all")}</td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {formatNumber(deptGrand.employees)}
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {formatNumber(deptGrand.present)}
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {formatNumber(deptGrand.late)}
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {formatNumber(deptGrand.onLeave)}
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {formatNumber(deptGrand.absent)}
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  {deptGrand.overtimeMinutes > 0 ? fmtDurationHm(deptGrand.overtimeMinutes) : "—"}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+      ) : null}
+
           <DataGrid columns={columns} rows={rows} rowKey={(r) => r.employeeId} pageSize={50} />
         </StateBoundary>
       </div>

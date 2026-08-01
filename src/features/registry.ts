@@ -83,6 +83,7 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/admin/kiosk/policy": () => import("./admin/pages/KioskPolicy.page"),
   "/admin/kiosk/purge": () => import("./admin/pages/TemplatePurge.page"),
   "/admin/kiosk/templates": () => import("./admin/pages/FaceTemplates.page"),
+  "/admin/leave/apply": () => import("./admin/pages/LeaveOnBehalf.page"),
   "/admin/leave/adjustments": () => import("./admin/pages/LeaveAdjustments.page"),
   "/admin/leave/balances": () => import("./admin/pages/LeaveBalances.page"),
   "/admin/leave/calendar": () => import("./admin/pages/OrgLeaveCalendar.page"),

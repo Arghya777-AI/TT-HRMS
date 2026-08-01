@@ -13,6 +13,7 @@ import {
   BadgeCheck,
   BarChart3,
   CalendarDays,
+  CalendarPlus,
   ClipboardList,
   Building2,
   Workflow,
@@ -132,6 +133,10 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   // in a dispute. Being one tab inside another section is why it was never found.
   { labelKey: "shell.nav.admin.punches", to: "/admin/attendance/punches", icon: ScanFace, cap: "admin.access" },
   { labelKey: "shell.nav.admin.leave", to: "/admin/leave/requests", icon: CalendarDays, cap: "admin.access" },
+  // Applying FOR somebody is its own task, not a variant of reviewing requests, so it gets
+  // its own entry rather than being a button on the requests grid. It is what HR reaches for
+  // when a person phones in sick or has no login yet.
+  { labelKey: "shell.nav.admin.leaveApply", to: "/admin/leave/apply", icon: CalendarPlus, cap: "admin.access" },
   { labelKey: "shell.nav.admin.payroll", to: "/admin/payroll/runs", icon: Banknote, cap: "admin.access" },
   { labelKey: "shell.nav.admin.documents", to: "/admin/documents/repository", icon: FileText, cap: "admin.access" },
   // Time & policy. SEVEN screens live under /admin/time/* — shifts, weekly offs,

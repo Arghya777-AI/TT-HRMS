@@ -209,6 +209,7 @@ export const keysNavTime = {
   "shell.nav.admin.comms": "Communications",
   "shell.nav.admin.assets": "Assets",
   "shell.nav.admin.punches": "Punch log",
+  "shell.nav.admin.leaveApply": "Apply on behalf",
 } as const;
 
 /** Live Board additions: overtime for the day, and the drill-down into scans. */
@@ -288,4 +289,61 @@ export const keysLeaveAdjust = {
   "admin.leaveAdj.rules.title": "What the server will check",
   "admin.leaveAdj.rules.body":
     "The ledger is append-only: an adjustment is added and the balance is re-derived, never edited. A reason of at least 15 characters is required, and any debit — or more than 5 days — needs a super admin. An opening balance is recorded as its own entry type, so it stays separate from days granted during the year.",
+} as const;
+
+/**
+ * Admin applying leave on behalf of an employee.
+ *
+ * The hints name what the SERVER will refuse, because each field exists to satisfy a
+ * `leave_requests_submit_guard` rule. Without saying so, an admin filling the form
+ * correctly still gets refused for a reason they cannot see.
+ */
+export const keysLeaveOnBehalf = {
+  "admin.leaveFor.title": "Apply for leave on behalf of an employee",
+  "admin.leaveFor.subtitle":
+    "For somebody who has phoned in sick, handed in a paper form, or has no portal login yet.",
+  "admin.leaveFor.allRequests": "All leave requests",
+  "admin.leaveFor.rules.title": "This goes through the normal approval",
+  "admin.leaveFor.rules.body":
+    "The request is raised as pending and goes to the usual approver — it is not pre-approved, so the decision still carries somebody's name. The server checks notice, overlap, balance and the minimum for the leave type, exactly as it does when an employee applies for themselves.",
+
+  "admin.leaveFor.employee": "Employee",
+  "admin.leaveFor.employeeHint": "Only people your admin scope covers are listed.",
+  "admin.leaveFor.type": "Leave type",
+  "admin.leaveFor.typeHint": "Only types this employee is eligible for.",
+  "admin.leaveFor.typeNeedsEmployee": "Choose an employee first — eligibility depends on them.",
+  "admin.leaveFor.typeProbation": "{name} — on probation, may be refused",
+  "admin.leaveFor.from": "From",
+  "admin.leaveFor.to": "To",
+  "admin.leaveFor.portion.full": "Full day",
+  "admin.leaveFor.portion.first": "First half",
+  "admin.leaveFor.portion.second": "Second half",
+  "admin.leaveFor.portion": "Portion",
+  "admin.leaveFor.handoverNotes": "Handover notes",
+  "admin.leaveFor.handoverNotesHint": "Optional. What the stand-in needs to know.",
+  "admin.leaveFor.portionHint": "A half day applies to a single date.",
+  "admin.leaveFor.contact": "Contact while away",
+  "admin.leaveFor.contactHint": "Optional. A number the venue can reach them on.",
+  "admin.leaveFor.handover": "Handover to",
+  "admin.leaveFor.handoverHint":
+    "Required for operational departments — the server refuses the request without it.",
+  "admin.leaveFor.unpaid": "Days to take unpaid",
+  "admin.leaveFor.unpaidHint":
+    "Leave empty unless the balance is short. The server clamps this to the request length.",
+  "admin.leaveFor.reason": "Reason",
+  "admin.leaveFor.reasonHint": "At least 10 characters — it is recorded on the request.",
+  "admin.leaveFor.reasonPlaceholder": "e.g. phoned in with fever, paper form received at the desk",
+
+  "admin.leaveFor.check": "Check the dates",
+  "admin.leaveFor.checkFirst": "Check the dates before submitting.",
+  "admin.leaveFor.submit": "Submit for approval",
+  "admin.leaveFor.preview.title": "What the server calculated — {number}",
+  "admin.leaveFor.preview.total": "Total days",
+  "admin.leaveFor.preview.paid": "Paid",
+  "admin.leaveFor.preview.unpaid": "Unpaid",
+  "admin.leaveFor.preview.days": "Dates counted",
+  "admin.leaveFor.preview.noDays":
+    "No day in this range counts — every date is a weekly off or a holiday for this employee. The leave type's minimum will refuse it.",
+  "admin.leaveFor.done": "{number} raised for {days} day(s), awaiting approval.",
+  "admin.leaveFor.doneHint": "It now appears in the approver's inbox and in All leave requests.",
 } as const;

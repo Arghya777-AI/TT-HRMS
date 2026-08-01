@@ -201,6 +201,7 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   ["/admin/leave/types", "Leave Type Master", "A", "admin-leave", CalendarDays, "Entitlements, accrual, carry-forward and rules."],
   ["/admin/leave/balances", "Leave Balances", "A", "admin-leave", CalendarDays, "Current balances across the organisation."],
   ["/admin/leave/requests", "Leave Requests", "A", "admin-leave", CalendarDays, "Every request, filterable, with decisions."],
+  ["/admin/leave/apply", "Apply on behalf", "A", "admin-leave", CalendarDays, "Raise a leave request for an employee who cannot."],
   ["/admin/leave/adjustments", "Manual Adjustments", "A", "admin-leave", CalendarDays, "Credit or debit a balance with a mandatory reason."],
   ["/admin/leave/comp-off", "Comp-Off Ledger", "A", "admin-leave", HeartHandshake, "Credits earned, used, expiring and lapsed."],
   ["/admin/leave/rollover", "Year-End Rollover", "A/S", "admin-leave", Cog, "Carry forward, lapse and encash at year end."],

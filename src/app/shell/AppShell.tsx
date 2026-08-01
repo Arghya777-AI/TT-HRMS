@@ -42,6 +42,7 @@ import { useMyPhoto } from "@/features/profile/hooks/useMyPhoto";
 import { BRAND } from "@/config/brand";
 import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
+import { useAppRealtime } from "@/shared/hooks/useAppRealtime";
 import {
   AI_FAB,
   FOOTER_ITEMS,
@@ -221,7 +222,22 @@ function NotificationBell() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { employee, signOut } = useAuth();
+  const { employee, session, signOut } = useAuth();
+
+  /*
+    THE APP'S ONE LIVE CONNECTION, mounted here so every screen inherits it.
+
+    Realtime was inert for the life of this project — a signing-key rotation to ES256
+    meant `postgres_changes` declined every binding silently — so only the home Today card
+    and the analytics board had ever subscribed. With it working, the answer is one channel
+    for the session rather than a channel per screen: each channel is a websocket join and
+    a set of server-side bindings, and twenty screens with their own would be twenty joins,
+    twenty teardowns per navigation, and twenty places for a table to be forgotten.
+
+    A screen becomes live by doing nothing: it reads its data as before, and the
+    invalidation arrives from here. RLS decides what arrives, per row, per subscriber.
+  */
+  useAppRealtime(session?.user.id ?? null, session?.access_token ?? null);
   const photo = useMyPhoto();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState<boolean>(() => {

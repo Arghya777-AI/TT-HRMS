@@ -209,3 +209,14 @@ export const keysNavTime = {
   "shell.nav.admin.comms": "Communications",
   "shell.nav.admin.assets": "Assets",
 } as const;
+
+/** Live Board additions: overtime for the day, and the drill-down into scans. */
+export const keysLiveBoard = {
+  "admin.live.col.overtime": "Overtime",
+  "admin.live.approvedOt": "{hours} approved",
+  "admin.live.otUnapproved": "not yet approved",
+  "admin.live.extraWorkTag": "extra",
+  "admin.live.extraWorkHint":
+    "Worked on a weekly off or holiday. The engine records this as extra work, not overtime — it is what earns comp-off.",
+  "admin.live.openScans": "See every scan for {name} today — device, IP, location",
+} as const;

@@ -24,7 +24,7 @@
  * @route /admin/attendance/live
  */
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { Clock, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -130,8 +130,21 @@ export default function LiveBoardPage() {
       header: t("admin.live.col.employee"),
       width: "15rem",
       sortable: true,
+      /*
+        THE NAME OPENS THAT PERSON'S SCANS. The board answers "is she in and was she
+        late"; the next question is always "show me the actual scans" — how many, from
+        which device or IP, where, and whether the geofence passed. Punch Log already
+        answers all of it and already filters by `?emp=`, so this is a link rather than a
+        second screen. Scoped to TODAY, because that is the day the board is about.
+      */
       render: (r) => (
-        <PersonCell name={r.display_name} code={r.employee_code} secondary={r.department_name} />
+        <Link
+          to={`/admin/attendance/punches?emp=${r.employee_id}&from=${istDate}&to=${istDate}`}
+          className="block rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={t("admin.live.openScans", { name: r.display_name })}
+        >
+          <PersonCell name={r.display_name} code={r.employee_code} secondary={r.department_name} />
+        </Link>
       ),
     },
     {
@@ -197,6 +210,50 @@ export default function LiveBoardPage() {
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
+    },
+    /*
+      OVERTIME FOR THE DAY, which this board could not show until migration 039200 put it
+      on the view. Two numbers in one cell, deliberately: the engine's figure and — when a
+      manager has signed some off — what was approved. Payroll pays the approved number, so
+      showing only the raw one tells a manager somebody is owed hours nobody agreed to.
+
+      On a weekly off or a holiday the engine writes `extra_work_minutes` instead and
+      overtime stays zero, so that is shown in its place rather than a misleading dash.
+    */
+    {
+      key: "overtime_minutes",
+      header: t("admin.live.col.overtime"),
+      width: "9rem",
+      align: "right",
+      render: (r) => {
+        const ot = r.overtime_minutes ?? 0;
+        const approved = r.approved_overtime_minutes ?? 0;
+        const extra = r.extra_work_minutes ?? 0;
+        if (ot === 0 && extra > 0) {
+          return (
+            <span className="num text-xs" title={t("admin.live.extraWorkHint")}>
+              {fmtDurationHm(extra)}
+              <span className="ml-1 text-muted-foreground">{t("admin.live.extraWorkTag")}</span>
+            </span>
+          );
+        }
+        if (ot === 0) return <span className="text-muted-foreground">—</span>;
+        return (
+          <span className="num flex flex-col items-end leading-tight">
+            <span>{fmtDurationHm(ot)}</span>
+            {approved > 0 && approved !== ot ? (
+              <span className="text-[0.65rem] text-success">
+                {t("admin.live.approvedOt", { hours: fmtDurationHm(approved) })}
+              </span>
+            ) : null}
+            {approved === 0 ? (
+              <span className="text-[0.65rem] text-muted-foreground">
+                {t("admin.live.otUnapproved")}
+              </span>
+            ) : null}
+          </span>
+        );
+      },
     },
     {
       key: "status",

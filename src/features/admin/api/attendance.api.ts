@@ -491,6 +491,21 @@ export const todayBoardRowSchema = z.object({
   late_in: z.boolean(),
   on_time: z.boolean(),
   overdue: z.boolean(),
+  /*
+    OVERTIME AND ITS THREE NEIGHBOURS, added to the view by migration 039200.
+
+    Four columns rather than one because they answer different questions and
+    conflating them is how an overtime figure stops being trusted:
+      overtime_minutes           what the engine computed for a normal working day
+      approved_overtime_minutes  what a manager signed off — what payroll actually pays
+      extra_work_minutes         time on a weekly off or holiday, which is NOT overtime
+                                 and earns comp-off instead
+      early_exit_minutes         the mirror of late_minutes
+  */
+  overtime_minutes: dbIntNullable,
+  approved_overtime_minutes: dbIntNullable,
+  extra_work_minutes: dbIntNullable,
+  early_exit_minutes: dbIntNullable,
 });
 export type TodayBoardRow = z.infer<typeof todayBoardRowSchema>;
 

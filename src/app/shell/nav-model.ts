@@ -126,6 +126,11 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   { labelKey: "shell.nav.admin.command", to: "/admin", icon: Gauge, cap: "admin.access", badge: "admin.alerts" },
   { labelKey: "shell.nav.admin.people", to: "/admin/people", icon: Users, cap: "admin.access" },
   { labelKey: "shell.nav.admin.attendance", to: "/admin/attendance/live", icon: Clock, cap: "admin.access" },
+  // Punch Log gets its OWN entry rather than living behind Attendance. It is the raw
+  // append-only scan record — every punch with its device, IP, coordinates, accuracy,
+  // geofence result, operator and match confidence — and it is what somebody reaches for
+  // in a dispute. Being one tab inside another section is why it was never found.
+  { labelKey: "shell.nav.admin.punches", to: "/admin/attendance/punches", icon: ScanFace, cap: "admin.access" },
   { labelKey: "shell.nav.admin.leave", to: "/admin/leave/requests", icon: CalendarDays, cap: "admin.access" },
   { labelKey: "shell.nav.admin.payroll", to: "/admin/payroll/runs", icon: Banknote, cap: "admin.access" },
   { labelKey: "shell.nav.admin.documents", to: "/admin/documents/repository", icon: FileText, cap: "admin.access" },

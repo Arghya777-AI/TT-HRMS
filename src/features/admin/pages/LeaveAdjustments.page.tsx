@@ -71,7 +71,7 @@ const CATEGORY_LABEL: Readonly<Record<string, string>> = {
 interface FormState {
   employeeId: string;
   leaveTypeId: string;
-  direction: "credit" | "debit";
+  direction: "credit" | "debit" | "opening";
   days: string;
   effectiveDate: string;
   category: string;
@@ -167,9 +167,17 @@ export default function AdminLeaveAdjustmentsPage() {
     ask({
       employeeId: form.employeeId,
       leaveTypeId: form.leaveTypeId,
-      // The sign IS the direction — a debit is a negative ledger entry. No
-      // balance is computed here; the server applies and re-derives it.
-      days: form.direction === "debit" ? -days : days,
+      /*
+        A POSITIVE MAGNITUDE PLUS A KIND, not a signed number.
+
+        This used to send `-days` for a debit and let the sign carry the meaning. The RPC
+        now takes the magnitude and the kind separately, because the sign cannot express
+        the third case: an OPENING BALANCE is positive like a credit but is a different
+        ledger entry type. `adjust_leave_balance` negates a debit server-side, so the sign
+        convention lives in exactly one place.
+      */
+      days,
+      kind: form.direction,
       effectiveDate: form.effectiveDate,
       reasonCategory: form.category,
     });
@@ -199,9 +207,15 @@ export default function AdminLeaveAdjustmentsPage() {
         subtitle={t("admin.leaveAdj.subtitle")}
       />
 
-      <Notice tone="warning" className="mb-5">
-        <p className="font-medium">{t("admin.leaveAdj.noEndpoint.title")}</p>
-        <p className="mt-1">{t("admin.leaveAdj.noEndpoint.body")}</p>
+      {/*
+        The old banner said adjustments could not be saved, which was true until migration
+        039300 deployed `adjust_leave_balance`. It is replaced rather than deleted, because
+        the thing worth saying has changed rather than gone away: the ledger is still
+        append-only and the authority rules are still the server's.
+      */}
+      <Notice tone="info" className="mb-5">
+        <p className="font-medium">{t("admin.leaveAdj.rules.title")}</p>
+        <p className="mt-1">{t("admin.leaveAdj.rules.body")}</p>
       </Notice>
 
       {done !== null ? (
@@ -251,8 +265,16 @@ export default function AdminLeaveAdjustmentsPage() {
               options={[
                 { value: "credit", label: t("admin.leaveAdj.direction.credit") },
                 { value: "debit", label: t("admin.leaveAdj.direction.debit") },
+                /* Its own ledger entry type, not a credit with a note — see
+                   LeaveAdjustmentInput.kind. */
+                { value: "opening", label: t("admin.leaveAdj.direction.opening") },
               ]}
-              onChange={(value) => set("direction", value === "debit" ? "debit" : "credit")}
+              onChange={(value) =>
+                set(
+                  "direction",
+                  value === "debit" ? "debit" : value === "opening" ? "opening" : "credit",
+                )
+              }
               hint={t("admin.leaveAdj.field.directionHint")}
             />
             <TextField

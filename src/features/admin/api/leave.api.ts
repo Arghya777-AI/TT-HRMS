@@ -20,7 +20,6 @@
  */
 import { z } from "zod";
 import {
-  MutationError,
   SENSITIVE_REASON_LENGTH,
   dbDate,
   dbDateNullable,
@@ -39,6 +38,7 @@ import {
   isNull,
   lte,
   paginate,
+  rpcOne,
   selectMany,
   selectOne,
   softDelete,
@@ -534,21 +534,66 @@ export interface LeaveAdjustmentInput {
   readonly days: number;
   readonly effectiveDate: string;
   readonly reasonCategory: string;
+  /**
+   * `credit` adds days, `debit` removes them, `opening` sets what the leave year
+   * started with.
+   *
+   * OPENING IS NOT A CREDIT WITH A NOTE. `ledger_entry_type` has `opening_balance`
+   * as its own value, and a report separating "carried in" from "granted during the
+   * year" cannot be built after the fact if the two were folded together.
+   */
+  readonly kind: "credit" | "debit" | "opening";
 }
 
+export const ADJUST_LEAVE_BALANCE_FN = "adjust_leave_balance";
+
+export const leaveAdjustmentResultSchema = z.object({
+  ledger_id: dbUuid,
+  entry_type: z.string(),
+  days: dbNumeric,
+  leave_year: dbInt,
+  leave_type: z.string(),
+  /** The server's re-derived balance. Never a figure the browser predicted. */
+  available_days: dbNumericNullable,
+});
+export type LeaveAdjustmentResult = z.infer<typeof leaveAdjustmentResultSchema>;
+
 /**
- * `/admin/leave/adjustments` is specified (§7.2) but has no write path on this
- * backend: `leave_ledger` grants INSERT to `service_role` only, the append-only
- * trigger `leave_ledger_guard_mutation` refuses client mutation, and no
- * `leave-adjust` edge function is deployed. Rather than post a request that is
- * certain to 42501 after an admin has typed a reason, this states the gap.
+ * Post a manual adjustment through `public.adjust_leave_balance` (migration 039300).
+ *
+ * THIS USED TO REFUSE. `leave_ledger` is append-only with a single SELECT policy and no
+ * `leave-adjust` edge function was ever deployed, so this function existed only to reject
+ * before an admin wasted a typed reason on a certain 42501. The RPC closes that: it inserts
+ * the ledger entry and re-derives the balance in one transaction, as a SECURITY DEFINER
+ * function — the same shape as `decide_document_review` and `decide_regularization`.
+ *
+ * The authority rules are the SERVER'S, not this file's: `leave.balance.adjust`, admin
+ * scope over the subject, a 15-character reason, and a super admin for any debit or more
+ * than five days. Repeating them here as client-side checks would be a second copy that
+ * drifts; the screen shows them as hints and the server decides.
  */
-export function submitLeaveAdjustment(_input: LeaveAdjustmentInput, _reason: string): Promise<never> {
-  return Promise.reject(
-    new MutationError(
-      "leave_ledger",
-      "permission_denied",
-      "Manual leave adjustments need a server-side endpoint: leave_ledger is append-only and grants INSERT to service_role only. No leave-adjust edge function is deployed yet.",
-    ),
+export async function submitLeaveAdjustment(
+  input: LeaveAdjustmentInput,
+  reason: string,
+): Promise<LeaveAdjustmentResult> {
+  const result = await rpcOne(
+    ADJUST_LEAVE_BALANCE_FN,
+    {
+      p_employee_id: input.employeeId,
+      p_leave_type_id: input.leaveTypeId,
+      p_days: input.days,
+      p_kind: input.kind,
+      p_effective_date: input.effectiveDate,
+      p_category: input.reasonCategory,
+      p_reason: reason,
+    },
+    leaveAdjustmentResultSchema,
   );
+  // `rpcOne` types a null return for a function that could answer nothing. This one
+  // always returns a row or raises, so a null here is a contract violation, not an
+  // empty result — saying so beats a silent `as` cast.
+  if (result === null) {
+    throw new Error("adjust_leave_balance returned nothing, which it never should");
+  }
+  return result;
 }

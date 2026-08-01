@@ -33,6 +33,7 @@ import {
   type CompOffBalance,
   type CompOffLedgerRow,
   type LeaveAdjustmentInput,
+  type LeaveAdjustmentResult,
   type LeaveBalance,
   type LeaveRequest,
   type LeaveRequestStatus,
@@ -262,11 +263,11 @@ export function useCancelLeaveRequest(
  */
 export function useLeaveAdjustment(
   onDone?: (input: LeaveAdjustmentInput) => void,
-): AuditedMutationResult<never, LeaveAdjustmentInput> {
-  return useAuditedMutation<never, LeaveAdjustmentInput>({
+): AuditedMutationResult<LeaveAdjustmentResult, LeaveAdjustmentInput> {
+  return useAuditedMutation<LeaveAdjustmentResult, LeaveAdjustmentInput>({
     minReasonLength: SENSITIVE_REASON_LENGTH,
     invalidate: [qk.admin.leaveAll()],
     mutationFn: (input, reason) => submitLeaveAdjustment(input, reason),
-    ...(onDone ? { onSuccess: (_d: never, input: LeaveAdjustmentInput) => onDone(input) } : {}),
+    ...(onDone ? { onSuccess: (_d: LeaveAdjustmentResult, input: LeaveAdjustmentInput) => onDone(input) } : {}),
   });
 }

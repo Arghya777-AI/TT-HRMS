@@ -208,6 +208,7 @@ export const keysNavTime = {
   "shell.nav.admin.workflow": "Approvals & workflow",
   "shell.nav.admin.comms": "Communications",
   "shell.nav.admin.assets": "Assets",
+  "shell.nav.admin.punches": "Punch log",
 } as const;
 
 /** Live Board additions: overtime for the day, and the drill-down into scans. */
@@ -273,4 +274,18 @@ export const keysAttendanceBoard = {
   "admin.board.liveNow": "Live",
   "admin.board.historicNote":
     "A settled day: expected-by, yet-to-reach and overdue are not shown, because they are measured against the current time.",
+} as const;
+
+/**
+ * Leave adjustments, now that they can actually be saved (migration 039300).
+ *
+ * `admin.leaveAdj.noEndpoint.*` is left in en.ts unused rather than deleted — it recorded a
+ * real state of this environment for months and a future reader tracing the change will
+ * look for it.
+ */
+export const keysLeaveAdjust = {
+  "admin.leaveAdj.direction.opening": "Opening balance",
+  "admin.leaveAdj.rules.title": "What the server will check",
+  "admin.leaveAdj.rules.body":
+    "The ledger is append-only: an adjustment is added and the balance is re-derived, never edited. A reason of at least 15 characters is required, and any debit — or more than 5 days — needs a super admin. An opening balance is recorded as its own entry type, so it stays separate from days granted during the year.",
 } as const;

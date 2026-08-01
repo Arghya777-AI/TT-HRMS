@@ -126,6 +126,15 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
+  /*
+    THE iOS CONFIGURATION PROFILE IS NEVER TOUCHED. Tapping its link is a NAVIGATION, so without
+    this guard the handler below would run: it would cache the profile under the shell cache and
+    could later hand a `.mobileconfig` back for a page navigation. It must also reach Safari with
+    the exact headers the server set — `application/x-apple-aspen-config` is what makes iOS treat
+    it as installable — and a cached copy replayed by a worker is not worth the risk.
+  */
+  if (url.pathname.endsWith(".mobileconfig")) return;
+
   // Navigations: network-first so a deploy is picked up, cached shell as the offline fallback.
   if (request.mode === "navigate") {
     event.respondWith(

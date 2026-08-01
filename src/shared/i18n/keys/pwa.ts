@@ -15,6 +15,17 @@ export const keysPwa = {
     "Opens straight from your home screen — full screen, no address bar. Same login, same data.",
   "pwa.install.action": "Install app",
   "pwa.install.declined": "Not installed. You can tap Install app again whenever you like.",
+  "pwa.install.shareInstead": "Or add it from the Share menu instead",
+  "pwa.install.openInSafari":
+    "On iPhone this works in Safari. Open this page in Safari and tap Install app there.",
+
+  "pwa.ios.next.title": "Two more taps to finish",
+  "pwa.ios.next.lead": "Your iPhone has downloaded it. It asks you to confirm in Settings.",
+  "pwa.ios.next.step1": "Tap “Allow”, then “Close”",
+  "pwa.ios.next.step2": "Open Settings — “Profile Downloaded” is near the top",
+  "pwa.ios.next.step3": "Tap “Install”, enter your passcode, tap “Install” again",
+  "pwa.ios.next.safe":
+    "This only adds the TT HRMS icon to your home screen. No device management, no access to your photos, messages or anything else on your phone. Remove it any time from Settings.",
 
   "pwa.guide.title": "Two taps and it is yours",
   "pwa.guide.iosLead": "iPhone does this from the Share menu. It takes a moment.",

@@ -6,17 +6,22 @@
  * That path is the default and it is what most of the staff here will meet. It only works
  * because `index.html` catches `beforeinstallprompt` before React exists — see `useInstallApp`.
  *
- * ── AND ON iPHONE, WHICH ALLOWS NOTHING ──────────────────────────────────────
- * Safari exposes no install API. A web page on iOS cannot install itself, cannot ask to, and
- * cannot detect whether the person did it; Apple reserves that to the Share menu. So on iOS the
- * same button opens a full-screen picture of where to tap — a large Share glyph, an arrow
- * pointing at the bottom of the screen where the real one sits, and two short lines.
+ * ── AND ON iPHONE, WHICH HAS NO INSTALL API BUT DOES HAVE PROFILES ───────────
+ * Safari cannot be asked to install a web app. But iOS has exactly one route by which tapping a
+ * link on a page ends with an app icon on the home screen: a Configuration Profile carrying a
+ * Web Clip payload. So the iPhone button is a real DOWNLOAD — it fetches
+ * `/tt-hrms.mobileconfig`, iOS takes over, and installing it puts a full-screen TT HRMS icon on
+ * the home screen. Same destination as Add to Home Screen, reached by downloading a file, which
+ * is what people recognise as installing an app.
  *
- * Chosen over two worse alternatives:
- *   * a button that says "Install" and does nothing on iOS — the worst outcome, because the
- *     person concludes the app is broken;
- *   * the paragraph of numbered instructions this replaced. Staff here are not reading a list
- *     on a phone. A picture of the button they must press is a different thing.
+ * WHAT IT CANNOT DO IS FINISH BY ITSELF. Since iOS 12.2 a downloaded profile must be installed
+ * from Settings — Apple's decision, not a gap here. So the moment the download starts, the
+ * follow-up sheet appears with the two remaining taps, because that is exactly when the person
+ * is staring at "Profile Downloaded" wondering what happened.
+ *
+ * Only offered in real Safari. Chrome, Firefox and Edge on iOS cannot hand a profile to iOS and
+ * the download silently does nothing, so there the card says to open the page in Safari and
+ * falls back to the Share-menu picture.
  *
  * ── IT IS BIG ON PURPOSE ─────────────────────────────────────────────────────
  * Full width, `size="lg"`, one instruction, same wording everywhere. This is used once per
@@ -24,7 +29,7 @@
  * would not be found. It disappears entirely once the app is installed.
  */
 import { useEffect, useState } from "react";
-import { ArrowDown, Check, Download, Plus, Share, Smartphone } from "lucide-react";
+import { ArrowDown, Check, Download, Plus, Share, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { t } from "@/shared/i18n/en";
@@ -58,8 +63,9 @@ export interface InstallAppCardProps {
 export function InstallAppCard({
   autoOpenGuideOnIos = false,
 }: InstallAppCardProps = {}): React.JSX.Element | null {
-  const { mode, isIos, install } = useInstallApp();
+  const { mode, isIos, isIosSafari, iosProfileUrl, install } = useInstallApp();
   const [guideOpen, setGuideOpen] = useState(false);
+  const [iosNextOpen, setIosNextOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [declined, setDeclined] = useState(false);
 
@@ -97,26 +103,59 @@ export function InstallAppCard({
           </div>
         </div>
 
-        {/* One button, same wording on every device. What it DOES differs, because the
-            platforms differ; what the employee has to decide does not. */}
-        <Button
-          size="lg"
-          className="mt-3 w-full"
-          disabled={busy}
-          onClick={() => {
-            if (mode === "prompt") {
-              setBusy(true);
-              void install()
-                .then((accepted) => setDeclined(!accepted))
-                .finally(() => setBusy(false));
-              return;
-            }
-            setGuideOpen(true);
-          }}
-        >
-          <Download className="size-4" aria-hidden />
-          {t("pwa.install.action")}
-        </Button>
+        {/*
+          One prominent button per platform, all of them called "Install app". What it DOES
+          differs because the platforms differ; what the employee has to decide does not.
+        */}
+        {iosProfileUrl !== null ? (
+          <>
+            {/*
+              A real anchor, not a fetch. iOS hands a Configuration Profile to the system only
+              when Safari itself navigates to it — downloading the bytes in JavaScript and
+              handing over a blob does not work. `onClick` opens the follow-up sheet at the same
+              moment, because the download alone leaves the person looking at "Profile
+              Downloaded" with nothing telling them what to do next.
+            */}
+            <Button asChild size="lg" className="mt-3 w-full">
+              <a href={iosProfileUrl} onClick={() => setIosNextOpen(true)}>
+                <Download className="size-4" aria-hidden />
+                {t("pwa.install.action")}
+              </a>
+            </Button>
+            <button
+              type="button"
+              onClick={() => setGuideOpen(true)}
+              className="mt-2 w-full text-center text-xs text-muted-foreground underline underline-offset-2"
+            >
+              {t("pwa.install.shareInstead")}
+            </button>
+          </>
+        ) : (
+          <Button
+            size="lg"
+            className="mt-3 w-full"
+            disabled={busy}
+            onClick={() => {
+              if (mode === "prompt") {
+                setBusy(true);
+                void install()
+                  .then((accepted) => setDeclined(!accepted))
+                  .finally(() => setBusy(false));
+                return;
+              }
+              setGuideOpen(true);
+            }}
+          >
+            <Download className="size-4" aria-hidden />
+            {t("pwa.install.action")}
+          </Button>
+        )}
+
+        {/* An iPhone in Chrome or Firefox: the profile route cannot work and Add to Home Screen
+            is Safari-only too, so the honest instruction is to change browser. */}
+        {isIos && !isIosSafari ? (
+          <p className="mt-2 text-xs text-muted-foreground">{t("pwa.install.openInSafari")}</p>
+        ) : null}
 
         {/* Only after a refusal. A browser prompt cannot be reopened from the same event, so
             saying nothing would leave the button looking broken on the second tap. */}
@@ -124,6 +163,56 @@ export function InstallAppCard({
           <p className="mt-2 text-xs text-muted-foreground">{t("pwa.install.declined")}</p>
         ) : null}
       </section>
+
+      {/* ── After the download: the two taps iOS still requires ──────────────
+          Opened by the download itself, because the person is at that moment looking at a
+          "Profile Downloaded" sheet with no idea it is not finished. Since iOS 12.2 a profile
+          cannot self-install; it must be confirmed in Settings. That is Apple's rule and the
+          only thing to do about it is say so clearly, at the right moment. */}
+      <Sheet open={iosNextOpen} onOpenChange={setIosNextOpen}>
+        <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto">
+          <div className="mx-auto max-w-sm pb-2">
+            <h2 className="text-center font-display text-lg font-semibold">
+              {t("pwa.ios.next.title")}
+            </h2>
+            <p className="mt-1 text-center text-sm text-muted-foreground">
+              {t("pwa.ios.next.lead")}
+            </p>
+
+            <ol className="mt-5 space-y-3">
+              {(
+                [
+                  ["1", "pwa.ios.next.step1"],
+                  ["2", "pwa.ios.next.step2"],
+                  ["3", "pwa.ios.next.step3"],
+                ] as const
+              ).map(([n, key]) => (
+                <li key={key} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+                  <span
+                    aria-hidden
+                    className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+                  >
+                    {n}
+                  </span>
+                  <p className="min-w-0 text-sm font-medium">{t(key)}</p>
+                </li>
+              ))}
+            </ol>
+
+            {/* Said plainly, because "install a profile" alarms people who have been told not
+                to — correctly — and this one genuinely carries nothing but an icon. */}
+            <p className="mt-4 flex items-start gap-2 rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground">
+              <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              {t("pwa.ios.next.safe")}
+            </p>
+
+            <Button size="lg" className="mt-5 w-full" onClick={() => setIosNextOpen(false)}>
+              <Check className="size-4" aria-hidden />
+              {t("pwa.guide.done")}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ── The picture ──────────────────────────────────────────────────────
           A sheet rather than a page, so it dismisses with a swipe and nothing is navigated away

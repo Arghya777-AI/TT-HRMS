@@ -36,6 +36,7 @@ import { SENSITIVE_REASON_LENGTH, isMutationErrorOfKind } from "@/shared/api/que
 import { nowIstDate } from "@/lib/datetime";
 import { formatDays } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/app/auth/AuthProvider";
 import type { LeaveAdjustmentInput } from "../api/leave.api";
 import { Notice } from "../components/Notice";
@@ -109,8 +110,14 @@ export default function AdminLeaveAdjustmentsPage() {
   const employeeChoices = useEmployeeOptions(labels.data);
   const types = useAdminLeaveTypes();
 
+  /*
+    `?emp=<uuid>` PRE-SELECTS THE PERSON. The employee record now links here to adjust one
+    person's balance, and a screen that ignored the scope would drop the admin on an empty
+    picker with 78 names in it — which is how the wrong employee gets adjusted.
+  */
+  const [params] = useSearchParams();
   const [form, setForm] = useState<FormState>({
-    employeeId: "",
+    employeeId: params.get("emp") ?? "",
     leaveTypeId: "",
     direction: "credit",
     days: "",

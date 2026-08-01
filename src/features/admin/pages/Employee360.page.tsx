@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { FieldGroupSection } from "../components/FieldGroupSection";
+import { EmployeeLinksPanel } from "../components/EmployeeLinksPanel";
 import {
   changeSummary,
   coerceValues,
@@ -334,6 +335,23 @@ export default function Employee360Page() {
 
             {isDirty ? (
               <p className="mt-2 text-xs text-muted-foreground">{t("admin.p360.dirtyLock")}</p>
+            ) : null}
+
+            {/*
+              EVERY SCREEN ABOUT THIS PERSON, above the tabs, because it is navigation
+              rather than another tab of fields. Nine admin screens can be scoped to one
+              employee and the record linked to none of them — an admin asking "why was she
+              late" had to leave, find Attendance, find the date, filter to her, and come
+              back. Each link opens already filtered.
+            */}
+            {row !== null ? (
+              <div className="mt-4">
+                <EmployeeLinksPanel
+                  employeeCode={row.employee_code}
+                  employeeId={row.id}
+                  displayName={row.display_name}
+                />
+              </div>
             ) : null}
 
             {/* The masked identifiers live on the Payment tab, read-only. */}

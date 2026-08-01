@@ -220,3 +220,42 @@ export const keysLiveBoard = {
     "Worked on a weekly off or holiday. The engine records this as extra work, not overtime — it is what earns comp-off.",
   "admin.live.openScans": "See every scan for {name} today — device, IP, location",
 } as const;
+
+/**
+ * The per-employee link hub on the employee record.
+ *
+ * Every hint names what you can DO there, not what the screen is called — an admin looking
+ * for "where do I change her grace period" will not think to click "Policy resolver".
+ */
+export const keysEmployeeLinks = {
+  "admin.p360.links.title": "Everything about {name}",
+  "admin.p360.links.subtitle":
+    "Every screen scoped to this person. Each one opens filtered to them, so you never have to search for them again.",
+
+  "admin.p360.links.attendance": "Attendance & exceptions",
+  "admin.p360.links.attendanceHint": "Every day, month by month — present, late, absent, overtime.",
+  "admin.p360.links.scans": "All scans",
+  "admin.p360.links.scansHint": "Every punch with device, IP, location, accuracy and geofence.",
+  "admin.p360.links.resolver": "Shift, grace & policies",
+  "admin.p360.links.resolverHint":
+    "Which shift and policy apply, why — and give this person their own shift, timings and grace.",
+
+  "admin.p360.links.balances": "Leave balances",
+  "admin.p360.links.balancesHint": "Opening, accrued, availed and available, per leave type.",
+  "admin.p360.links.adjust": "Adjust a balance",
+  "admin.p360.links.adjustHint":
+    "Credit or debit days with a reason — how an opening balance is set or corrected.",
+  "admin.p360.links.ledger": "Leave ledger",
+  "admin.p360.links.ledgerHint": "Every credit and debit behind the balance, with running totals.",
+
+  "admin.p360.links.compensation": "Salary & increments",
+  "admin.p360.links.compensationHint":
+    "Structure, every revision and increment with effective dates, and payslips.",
+  "admin.p360.links.transfers": "Transfer & promotion",
+  "admin.p360.links.transfersHint": "Movements and promotions with effective dates and letters.",
+
+  "admin.p360.links.face": "Face enrolment",
+  "admin.p360.links.faceHint": "Consent, capture, approval and whether the gate will match them.",
+  "admin.p360.links.history": "Full change history",
+  "admin.p360.links.historyHint": "Every field ever changed on this record, by whom and why.",
+} as const;

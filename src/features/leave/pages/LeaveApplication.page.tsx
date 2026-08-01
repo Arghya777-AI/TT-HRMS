@@ -47,7 +47,7 @@ import { mutationUserMessage } from "@/shared/api/query";
 import { nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useMyLeaveContext } from "../hooks/useLeaveApply";
+import { useColleagues, useMyLeaveContext } from "../hooks/useLeaveApply";
 import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
 import {
   allocationProblems,
@@ -96,13 +96,22 @@ export default function LeaveApplicationPage() {
   const contextQuery = useMyLeaveContext();
   const context = contextQuery.data ?? null;
   const { types, isPending, error: typesError } = useAllocatableTypes(context);
+  const colleagues = useColleagues();
+
+  /* Never yourself: naming yourself as cover is meaningless, and the server records it. */
+  const coverChoices = useMemo(
+    () => (colleagues.data ?? []).filter((c) => c.id !== context?.id),
+    [colleagues.data, context],
+  );
 
   const [totalDays, setTotalDays] = useState("1");
   const [fromDate, setFromDate] = useState(nowIstDate());
   const [allocations, setAllocations] = useState<readonly Allocation[]>([]);
   const [reason, setReason] = useState("");
   const [contact, setContact] = useState("");
+  const [handoverId, setHandoverId] = useState("");
   const [handoverNotes, setHandoverNotes] = useState("");
+  const [addressAway, setAddressAway] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
@@ -111,6 +120,9 @@ export default function LeaveApplicationPage() {
   const remaining = remainingDays(total, allocations);
   const problems = allocationProblems(total, allocations, types);
   const ready = canSubmitAllocation(total, allocations, types) && reason.trim().length >= 10;
+
+  /** Unpaid leave, if the venue has such a type — what a shortfall can be taken as. */
+  const lwpType = useMemo(() => types.find((type) => !type.isPaid) ?? null, [types]);
 
   /** The exclusive type currently chosen, if any — it locks the rest of the list. */
   const exclusiveChosen = useMemo(() => {
@@ -168,7 +180,8 @@ export default function LeaveApplicationPage() {
       members,
       reason: reason.trim(),
       contactDuringLeave: contact.trim() === "" ? null : contact.trim(),
-      handoverToEmployeeId: null,
+      addressDuringLeave: addressAway.trim() === "" ? null : addressAway.trim(),
+      handoverToEmployeeId: handoverId === "" ? null : handoverId,
       handoverNotes: handoverNotes.trim() === "" ? null : handoverNotes.trim(),
     })
       .then((result) => {
@@ -279,6 +292,23 @@ export default function LeaveApplicationPage() {
             </p>
           </div>
 
+          {/*
+            TAKE THE SHORTFALL AS LOSS OF PAY. Unpaid leave has no balance to run out of, so
+            this is the honest escape when the paid balances do not cover the request — and it
+            is a deliberate button rather than something the suggester does silently, because
+            it costs the employee money.
+          */}
+          {remaining > 0 && lwpType !== null && exclusiveChosen === null ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => setDays(lwpType.id, daysFor(lwpType.id) + remaining)}
+            >
+              {t("leave.app.takeLwp", { days: formatNumber(remaining) })}
+            </Button>
+          ) : null}
+
           {exclusiveChosen !== null ? (
             <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -352,12 +382,42 @@ export default function LeaveApplicationPage() {
                 className="h-10 rounded-md border bg-background px-3 text-sm"
               />
             </label>
+            {/* Required for operational departments — the server refuses without it, so it is
+                offered rather than left for the refusal to explain. */}
             <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium text-muted-foreground">{t("leave.app.coveredBy")}</span>
+              <select
+                value={handoverId}
+                onChange={(event) => setHandoverId(event.target.value)}
+                disabled={busy || colleagues.isPending}
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="">{t("leave.app.coveredByNone")}</option>
+                {coverChoices.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.display_name}
+                    {person.designation_name === null ? "" : ` · ${person.designation_name}`}
+                  </option>
+                ))}
+              </select>
+              <span className="text-muted-foreground">{t("leave.app.coveredByHint")}</span>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium text-muted-foreground">{t("leave.app.address")}</span>
+              <input
+                value={addressAway}
+                onChange={(event) => setAddressAway(event.target.value)}
+                disabled={busy}
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="font-medium text-muted-foreground">{t("leave.app.handover")}</span>
               <input
                 value={handoverNotes}
                 onChange={(event) => setHandoverNotes(event.target.value)}
                 disabled={busy}
+                placeholder={t("leave.app.handoverPlaceholder")}
                 className="h-10 rounded-md border bg-background px-3 text-sm"
               />
             </label>

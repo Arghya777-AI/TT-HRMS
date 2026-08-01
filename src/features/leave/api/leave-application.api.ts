@@ -59,6 +59,8 @@ export interface LeaveApplicationInput {
   readonly members: readonly ApplicationMember[];
   readonly reason: string;
   readonly contactDuringLeave: string | null;
+  /** `leave_requests.address_during_leave` — where they can be reached. */
+  readonly addressDuringLeave: string | null;
   readonly handoverToEmployeeId: string | null;
   readonly handoverNotes: string | null;
 }
@@ -148,6 +150,7 @@ export async function submitLeaveApplication(
         status: "pending",
         reason,
         contact_during_leave: input.contactDuringLeave,
+        address_during_leave: input.addressDuringLeave,
         handover_to_employee_id: input.handoverToEmployeeId,
         handover_notes: input.handoverNotes,
       },

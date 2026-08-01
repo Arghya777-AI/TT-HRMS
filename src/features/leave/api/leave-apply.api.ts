@@ -618,3 +618,32 @@ export async function fetchHolidaysInWindow(
     ...(signal ? { signal } : {}),
   });
 }
+
+// -----------------------------------------------------------------------------
+// 8. Colleagues an employee can name — handover, and peers to mention
+// -----------------------------------------------------------------------------
+
+/**
+ * The people this employee may name on a leave application.
+ *
+ * `v_employee_ref` is the one employee-readable roster: it filters archived and non-active
+ * staff itself, and it publishes name, code and designation only — no PII. That is exactly
+ * the shape a "who is covering for me" picker needs, and it is why the handover field can be
+ * offered to an employee at all without a new grant.
+ *
+ * SELF IS EXCLUDED BY THE CALLER, not here, because the same list serves the handover picker
+ * (where naming yourself is meaningless) and any future mention list (where it is merely
+ * redundant). Filtering in one place and not the other would be the kind of difference nobody
+ * remembers.
+ */
+export async function fetchColleagues(
+  limit = 300,
+  signal?: AbortSignal,
+): Promise<EmployeeRef[]> {
+  return selectMany(EMPLOYEE_REF_VIEW, employeeRefSchema, {
+    order: [{ column: "display_name", ascending: true }],
+    columns: "id, profile_id, employee_code, display_name, designation_name",
+    limit,
+    ...(signal ? { signal } : {}),
+  });
+}

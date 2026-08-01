@@ -26,7 +26,7 @@ import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
 import { keysEnrolmentStatus } from "./keys/enrolment-status";
 import { keysAdminPresence, keysOrgOther } from "./keys/admin-presence";
 import { keysHomeCalendar } from "./keys/home-calendar";
-import { keysLeaveApplication } from "./keys/leave-application";
+import { keysLeaveApplication, keysLeaveApplicationExtra } from "./keys/leave-application";
 import {
   keysOvertimeRules,
   keysAssignShift,
@@ -83,6 +83,7 @@ export const en = {
   ...keysOrgOther,
   ...keysHomeCalendar,
   ...keysLeaveApplication,
+  ...keysLeaveApplicationExtra,
   ...keysOvertimeRules,
   ...keysAssignShift,
   ...keysGrace,

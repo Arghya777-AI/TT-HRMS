@@ -18,12 +18,14 @@ import {
   fetchLeaveAllocation,
   fetchLeaveTypeRules,
   fetchMyLeaveContext,
+  fetchColleagues,
   previewLeaveRequest,
   submitLeaveRequest,
   withdrawLeaveRequest,
   type ApprovalTrail,
   type CalendarHoliday,
   type LeaveAllocationDay,
+  type EmployeeRef,
   type LeavePreview,
   type LeavePreviewInput,
   type LeaveTypeRule,
@@ -149,3 +151,18 @@ export function useWithdrawLeave(): UseMutationResult<void, Error, WithdrawLeave
 }
 
 export { NO_EMPLOYEE };
+
+/**
+ * Colleagues this employee may name — the handover person, and peers to mention.
+ *
+ * Long `staleTime`: a roster does not change while somebody fills in one form, and this list
+ * is read by every leave application.
+ */
+export function useColleagues(): UseQueryResult<EmployeeRef[], Error> {
+  return useQuery({
+    queryKey: qk.leave.list({ what: "colleagues" }),
+    queryFn: ({ signal }) => fetchColleagues(300, signal),
+    staleTime: 5 * 60_000,
+    retry: shouldRetryQuery,
+  });
+}

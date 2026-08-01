@@ -57,3 +57,13 @@ export const keysLeaveApplication = {
   "leave.app.problem.exclusive":
     "{type} must be taken on its own and cannot be combined with another leave type.",
 } as const;
+
+/** Added after the first cut: cover, address, and the loss-of-pay escape. */
+export const keysLeaveApplicationExtra = {
+  "leave.app.takeLwp": "Take the remaining {days} day(s) as loss of pay",
+  "leave.app.coveredBy": "Who is covering for you",
+  "leave.app.coveredByNone": "— nobody —",
+  "leave.app.coveredByHint": "Required in operational departments.",
+  "leave.app.address": "Where you will be (optional)",
+  "leave.app.handoverPlaceholder": "What your stand-in needs to know",
+} as const;

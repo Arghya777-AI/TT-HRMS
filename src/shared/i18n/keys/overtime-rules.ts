@@ -174,3 +174,22 @@ export const keysCompOffManual = {
     "3 · The comp-off credit appears from the corrected day, and waits for approval like any other.",
   "leave.otRules.manual.action": "Request a correction",
 } as const;
+
+export const keysStageDocs = {
+  "admin.people.add.step.documents": "Documents",
+  "admin.people.add.hint.documents":
+    "Anything you were handed for this person. Files are held here and attached the moment the record is created — you can also add more afterwards.",
+  "admin.stageDocs.title": "Documents to attach",
+  "admin.stageDocs.hint":
+    "Add each file with its type. Nothing is uploaded until the employee record is created on the next step.",
+  "admin.stageDocs.add": "Add to the list",
+  "admin.stageDocs.remove": "Remove",
+  "admin.stageDocs.empty": "No documents staged. This step is optional — skip it if you have none.",
+  "admin.stageDocs.staged": "{n} file(s) ready to attach",
+  "admin.stageDocs.needType": "Choose a document type first.",
+  "admin.stageDocs.needFile": "Choose a file first.",
+  "admin.stageDocs.needExpiry": "This type needs an expiry date.",
+  "admin.stageDocs.uploading": "Attaching {n} document(s)…",
+  "admin.stageDocs.uploaded": "{n} attached.",
+  "admin.stageDocs.failed": "{name} could not be attached: {reason}",
+} as const;

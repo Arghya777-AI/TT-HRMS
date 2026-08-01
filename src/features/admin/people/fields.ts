@@ -685,13 +685,29 @@ export function exitGroups(): readonly FieldGroup[] {
 // 5. Add Employee — the wizard's four collecting steps
 // -----------------------------------------------------------------------------
 
-export type WizardStepId = "identity" | "employment" | "placement" | "policy" | "review";
+export type WizardStepId =
+  | "identity"
+  | "employment"
+  | "placement"
+  | "policy"
+  /**
+   * Documents are STAGED here and uploaded the moment the employee exists.
+   *
+   * They cannot be uploaded during the step: `documents.employee_id` is NOT NULL for an
+   * employee subject and the code comes from a trigger, so there is nobody to attach to
+   * until the INSERT. The step therefore collects files in memory and the success screen
+   * uploads them — which is what "attach documents while adding an employee" has to mean
+   * given the schema, rather than a step that pretends to save.
+   */
+  | "documents"
+  | "review";
 
 export const WIZARD_STEPS: readonly WizardStepId[] = [
   "identity",
   "employment",
   "placement",
   "policy",
+  "documents",
   "review",
 ];
 
@@ -705,6 +721,8 @@ export function wizardStepTitle(step: WizardStepId): string {
       return t("admin.people.add.step.placement");
     case "policy":
       return t("admin.people.add.step.policy");
+    case "documents":
+      return t("admin.people.add.step.documents");
     case "review":
       return t("admin.people.add.step.review");
   }
@@ -720,6 +738,8 @@ export function wizardStepHint(step: WizardStepId): string {
       return t("admin.people.add.hint.placement");
     case "policy":
       return t("admin.people.add.hint.policy");
+    case "documents":
+      return t("admin.people.add.hint.documents");
     case "review":
       return t("admin.people.add.hint.review");
   }
@@ -736,6 +756,8 @@ export function wizardStepGroups(step: WizardStepId, refs: PeopleRefs): readonly
       return [orgPlacementGroup(refs)];
     case "policy":
       return timePolicyGroups(refs);
+    // Both collect no employee COLUMNS: documents are staged files, review is a read-back.
+    case "documents":
     case "review":
       return [];
   }

@@ -40,6 +40,9 @@ import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { FieldGroupSection } from "../components/FieldGroupSection";
 import { AttachDocumentsCard } from "../components/AttachDocumentsCard";
+import { StageDocumentsStep, type StagedDocument } from "../components/StageDocumentsStep";
+import { attachEmployeeDocument } from "../api/employee-documents.api";
+import { useAuth } from "@/app/auth/AuthProvider";
 import {
   coerceValues,
   validateFields,
@@ -77,6 +80,8 @@ export default function AddEmployeePage() {
   const navigate = useNavigate();
   const refs = usePeopleRefs();
   const companyId = useDefaultCompanyId();
+  const { session } = useAuth();
+  const actorProfileId = session?.user.id ?? null;
 
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<FormValues>(() => withDefaults({}, NEW_EMPLOYEE_DEFAULTS));
@@ -95,6 +100,9 @@ export default function AddEmployeePage() {
   const [accountError, setAccountError] = useState<string | null>(null);
   /** A failure creating an "Other" master, before any employee exists. */
   const [otherError, setOtherError] = useState<string | null>(null);
+  /** Documents collected on the Documents step, uploaded once the employee id exists. */
+  const [staged, setStaged] = useState<readonly StagedDocument[]>([]);
+  const [docResults, setDocResults] = useState<{ ok: number; failures: string[] } | null>(null);
   const qc = useQueryClient();
 
   const step: WizardStepId = WIZARD_STEPS[stepIndex] ?? "identity";
@@ -141,6 +149,39 @@ export default function AddEmployeePage() {
         // The employee exists. Say what stopped the login and where to finish it.
         setAccount(null);
         setAccountError(mutationUserMessage(err));
+      }
+      /*
+        THE STAGED DOCUMENTS, uploaded now that an employee id exists.
+
+        Per file, and never allowed to fail the creation — same rule as the account
+        provisioning above and for the same reason: the employee row is committed by this
+        point, so a failed upload must not present as a failed creation. Failures are
+        NAMED on the success screen and the attach card is still there to retry them.
+      */
+      if (staged.length > 0 && companyId !== null) {
+        const failures: string[] = [];
+        let ok = 0;
+        for (const doc of staged) {
+          try {
+            await attachEmployeeDocument({
+              employeeId: row.id,
+              companyId,
+              actorProfileId: actorProfileId ?? "",
+              type: doc.type,
+              title: doc.title,
+              file: doc.file,
+              issueDate: doc.issueDate,
+              expiryDate: doc.expiryDate,
+              note: doc.note,
+            });
+            ok += 1;
+          } catch (err) {
+            failures.push(
+              t("admin.stageDocs.failed", { name: doc.title, reason: mutationUserMessage(err) }),
+            );
+          }
+        }
+        setDocResults({ ok, failures });
       }
       return row;
     },
@@ -309,6 +350,21 @@ export default function AddEmployeePage() {
             this flow must not have: an employee created and their paperwork lost because
             an upload failed after the point of no return.
           */}
+          {docResults !== null ? (
+            <div className="mt-5 space-y-2">
+              {docResults.ok > 0 ? (
+                <Notice tone="success">
+                  {t("admin.stageDocs.uploaded", { n: String(docResults.ok) })}
+                </Notice>
+              ) : null}
+              {docResults.failures.map((line) => (
+                <Notice key={line} tone="error">
+                  {line}
+                </Notice>
+              ))}
+            </div>
+          ) : null}
+
           <div className="mt-5">
             <AttachDocumentsCard
               employeeId={created.id}
@@ -394,7 +450,15 @@ export default function AddEmployeePage() {
       ) : null}
 
       {/* Steps 1–4 collect; step 5 reviews. */}
-      {!isReview ? (
+      {step === "documents" ? (
+        <div className="mt-4">
+          <StageDocumentsStep
+            staged={staged}
+            onChange={setStaged}
+            disabled={create.isPending}
+          />
+        </div>
+      ) : !isReview ? (
         <div className="mt-4 space-y-4">
           {groups.map((group) => (
             <FieldGroupSection

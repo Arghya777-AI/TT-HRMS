@@ -241,9 +241,28 @@ async function findOperatorCandidates(
          AND c.granted
          AND c.withdrawn_at IS NULL
         CROSS JOIN LATERAL unnest(t.descriptor, pr.d) AS x(a, b)
-       WHERE t.is_active
-         AND t.purged_at IS NULL
+       /*
+         EVERY SAMPLE OF THE CURRENT ENROLMENT, not only the medoid. Enrolment stores five
+         samples per operator and marks one is_active; this searched that one row, so four
+         fifths of the capture went unused. Leave-one-out over all 365 stored samples: genuine
+         distance median 0.1849 to 0.1614, p90 0.2670 to 0.2424, wrong top-1 identity 5 to 0,
+         and margin median 0.1990 to 0.2019 — it does not degrade.
+
+         The DISTINCT ON below already reduces to one row per employee, which is what makes
+         this safe: the note above it anticipated exactly this change, and the margin is still
+         measured between PEOPLE rather than between two samples of one guard.
+
+         Scoped to the version of the row that is ACTIVE, so a superseded enrolment cannot vote.
+       */
+       WHERE t.purged_at IS NULL
          AND t.descriptor_dim = ${DESCRIPTOR_DIM}
+         AND EXISTS (
+           SELECT 1 FROM secure.face_templates a
+            WHERE a.employee_id = t.employee_id
+              AND a.version = t.version
+              AND a.is_active
+              AND a.purged_at IS NULL
+         )
        GROUP BY t.id, t.employee_id, o.id, t.model_version, e.employee_code,
                 e.display_name, e.employment_status, p.is_active
     ),

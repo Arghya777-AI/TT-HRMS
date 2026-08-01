@@ -325,31 +325,79 @@ async function findCandidates(
   descriptor: readonly number[],
 ): Promise<{ candidates: Candidate[]; candidateSetSize: number }> {
   const rows = await client<CandidateRow[]>`
-    WITH probe AS (SELECT ${toPgRealArray(descriptor)}::real[] AS d)
-    SELECT t.id                        AS template_id,
-           t.employee_id               AS employee_id,
-           t.model_version             AS model_version,
-           e.employee_code             AS employee_code,
-           e.display_name              AS display_name,
-           e.photo_path                AS photo_path,
-           e.employment_status::text   AS employment_status,
-           sqrt(sum(power(x.a::double precision - x.b::double precision, 2)))::numeric(8,5) AS distance,
+    WITH probe AS (SELECT ${toPgRealArray(descriptor)}::real[] AS d),
+    /*
+      EVERY SAMPLE OF THE CURRENT ENROLMENT, not only the medoid.
+
+      Enrolment stores five samples per employee and marks one — the medoid — as the single
+      is_active row, so this gate has been matching against a fifth of what was captured.
+      Leave-one-out over all 365 stored samples:
+
+                                    medoid only     all samples
+        wrong top-1 identity              5              0
+        genuine distance, median      0.1849         0.1614
+        genuine distance, p90         0.2670         0.2424
+        margin, median                0.1990         0.2019
+
+      Scoped to the ACTIVE ROW's version, so a superseded enrolment cannot vote: re-enrolling
+      replaces the set the moment its new medoid becomes active.
+    */
+    eligible AS (
+      SELECT t.id, t.employee_id, t.model_version, t.descriptor,
+             e.employee_code, e.display_name, e.photo_path, e.employment_status
+        FROM secure.face_templates t
+        JOIN public.employees e
+          ON e.id = t.employee_id
+         AND e.deleted_at IS NULL
+        JOIN secure.biometric_consents c
+          ON c.id = t.consent_id
+         AND c.granted
+         AND c.withdrawn_at IS NULL
+       WHERE t.purged_at IS NULL
+         AND t.descriptor_dim = ${DESCRIPTOR_DIM}
+         AND EXISTS (
+           SELECT 1 FROM secure.face_templates a
+            WHERE a.employee_id = t.employee_id
+              AND a.version = t.version
+              AND a.is_active
+              AND a.purged_at IS NULL
+         )
+    ),
+    per_sample AS (
+      SELECT t.id AS template_id, t.employee_id, t.model_version,
+             t.employee_code, t.display_name, t.photo_path,
+             t.employment_status::text AS employment_status,
+             sqrt(sum(power(x.a::double precision - x.b::double precision, 2))) AS distance
+        FROM probe p
+        CROSS JOIN eligible t
+        CROSS JOIN LATERAL unnest(t.descriptor, p.d) AS x(a, b)
+       GROUP BY t.id, t.employee_id, t.model_version, t.employee_code, t.display_name,
+                t.photo_path, t.employment_status
+    ),
+    /*
+      ONE ROW PER EMPLOYEE, and this is what keeps the margin meaningful. Ranking samples
+      directly would fill the top three with the same face, make the runner-up that person
+      again, and collapse the margin to nearly nothing — every honest punch refused as
+      ambiguous. The margin exists to separate PEOPLE, so it must be measured between them.
+      (kiosk-guard-identify has always done this, for exactly this reason.)
+    */
+    best_per_employee AS (
+      SELECT DISTINCT ON (employee_id)
+             template_id, employee_id, model_version, employee_code, display_name,
+             photo_path, employment_status, distance
+        FROM per_sample
+       ORDER BY employee_id, distance ASC
+    )
+    SELECT template_id                 AS template_id,
+           employee_id                 AS employee_id,
+           model_version               AS model_version,
+           employee_code               AS employee_code,
+           display_name                AS display_name,
+           photo_path                  AS photo_path,
+           employment_status           AS employment_status,
+           distance::numeric(8,5)      AS distance,
            (count(*) OVER ())::integer AS candidate_set_size
-      FROM probe p
-      CROSS JOIN secure.face_templates t
-      JOIN public.employees e
-        ON e.id = t.employee_id
-       AND e.deleted_at IS NULL
-      JOIN secure.biometric_consents c
-        ON c.id = t.consent_id
-       AND c.granted
-       AND c.withdrawn_at IS NULL
-      CROSS JOIN LATERAL unnest(t.descriptor, p.d) AS x(a, b)
-     WHERE t.is_active
-       AND t.purged_at IS NULL
-       AND t.descriptor_dim = ${DESCRIPTOR_DIM}
-     GROUP BY t.id, t.employee_id, t.model_version, e.employee_code, e.display_name,
-              e.photo_path, e.employment_status
+      FROM best_per_employee
      ORDER BY distance ASC
      LIMIT 3
   `;

@@ -34,8 +34,20 @@ describe("page modules", () => {
     expect(entries.length).toBeGreaterThan(150);
   });
 
-  // One test per page: a failure names the exact route, which is what makes the
-  // output useful when several break at once.
+  /*
+    One test per page: a failure names the exact route, which is what makes the output useful
+    when several break at once.
+
+    THE TIMEOUT IS RAISED, and not to paper over a slow page. Each of these is a cold dynamic
+    import, so whichever route Vitest happens to run FIRST pays for transforming the shared
+    graph behind it — providers, the query client, the design system — while the rest are then
+    nearly free. Under load that first import passed 5 s and the suite failed on a different,
+    arbitrary route each run (/admin one time, /admin/analytics the next), which reads as a
+    broken page and is not one. 20 s is well clear of the observed worst case and still fails
+    fast on a page that genuinely cannot load.
+  */
+  const COLD_IMPORT_TIMEOUT_MS = 20_000;
+
   for (const [routePath, load] of entries) {
     it(`${routePath} loads and default-exports a component`, async () => {
       const mod = await load();
@@ -44,6 +56,6 @@ describe("page modules", () => {
         typeof mod.default,
         `${routePath} has no default export (found: ${typeof mod.default})`,
       ).toBe("function");
-    });
+    }, COLD_IMPORT_TIMEOUT_MS);
   }
 });

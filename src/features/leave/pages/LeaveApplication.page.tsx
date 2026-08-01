@@ -327,298 +327,310 @@ export default function LeaveApplicationPage() {
         onRetry={() => void contextQuery.refetch()}
         skeletonRows={4}
       >
-        {/* ── 1. How many days ────────────────────────────────────────────── */}
-        <section className="rounded-lg border bg-card p-4">
-          <h2 className="font-display text-sm font-semibold">{t("leave.app.step1")}</h2>
-          <div className="mt-3 flex flex-wrap items-end gap-4">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="font-medium text-muted-foreground">{t("leave.app.days")}</span>
-              <input
-                type="number"
-                min="0.5"
-                step="0.5"
-                value={totalDays}
-                onChange={(event) => {
-                  setTotalDays(event.target.value);
-                  setAllocations([]);
-                }}
-                className="num h-10 w-28 rounded-md border bg-background px-3 text-lg font-semibold tabular-nums"
-              />
-            </label>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={total <= 0}
-              onClick={() => setAllocations(suggestAllocation(total, types))}
-            >
-              {t("leave.app.suggest")}
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">{t("leave.app.daysHint")}</p>
+        {/*
+          STEPS 1 AND 2 SIT SIDE BY SIDE, the balances in a narrow column beside the calendar.
+          Stacked, the calendar pushed "where should these days come from?" off the bottom of the
+          screen — so choosing dates and choosing balances, which are decided against each other,
+          could not be seen at once. The balance column is deliberately the narrow one: each row
+          is a name and a number, while the calendar has a fixed minimum width it cannot go below.
 
-          {/* ── The dates ────────────────────────────────────────────────────
-              Typed fields AND a calendar, both writing the same two pieces of state. The
-              fields are faster for anyone who knows the dates; the calendar is the only
-              thing that can show a weekly off before it is chosen. */}
-          <div className="mt-4 border-t pt-4">
-            <h3 className="text-xs font-semibold">{t("leave.app.range.title")}</h3>
-            <div className="mt-2 grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-              <div>
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="font-medium text-muted-foreground">
-                      {t("leave.app.range.from")}
-                    </span>
-                    <input
-                      type="date"
-                      value={fromDate}
-                      onChange={(event) => setFromDate(event.target.value)}
-                      className="h-10 rounded-md border bg-background px-3 text-sm"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1 text-xs">
-                    <span className="font-medium text-muted-foreground">
-                      {t("leave.app.range.to")}
-                    </span>
-                    <input
-                      type="date"
-                      value={toDate}
-                      min={fromDate}
-                      onChange={(event) => setToDate(event.target.value)}
-                      className="h-10 rounded-md border bg-background px-3 text-sm"
-                    />
-                  </label>
-                </div>
-                <div className="mt-3">
-                  <LeaveRangeCalendar
-                    fromDate={fromDate}
-                    toDate={toDate}
-                    onChange={(nextFrom, nextTo) => {
-                      setFromDate(nextFrom);
-                      setToDate(nextTo);
-                    }}
-                  />
-                </div>
-              </div>
+          One column below `xl`, because seven date cells plus a balance list do not fit a laptop
+          width, let alone a phone.
+        */}
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,21rem)]">
+          {/* ── 1. How many days ────────────────────────────────────────────── */}
+          <section className="rounded-lg border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold">{t("leave.app.step1")}</h2>
+            <div className="mt-3 flex flex-wrap items-end gap-4">
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="font-medium text-muted-foreground">{t("leave.app.days")}</span>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={totalDays}
+                  onChange={(event) => {
+                    setTotalDays(event.target.value);
+                    setAllocations([]);
+                  }}
+                  className="num h-10 w-28 rounded-md border bg-background px-3 text-lg font-semibold tabular-nums"
+                />
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={total <= 0}
+                onClick={() => setAllocations(suggestAllocation(total, types))}
+              >
+                {t("leave.app.suggest")}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{t("leave.app.daysHint")}</p>
 
-              {/* ── What these dates actually cost ───────────────────────── */}
-              <div className="min-w-0">
-                {badRange !== null ? (
-                  <p className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
-                    {rangeProblemText(badRange)}
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <p className="num text-2xl font-semibold tabular-nums">
-                        {countable.isPending
-                          ? "—"
-                          : t("leave.app.range.counted", {
-                              days: formatNumber(summary.countedDays),
+            {/* ── The dates ────────────────────────────────────────────────────
+                Typed fields AND a calendar, both writing the same two pieces of state. The
+                fields are faster for anyone who knows the dates; the calendar is the only
+                thing that can show a weekly off before it is chosen. */}
+            <div className="mt-4 border-t pt-4">
+              <h3 className="text-xs font-semibold">{t("leave.app.range.title")}</h3>
+              <div className="mt-2 grid gap-4 md:grid-cols-[minmax(0,19rem)_minmax(0,1fr)]">
+                <div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="font-medium text-muted-foreground">
+                        {t("leave.app.range.from")}
+                      </span>
+                      <input
+                        type="date"
+                        value={fromDate}
+                        onChange={(event) => setFromDate(event.target.value)}
+                        className="h-10 rounded-md border bg-background px-3 text-sm"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="font-medium text-muted-foreground">
+                        {t("leave.app.range.to")}
+                      </span>
+                      <input
+                        type="date"
+                        value={toDate}
+                        min={fromDate}
+                        onChange={(event) => setToDate(event.target.value)}
+                        className="h-10 rounded-md border bg-background px-3 text-sm"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3">
+                    <LeaveRangeCalendar
+                      fromDate={fromDate}
+                      toDate={toDate}
+                      onChange={(nextFrom, nextTo) => {
+                        setFromDate(nextFrom);
+                        setToDate(nextTo);
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* ── What these dates actually cost ───────────────────────── */}
+                <div className="min-w-0">
+                  {badRange !== null ? (
+                    <p className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                      {rangeProblemText(badRange)}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <p className="num text-2xl font-semibold tabular-nums">
+                          {countable.isPending
+                            ? "—"
+                            : t("leave.app.range.counted", {
+                                days: formatNumber(summary.countedDays),
+                              })}
+                        </p>
+                        {summary.dates.length > 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t("leave.app.range.countedOf", {
+                              counted: formatNumber(summary.countedDays),
+                              span: formatNumber(summary.dates.length),
                             })}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {summary.dates.length === 0
+                          ? ""
+                          : summary.freeDays === 0
+                            ? t("leave.app.range.freeNone")
+                            : t("leave.app.range.freeSome", {
+                                free: formatNumber(summary.freeDays),
+                                weeklyOffs: formatNumber(summary.weeklyOffs),
+                                holidays: formatNumber(summary.holidays),
+                              })}
                       </p>
-                      {summary.dates.length > 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          {t("leave.app.range.countedOf", {
-                            counted: formatNumber(summary.countedDays),
-                            span: formatNumber(summary.dates.length),
-                          })}
+
+                      {split.problem !== null ? (
+                        <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                          {splitProblemText(split.problem)}
                         </p>
                       ) : null}
-                    </div>
 
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {summary.dates.length === 0
-                        ? ""
-                        : summary.freeDays === 0
-                          ? t("leave.app.range.freeNone")
-                          : t("leave.app.range.freeSome", {
-                              free: formatNumber(summary.freeDays),
-                              weeklyOffs: formatNumber(summary.weeklyOffs),
-                              holidays: formatNumber(summary.holidays),
+                      {mismatch !== null ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                          <span className="min-w-0 flex-1">{mismatchText(mismatch)}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setTotalDays(String(summary.countedDays));
+                              setAllocations([]);
+                            }}
+                          >
+                            {t("leave.app.range.useCounted", {
+                              days: formatNumber(summary.countedDays),
                             })}
-                    </p>
+                          </Button>
+                        </div>
+                      ) : null}
 
-                    {split.problem !== null ? (
-                      <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
-                        {splitProblemText(split.problem)}
-                      </p>
-                    ) : null}
-
-                    {mismatch !== null ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
-                        <span className="min-w-0 flex-1">{mismatchText(mismatch)}</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setTotalDays(String(summary.countedDays));
-                            setAllocations([]);
-                          }}
-                        >
-                          {t("leave.app.range.useCounted", {
-                            days: formatNumber(summary.countedDays),
-                          })}
-                        </Button>
-                      </div>
-                    ) : null}
-
-                    {/* Which dates each type will carry. Shown because the split is not
-                        obvious and the employee is entitled to see it before it is filed —
-                        these become separate requests with separate numbers. */}
-                    {split.segments.length > 1 ? (
-                      <div className="mt-3 rounded-md border bg-muted/30 p-2.5">
-                        <p className="text-xs font-medium">{t("leave.app.range.perType")}</p>
-                        <ul className="mt-1 space-y-0.5 text-xs">
-                          {split.segments.map((segment, index) => (
-                            <li
-                              key={`${segment.typeId}-${segment.fromDate}-${index}`}
-                              className="flex flex-wrap items-baseline justify-between gap-x-2"
-                            >
-                              <span className="font-medium">
-                                {types.find((type) => type.id === segment.typeId)?.name ??
-                                  segment.typeId}
-                              </span>
-                              <span className="text-muted-foreground">
-                                {segment.fromDate === segment.toDate
-                                  ? fmtCivilDayMonthWeekday(segment.fromDate)
-                                  : `${fmtCivilDayMonthWeekday(segment.fromDate)} – ${fmtCivilDayMonthWeekday(segment.toDate)}`}
-                                {" · "}
-                                {t("leave.app.range.segmentDays", {
-                                  days: formatNumber(segment.expectedDays),
-                                })}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                        <p className="mt-1 text-[0.65rem] text-muted-foreground">
-                          {t("leave.app.range.perTypeHint")}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {/* The per-date list — the preview the old screen had, now shown before
-                        anything is filed rather than after. */}
-                    {summary.dates.length > 0 ? (
-                      <div className="mt-3">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {t("leave.app.range.perDate")}
-                        </p>
-                        <ul className="mt-1 max-h-56 space-y-0.5 overflow-y-auto pr-1 text-xs">
-                          {summary.dates.map((day) => {
-                            const reason = freeDayReason(day);
-                            return (
+                      {/* Which dates each type will carry. Shown because the split is not
+                          obvious and the employee is entitled to see it before it is filed —
+                          these become separate requests with separate numbers. */}
+                      {split.segments.length > 1 ? (
+                        <div className="mt-3 rounded-md border bg-muted/30 p-2.5">
+                          <p className="text-xs font-medium">{t("leave.app.range.perType")}</p>
+                          <ul className="mt-1 space-y-0.5 text-xs">
+                            {split.segments.map((segment, index) => (
                               <li
-                                key={day.leave_date}
-                                className={cn(
-                                  "flex items-baseline justify-between gap-2 rounded px-1.5 py-0.5",
-                                  reason === null ? "" : "text-muted-foreground",
-                                )}
+                                key={`${segment.typeId}-${segment.fromDate}-${index}`}
+                                className="flex flex-wrap items-baseline justify-between gap-x-2"
                               >
-                                <span>{fmtCivilDayMonthWeekday(day.leave_date)}</span>
-                                <span className="shrink-0">
-                                  {reason === null
-                                    ? "1"
-                                    : reason === "weekly_off"
-                                      ? `${t("leave.app.range.weeklyOff")} · ${t("leave.app.range.notCounted")}`
-                                      : `${day.holiday_name ?? t("leave.app.range.holiday")} · ${t("leave.app.range.notCounted")}`}
+                                <span className="font-medium">
+                                  {types.find((type) => type.id === segment.typeId)?.name ??
+                                    segment.typeId}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {segment.fromDate === segment.toDate
+                                    ? fmtCivilDayMonthWeekday(segment.fromDate)
+                                    : `${fmtCivilDayMonthWeekday(segment.fromDate)} – ${fmtCivilDayMonthWeekday(segment.toDate)}`}
+                                  {" · "}
+                                  {t("leave.app.range.segmentDays", {
+                                    days: formatNumber(segment.expectedDays),
+                                  })}
                                 </span>
                               </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                            ))}
+                          </ul>
+                          <p className="mt-1 text-[0.65rem] text-muted-foreground">
+                            {t("leave.app.range.perTypeHint")}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {/* The per-date list — the preview the old screen had, now shown before
+                          anything is filed rather than after. */}
+                      {summary.dates.length > 0 ? (
+                        <div className="mt-3">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {t("leave.app.range.perDate")}
+                          </p>
+                          <ul className="mt-1 max-h-56 space-y-0.5 overflow-y-auto pr-1 text-xs">
+                            {summary.dates.map((day) => {
+                              const reason = freeDayReason(day);
+                              return (
+                                <li
+                                  key={day.leave_date}
+                                  className={cn(
+                                    "flex items-baseline justify-between gap-2 rounded px-1.5 py-0.5",
+                                    reason === null ? "" : "text-muted-foreground",
+                                  )}
+                                >
+                                  <span>{fmtCivilDayMonthWeekday(day.leave_date)}</span>
+                                  <span className="shrink-0">
+                                    {reason === null
+                                      ? "1"
+                                      : reason === "weekly_off"
+                                        ? `${t("leave.app.range.weeklyOff")} · ${t("leave.app.range.notCounted")}`
+                                        : `${day.holiday_name ?? t("leave.app.range.holiday")} · ${t("leave.app.range.notCounted")}`}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* ── 2. Where the days come from ─────────────────────────────────── */}
-        <section className="mt-4 rounded-lg border bg-card p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-display text-sm font-semibold">{t("leave.app.step2")}</h2>
-            <p
-              className={cn(
-                "num text-sm font-semibold tabular-nums",
-                remaining === 0 ? "text-success" : remaining < 0 ? "text-destructive" : "text-warning",
-              )}
-            >
-              {remaining === 0
-                ? t("leave.app.allPlaced")
-                : remaining > 0
-                  ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
-                  : t("leave.app.overBy", { days: formatNumber(-remaining) })}
-            </p>
-          </div>
+          {/* ── 2. Where the days come from ─────────────────────────────────── */}
+          <section className="rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-display text-sm font-semibold">{t("leave.app.step2")}</h2>
+              <p
+                className={cn(
+                  "num text-sm font-semibold tabular-nums",
+                  remaining === 0 ? "text-success" : remaining < 0 ? "text-destructive" : "text-warning",
+                )}
+              >
+                {remaining === 0
+                  ? t("leave.app.allPlaced")
+                  : remaining > 0
+                    ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
+                    : t("leave.app.overBy", { days: formatNumber(-remaining) })}
+              </p>
+            </div>
 
-          {/*
-            TAKE THE SHORTFALL AS LOSS OF PAY. Unpaid leave has no balance to run out of, so
-            this is the honest escape when the paid balances do not cover the request — and it
-            is a deliberate button rather than something the suggester does silently, because
-            it costs the employee money.
-          */}
-          {remaining > 0 && lwpType !== null && exclusiveChosen === null ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={() => setDays(lwpType.id, daysFor(lwpType.id) + remaining)}
-            >
-              {t("leave.app.takeLwp", { days: formatNumber(remaining) })}
-            </Button>
-          ) : null}
+            {/*
+              TAKE THE SHORTFALL AS LOSS OF PAY. Unpaid leave has no balance to run out of, so
+              this is the honest escape when the paid balances do not cover the request — and it
+              is a deliberate button rather than something the suggester does silently, because
+              it costs the employee money.
+            */}
+            {remaining > 0 && lwpType !== null && exclusiveChosen === null ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => setDays(lwpType.id, daysFor(lwpType.id) + remaining)}
+              >
+                {t("leave.app.takeLwp", { days: formatNumber(remaining) })}
+              </Button>
+            ) : null}
 
-          {exclusiveChosen !== null ? (
-            <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
-              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              {t("leave.app.exclusiveLock", { type: exclusiveChosen.name })}
-            </p>
-          ) : null}
+            {exclusiveChosen !== null ? (
+              <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
+                <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                {t("leave.app.exclusiveLock", { type: exclusiveChosen.name })}
+              </p>
+            ) : null}
 
-          <ul className="mt-3 space-y-2">
-            {types.map((type) => {
-              const chosen = daysFor(type.id);
-              const locked = exclusiveChosen !== null && exclusiveChosen.id !== type.id;
-              const empty = type.isPaid && type.availableDays <= 0;
-              return (
-                <li
-                  key={type.id}
-                  className={cn(
-                    "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2",
-                    chosen > 0 ? "border-primary bg-primary/5" : "bg-background/60",
-                    (locked || empty) && "opacity-50",
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium">{type.name}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {type.isPaid
-                        ? t("leave.app.available", { days: formatNumber(type.availableDays) })
-                        : t("leave.app.unpaid")}
-                      {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
+            <ul className="mt-3 space-y-2">
+              {types.map((type) => {
+                const chosen = daysFor(type.id);
+                const locked = exclusiveChosen !== null && exclusiveChosen.id !== type.id;
+                const empty = type.isPaid && type.availableDays <= 0;
+                return (
+                  <li
+                    key={type.id}
+                    className={cn(
+                      "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2",
+                      chosen > 0 ? "border-primary bg-primary/5" : "bg-background/60",
+                      (locked || empty) && "opacity-50",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium">{type.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {type.isPaid
+                          ? t("leave.app.available", { days: formatNumber(type.availableDays) })
+                          : t("leave.app.unpaid")}
+                        {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
+                      </span>
                     </span>
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={chosen === 0 ? "" : String(chosen)}
-                    placeholder="0"
-                    disabled={locked || empty || busy}
-                    onChange={(event) =>
-                      setDays(type.id, Number.parseFloat(event.target.value) || 0)
-                    }
-                    aria-label={t("leave.app.daysFrom", { type: type.name })}
-                    className="num h-9 w-20 rounded-md border bg-background px-2 text-right tabular-nums"
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={chosen === 0 ? "" : String(chosen)}
+                      placeholder="0"
+                      disabled={locked || empty || busy}
+                      onChange={(event) =>
+                        setDays(type.id, Number.parseFloat(event.target.value) || 0)
+                      }
+                      aria-label={t("leave.app.daysFrom", { type: type.name })}
+                      className="num h-9 w-16 shrink-0 rounded-md border bg-background px-2 text-right tabular-nums"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        </div>
 
         {/* ── 3. Why ──────────────────────────────────────────────────────── */}
         <section className="mt-4 rounded-lg border bg-card p-4">

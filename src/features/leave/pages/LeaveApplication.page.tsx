@@ -1,5 +1,16 @@
 /**
- * /me/leave/apply-combined — how many days, which dates, where the days come from.
+ * /me/leave/apply — how many days, which dates, where the days come from.
+ *
+ * IT REPLACES THE PREVIOUS APPLY SCREEN rather than sitting beside it. Shipping it at its own
+ * path left two "apply for leave" links, which was reported immediately and was right: six
+ * places link to `/me/leave/apply` and that is the one an employee finds. The old
+ * `LeaveApply.page` is deleted, not orphaned.
+ *
+ * WHAT WAS LOST IN THAT SWAP, stated rather than glossed: the old screen ran a server preview
+ * and listed the individual dates it would count. This one shows the total the server
+ * computed per request after filing, not before. The arithmetic is still the server's — no
+ * browser ever counts the days — but the employee no longer sees WHICH dates were excluded
+ * until the request exists. Worth restoring.
  *
  * THE ORDER IS THE FEATURE. The existing form asks for dates and derives a length, which is
  * backwards for somebody who knows they want three days and has to work out which balances
@@ -23,7 +34,7 @@
  * The employee states a number; the server decides which dates it lands on and the request
  * carries its own `total_days`.
  *
- * @route /me/leave/apply-combined
+ * @route /me/leave/apply
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";

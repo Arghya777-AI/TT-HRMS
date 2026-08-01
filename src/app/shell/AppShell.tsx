@@ -43,6 +43,8 @@ import { BRAND } from "@/config/brand";
 import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { useAppRealtime } from "@/shared/hooks/useAppRealtime";
+import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
+import { useServiceWorker } from "@/shared/pwa/registerServiceWorker";
 import {
   AI_FAB,
   FOOTER_ITEMS,
@@ -245,6 +247,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     return window.localStorage.getItem(RAIL_KEY) === "collapsed";
   });
   const [moreOpen, setMoreOpen] = useState(false);
+  /*
+    "Later" hides the update notice for THIS session only — deliberately not persisted. The
+    waiting worker does not go away, and a new bundle usually exists because something was
+    fixed; a permanent dismissal would leave somebody on a known-broken version indefinitely.
+  */
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const serviceWorker = useServiceWorker();
+  const sw = {
+    updateReady: serviceWorker.updateReady && !updateDismissed,
+    applyUpdate: serviceWorker.applyUpdate,
+  };
 
   // Counts are wired by the feature layer; empty means "render no badges".
   const counts = useMemo<BadgeCounts>(() => ({}), []);
@@ -433,13 +446,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                 end={item.to === "/me"}
                 className={({ isActive }) =>
                   cn(
-                    "flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px]",
+                    // `min-w-0`: a flex item is floored at its content width by default, so a
+                    // long label made this bar wider than the phone — and being `inset-x-0`
+                    // fixed, it stretched the document and every page scrolled sideways.
+                    "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] min-[360px]:text-[11px]",
                     isActive ? "text-primary" : "text-muted-foreground",
                   )
                 }
               >
                 <Icon className="h-5 w-5" aria-hidden />
-                <span className="truncate px-1">{t(item.labelKey)}</span>
+                <span className="w-full truncate px-0.5 text-center">
+                  {t(item.mobileLabelKey ?? item.labelKey)}
+                </span>
               </NavLink>
             );
           })}
@@ -447,22 +465,54 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SheetTrigger asChild>
               <button
                 type="button"
-                className="flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] text-muted-foreground"
+                className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground min-[360px]:text-[11px]"
               >
                 <MoreHorizontal className="h-5 w-5" aria-hidden />
-                <span>{t("shell.nav.more")}</span>
+                <span className="w-full truncate px-0.5 text-center">{t("shell.nav.more")}</span>
               </button>
             </SheetTrigger>
             <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
               <SheetHeader>
                 <SheetTitle>{t("shell.nav.more")}</SheetTitle>
               </SheetHeader>
+              {/*
+                The install offer sits here rather than on the home screen: this is the one
+                surface every employee on a phone already opens, and it is not on the critical
+                path of any task. It renders nothing once the app IS installed.
+              */}
+              <div className="mt-3">
+                <InstallAppCard />
+              </div>
               <div className="mt-2">
                 <NavGroups collapsed={false} counts={counts} onNavigate={() => setMoreOpen(false)} />
               </div>
             </SheetContent>
           </Sheet>
         </nav>
+
+        {/*
+          A NEW VERSION IS READY — offered, never applied behind the user's back. The worker
+          waits (see `useServiceWorker`), so this is the only route by which an installed app
+          moves to a new bundle. Positioned above the mobile bottom bar so it cannot cover the
+          navigation, and it takes the FAB's place in the stacking order rather than fighting it.
+        */}
+        {sw.updateReady ? (
+          <div
+            role="status"
+            className="fixed inset-x-3 bottom-[72px] z-[45] rounded-lg border border-primary/40 bg-card p-3 shadow-lg md:inset-x-auto md:bottom-6 md:left-6 md:max-w-sm"
+          >
+            <p className="text-sm font-medium">{t("pwa.update.title")}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("pwa.update.body")}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <Button size="sm" onClick={sw.applyUpdate}>
+                {t("pwa.update.action")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setUpdateDismissed(true)}>
+                {t("pwa.update.later")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {/* AI FAB — hidden on the kiosk surface (which never renders this shell) */}
         {!location.pathname.startsWith("/me/ask") ? (

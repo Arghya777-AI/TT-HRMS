@@ -99,8 +99,25 @@ export function RangeFilter({
   const fromId = useId();
   const toId = useId();
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <div className="flex overflow-hidden rounded-md border" role="group" aria-label={t("adminAudit.range.region")}>
+    // `min-w-0`: as a flex item this wrapper defaults to `min-width: auto` and so measured
+    // 354px inside a 246px parent — a child wider than the box containing it, which is what
+    // pushed the whole page sideways. With it, the segmented control below can finally scroll.
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      {/*
+        `overflow-x-auto`, not `overflow-hidden`. Six segments — Today / Yesterday / 7 / 30 / 90
+        days / Custom — are 354px, wider than a 320px phone, and `hidden` meant they could
+        neither wrap nor scroll: they simply pushed the page sideways. Scrolling the control
+        keeps it one row and one control, which wrapping would break in a bordered segment group.
+
+        `min-w-0` is what makes the scrolling actually happen: as a flex item this box defaults
+        to `min-width: auto`, which floors it at its content's width — so `overflow-x-auto` had
+        nothing to overflow and the 354px stayed.
+      */}
+      <div
+        className="flex min-w-0 max-w-full overflow-x-auto rounded-md border"
+        role="group"
+        aria-label={t("adminAudit.range.region")}
+      >
         {RANGE_PRESETS.map((p) => (
           <button
             key={p.id}

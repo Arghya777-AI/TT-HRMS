@@ -379,7 +379,9 @@ export default function BulkActionsPage() {
         title={t("admin.bulk.title")}
         subtitle={t("admin.bulk.subtitle")}
         actions={
-          <Button asChild variant="ghost">
+          /* `text-left` because this label is a whole sentence; the Button base already lets
+             it wrap on a phone. */
+          <Button asChild variant="ghost" className="text-left">
             <Link to="/admin/attendance/recompute">{t("admin.bulk.openRecompute")}</Link>
           </Button>
         }

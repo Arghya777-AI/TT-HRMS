@@ -34,7 +34,9 @@ function RouteFallback() {
   return (
     <div className="container space-y-4 py-8">
       <Skeleton className="h-9 w-64" />
-      <Skeleton className="h-4 w-96" />
+      {/* `max-w-96`, not `w-96`: a fixed 384px bar is wider than a 320px phone, so every
+          page overflowed sideways for as long as its chunk was in flight. */}
+      <Skeleton className="h-4 w-full max-w-96" />
       <div className="grid gap-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">
         <Skeleton className="h-28" />
         <Skeleton className="h-28" />

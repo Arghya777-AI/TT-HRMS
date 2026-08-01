@@ -181,8 +181,15 @@ export function AnalyticsFilterBar({
           </select>
         </BarField>
 
-        {/* Stepper — prev / the period in words / next, as MonthStepper reads. */}
-        <div className="flex items-center gap-1">
+        {/*
+          Stepper — prev / the period in words / next / "this month", as MonthStepper reads.
+
+          IT MUST BE ABLE TO WRAP. Two 44px buttons, a 13rem period label and the reset button
+          come to more than a 390px phone, and with none of it allowed to give, six admin and
+          team screens scrolled the whole PAGE sideways — which drags the fixed bottom nav out
+          of line with the content behind it. The label's floor is now a phone floor below `sm`.
+        */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           <Button
             variant="outline"
             size="icon"
@@ -195,8 +202,15 @@ export function AnalyticsFilterBar({
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
           </Button>
+          {/*
+            ITS OWN LINE ON A PHONE. `flex-1` left the label about 97px between the two chevrons,
+            so "August 2026" both wrapped to two lines AND spilled over the next-month button —
+            text overflowing its box, which no overflow measurement catches because the box
+            itself fits. `order-first w-full` puts the period on one centred line above the
+            controls, which is legible at 320px; from `sm` the original inline layout returns.
+          */}
           <span
-            className="min-w-[13rem] px-2 text-center text-sm font-medium"
+            className="order-first w-full px-2 text-center text-sm font-medium sm:order-none sm:w-auto sm:min-w-[13rem]"
             aria-live="polite"
           >
             {periodLabel(period)}

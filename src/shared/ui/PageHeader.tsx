@@ -25,7 +25,16 @@ export function PageHeader({ icon: Icon, title, subtitle, actions }: PageHeaderP
           {subtitle ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{subtitle}</p> : null}
         </div>
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {/*
+        NOT `shrink-0`. That is right on a desktop — the actions should not be squeezed by a long
+        title — but on a phone it made the actions cluster set the page's minimum width, so
+        "Calendar / Comp-off / Apply for leave" pushed the whole layout sideways and took the
+        fixed bottom nav with it. Wrapping is the correct sacrifice at this width: the buttons
+        drop onto their own line, which the `flex-wrap` on the header already allows for.
+      */}
+      {actions ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">{actions}</div>
+      ) : null}
     </header>
   );
 }

@@ -83,6 +83,11 @@ export const keysLeaveMentions = {
  * employee is deciding whether to take Friday to Tuesday, and the only useful reply is what
  * that costs them.
  */
+export const keysMobileNav = {
+  /** Bottom-bar label: "My Attendance" is 91px, and five tabs have 64px each on a 320px phone. */
+  "shell.nav.attendanceShort": "Attendance",
+} as const;
+
 export const keysLeaveRange = {
   "leave.app.range.title": "Which dates?",
   "leave.app.range.from": "From",

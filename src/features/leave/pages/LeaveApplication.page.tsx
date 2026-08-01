@@ -337,7 +337,10 @@ export default function LeaveApplicationPage() {
           One column below `xl`, because seven date cells plus a balance list do not fit a laptop
           width, let alone a phone.
         */}
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,21rem)]">
+        {/* `[&>*]:min-w-0` on the items too: a grid item defaults to `min-width: auto`, which
+            floors it at its content's min-content width — at 320px the step-1 card measured
+            358px and pushed the page sideways even though every box inside it could wrap. */}
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,21rem)] [&>*]:min-w-0">
           {/* ── 1. How many days ────────────────────────────────────────────── */}
           <section className="rounded-lg border bg-card p-4">
             <h2 className="font-display text-sm font-semibold">{t("leave.app.step1")}</h2>
@@ -635,7 +638,7 @@ export default function LeaveApplicationPage() {
         {/* ── 3. Why ──────────────────────────────────────────────────────── */}
         <section className="mt-4 rounded-lg border bg-card p-4">
           <h2 className="font-display text-sm font-semibold">{t("leave.app.step3")}</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="font-medium text-muted-foreground">{t("leave.app.reason")}</span>
               <input
@@ -660,11 +663,19 @@ export default function LeaveApplicationPage() {
                 offered rather than left for the refusal to explain. */}
             <label className="flex flex-col gap-1 text-xs">
               <span className="font-medium text-muted-foreground">{t("leave.app.coveredBy")}</span>
+              {/*
+                `w-full min-w-0` is load-bearing, not tidying. A <select> sizes itself to its
+                LONGEST OPTION and will not go below it, and these options are
+                "Name · Designation" for every colleague — so on a 390px phone this one control
+                made the whole step 408px wide and the page scrolled sideways, dragging the
+                fixed bottom nav out of line. With `min-w-0` it shrinks and the option text is
+                clipped by the control, which is how a native select is meant to behave.
+              */}
               <select
                 value={handoverId}
                 onChange={(event) => setHandoverId(event.target.value)}
                 disabled={busy || colleagues.isPending}
-                className="h-10 rounded-md border bg-background px-3 text-sm"
+                className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
               >
                 <option value="">{t("leave.app.coveredByNone")}</option>
                 {coverChoices.map((person) => (

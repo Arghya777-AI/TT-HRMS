@@ -62,6 +62,15 @@ export interface NavItem {
   badge?: BadgeKey;
   /** Mobile bottom-bar slot (1–4); everything else lives in "More". */
   mobileSlot?: 1 | 2 | 3 | 4;
+  /**
+   * Label for the bottom bar when the rail's wording is too long for a fifth of a phone.
+   *
+   * Five tabs across 320px leaves 64px each, and "My Attendance" is 91px — which made the
+   * fixed bar wider than the viewport and, because it is `inset-x-0`, stretched the whole
+   * document with it. Truncating to "My Attend…" was the alternative and it is worse: the
+   * bar is the primary navigation on a phone and its labels have to be readable.
+   */
+  mobileLabelKey?: MessageKey;
 }
 
 export interface NavGroup {
@@ -80,6 +89,7 @@ const ME_ITEMS: readonly NavItem[] = [
     cap: "me.view",
     badge: "attendance.unresolved",
     mobileSlot: 2,
+    mobileLabelKey: "shell.nav.attendanceShort",
   },
   {
     labelKey: "shell.nav.leave",

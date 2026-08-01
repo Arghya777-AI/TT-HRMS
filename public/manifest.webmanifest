@@ -1,0 +1,56 @@
+{
+  "name": "Tamarind Tree HRMS",
+  "short_name": "TT HRMS",
+  "description": "Attendance, leave, payroll and people for The Tamarind Tree — a unit of Machani Hospitalities LLP, Bengaluru.",
+  "id": "/?source=pwa",
+  "start_url": "/me?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "theme_color": "#121F38",
+  "background_color": "#121F38",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Punch in or out",
+      "short_name": "Punch",
+      "url": "/me/attendance?source=pwa-shortcut",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Apply for leave",
+      "short_name": "Leave",
+      "url": "/me/leave/apply?source=pwa-shortcut",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My payslips",
+      "short_name": "Payslips",
+      "url": "/me/salary?source=pwa-shortcut",
+      "icons": [{ "src": "/pwa/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

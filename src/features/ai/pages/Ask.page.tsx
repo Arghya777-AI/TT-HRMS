@@ -307,6 +307,8 @@ export default function AskPage() {
 
         {turns.length === 0 && pending === null ? (
           <div className="flex flex-wrap gap-2">
+            {/* `text-left`: these labels are whole questions, and a wrapped question reads
+                better left-aligned than centred. Wrapping itself is the Button base's job. */}
             {SUGGESTIONS.map((s) => (
               <Button
                 key={s}
@@ -315,6 +317,7 @@ export default function AskPage() {
                 size="sm"
                 onClick={() => ask(s, mode)}
                 disabled={isAsking}
+                className="text-left"
               >
                 {s}
               </Button>

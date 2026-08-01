@@ -5,6 +5,23 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#121F38" />
+
+    <!--
+      INSTALLABLE APP (PWA).
+
+      `manifest` is what makes Chrome and Android offer "Install app"; the `apple-*` tags are
+      what iOS reads, because Safari ignores most of the manifest. `apple-mobile-web-app-capable`
+      is what removes the address bar once the icon is tapped from the home screen, and
+      `status-bar-style: black-translucent` lets the app paint under the status bar — which is
+      why the viewport above carries `viewport-fit=cover` and the shell pads with
+      `env(safe-area-inset-*)`.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TT HRMS" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>Tamarind Tree HRMS</title>
     <meta
       name="description"

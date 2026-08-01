@@ -241,6 +241,53 @@
   progress {
     accent-color: hsl(var(--primary));
   }
+  /*
+    A GRID ITEM MAY SHRINK BELOW ITS CONTENT.
+
+    This is the single most common cause of horizontal page overflow in this app, and it is
+    subtle: a grid item's `min-width` computes to `auto`, which floors it at its content's
+    min-content width. So a card containing a 520px chart, a `<select>` whose longest option is
+    "Aarti Sandeep Raju · Banquet Supervisor", or a text input at its default intrinsic size,
+    makes the whole TRACK that wide — and the page with it. The `overflow-x-auto` those
+    components already carry never engages, because the box was never constrained in the first
+    place.
+
+    Auditing every route at 320px found this behind five separate screens. Fixing it per-grid
+    means finding it again on the next screen somebody builds, so it is fixed here instead.
+
+    IT IS SAFE BECAUSE IT IS IN `base`. Tailwind's layer order puts utilities after base
+    regardless of specificity, so any explicit `min-w-*` on an item still wins — the deliberate
+    floors, like the month label's `min-w-[13rem]`, are untouched. Flex items are deliberately
+    NOT included: `min-width: auto` is load-bearing there, keeping toolbar buttons from being
+    squashed, and flexbox already has `flex-shrink` as the intended control.
+  */
+  .grid > * {
+    min-width: 0;
+  }
+
+  /*
+    A LONG IDENTIFIER IN PROSE MUST BREAK RATHER THAN PUSH THE PAGE.
+
+    This one is invisible to element measurement, which is why it took a bisect to find: text
+    overflows its box without any ELEMENT being oversized, so a DOM walk looking for wide boxes
+    reports nothing while the page still scrolls sideways. The culprits here are database
+    identifiers written into explanatory copy — `travel_requisition_settlements`,
+    `security.failed_login_lockout_threshold`, `employees.notice_period_days` — which are single
+    unbreakable words wider than a 320px phone.
+
+    `break-word` breaks inside a word ONLY when it cannot otherwise fit, so text that already
+    fits is laid out identically. Applied to the text containers rather than universally, so it
+    cannot interfere with layout boxes.
+  */
+  p,
+  li,
+  dd,
+  dt,
+  figcaption,
+  blockquote {
+    overflow-wrap: break-word;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;

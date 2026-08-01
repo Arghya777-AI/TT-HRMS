@@ -76,7 +76,9 @@ export function SettingRow({ setting, canEdit, onSave }: SettingRowProps) {
           <p className="mt-0.5 text-xs text-muted-foreground">{setting.description}</p>
         ) : null}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span className="font-mono">{setting.key}</span>
+          {/* `break-all`: "security.failed_login_lockout_threshold" is one unbreakable
+              token and overflowed a 320px phone on its own. */}
+          <span className="break-all font-mono">{setting.key}</span>
           <span>{t("admin.settings.row.updated", { when: fmtDateTime(setting.updated_at) })}</span>
           {!canEdit ? (
             <Badge variant="neutral">
@@ -87,7 +89,9 @@ export function SettingRow({ setting, canEdit, onSave }: SettingRowProps) {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+      {/* `sm:shrink-0`, not `shrink-0`: a long value — a token, a JSON blob, a hex list — has
+          to be allowed to wrap on a phone rather than set the row's minimum width. */}
+      <div className="flex min-w-0 flex-col items-stretch gap-2 sm:shrink-0 sm:items-end">
         {isBoolean ? (
           <div className="flex items-center gap-2">
             <Badge variant={setting.value === true ? "success" : "neutral"}>{current}</Badge>
@@ -175,8 +179,10 @@ export function SettingRow({ setting, canEdit, onSave }: SettingRowProps) {
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className={cn("num text-sm", isHexSetting(setting) && "font-mono")}>{current}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className={cn("num min-w-0 break-all text-sm", isHexSetting(setting) && "font-mono")}>
+              {current}
+            </span>
             {isHexSetting(setting) && HEX_RE.test(current) ? (
               <span
                 className="h-6 w-6 shrink-0 rounded border"

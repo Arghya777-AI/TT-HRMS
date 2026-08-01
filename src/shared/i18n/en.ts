@@ -31,7 +31,9 @@ import {
   keysLeaveApplicationExtra,
   keysLeaveMentions,
   keysLeaveRange,
+  keysMobileNav,
 } from "./keys/leave-application";
+import { keysPwa } from "./keys/pwa";
 import {
   keysOvertimeRules,
   keysAssignShift,
@@ -91,6 +93,8 @@ export const en = {
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,
   ...keysLeaveRange,
+  ...keysMobileNav,
+  ...keysPwa,
   ...keysOvertimeRules,
   ...keysAssignShift,
   ...keysGrace,

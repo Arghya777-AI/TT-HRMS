@@ -79,6 +79,12 @@ export function AuditValue({
   return (
     <span
       className={cn(
+        // `break-words` because an audit value is arbitrary recorded data, not prose. A payload
+        // that misses the `json` branch — `{"outcome":"succeeded","stats":{...}}` classified as
+        // text — is one unbreakable 1411px "word", and it made the audit pages scroll sideways.
+        // `overflow-wrap: break-word` breaks inside a word only when it cannot fit, so ordinary
+        // values are untouched.
+        "min-w-0 break-words",
         NUMERIC_KINDS.has(kind) && "num",
         // Long ids (account numbers, UANs, hashes) are monospace, never numeric
         // (frontend-contract §6) — `text` covers them because they are strings.

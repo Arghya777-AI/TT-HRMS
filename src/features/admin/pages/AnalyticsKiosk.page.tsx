@@ -446,7 +446,13 @@ export default function AnalyticsKioskPage() {
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      {/*
+        `[&>*]:min-w-0` is what makes the charts' own `overflow-x-auto` work. A grid item's
+        default `min-width: auto` floors it at its content's min-content width, so a 520px plot
+        made the CARD 554px wide on a 390px phone — the inner scroller never got the chance to
+        scroll because it was never constrained.
+      */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <div className="rounded-lg border bg-card p-4">
           <StateBoundary
             loading={health.isPending}

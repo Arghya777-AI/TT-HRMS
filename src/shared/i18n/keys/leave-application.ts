@@ -67,3 +67,10 @@ export const keysLeaveApplicationExtra = {
   "leave.app.address": "Where you will be (optional)",
   "leave.app.handoverPlaceholder": "What your stand-in needs to know",
 } as const;
+
+/** Mentioning peers on an application (migration 039800). */
+export const keysLeaveMentions = {
+  "leave.app.mention": "Mention colleagues (optional)",
+  "leave.app.mentionHint":
+    "Each person you pick is notified that you named them on this leave. It does not ask them to approve anything.",
+} as const;

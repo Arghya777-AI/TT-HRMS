@@ -38,6 +38,7 @@ import { dbUuid } from "@/shared/api/query";
 import type { LeaveDayPortion } from "./leave-apply.api";
 
 export const LEAVE_REQUESTS_TABLE = "leave_requests";
+export const MENTIONS_TABLE = "leave_request_mentions";
 
 const memberSchema = z.object({
   id: dbUuid,
@@ -63,6 +64,11 @@ export interface LeaveApplicationInput {
   readonly addressDuringLeave: string | null;
   readonly handoverToEmployeeId: string | null;
   readonly handoverNotes: string | null;
+  /**
+   * Colleagues to name on the application. Each becomes a `leave_request_mentions` row and
+   * the trigger notifies them — see migration 039800.
+   */
+  readonly mentionEmployeeIds: readonly string[];
 }
 
 export interface FiledMember {
@@ -162,6 +168,34 @@ export async function submitLeaveApplication(
       requestNumber: row.request_number,
       leaveTypeName: draft.member.leaveTypeName,
     });
+  }
+
+  /*
+    ── Mentions ─────────────────────────────────────────────────────────────
+
+    Attached to the FIRST member only, not to every one. A combined application is one act
+    to the employee, so mentioning three colleagues must notify each of them ONCE — writing a
+    row per member would send the same person a notification per leave type, which reads as a
+    bug to whoever receives it.
+
+    Written after the members are filed and NOT allowed to fail the application: the leave is
+    the thing that matters and it is already submitted. A mention that did not save is worth
+    reporting, never worth throwing away an approved-and-pending request over.
+  */
+  const anchor = filed[0];
+  if (anchor !== undefined && input.mentionEmployeeIds.length > 0) {
+    for (const employeeId of input.mentionEmployeeIds) {
+      try {
+        await insertOne(
+          MENTIONS_TABLE,
+          z.object({ id: dbUuid }),
+          { leave_request_id: anchor.requestId, employee_id: employeeId },
+          { columns: "id" },
+        );
+      } catch {
+        // Deliberately swallowed. See the note above: the application is already filed.
+      }
+    }
   }
 
   return { groupId, filed };

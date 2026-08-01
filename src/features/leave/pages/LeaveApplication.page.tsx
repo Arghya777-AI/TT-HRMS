@@ -112,6 +112,7 @@ export default function LeaveApplicationPage() {
   const [handoverId, setHandoverId] = useState("");
   const [handoverNotes, setHandoverNotes] = useState("");
   const [addressAway, setAddressAway] = useState("");
+  const [mentioned, setMentioned] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
@@ -183,6 +184,7 @@ export default function LeaveApplicationPage() {
       addressDuringLeave: addressAway.trim() === "" ? null : addressAway.trim(),
       handoverToEmployeeId: handoverId === "" ? null : handoverId,
       handoverNotes: handoverNotes.trim() === "" ? null : handoverNotes.trim(),
+      mentionEmployeeIds: mentioned,
     })
       .then((result) => {
         setDone(result);
@@ -411,6 +413,39 @@ export default function LeaveApplicationPage() {
                 className="h-10 rounded-md border bg-background px-3 text-sm"
               />
             </label>
+            {/* Mention peers. Each one is notified once, by the database trigger. */}
+            <div className="sm:col-span-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t("leave.app.mention")}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t("leave.app.mentionHint")}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {coverChoices.slice(0, 40).map((person) => {
+                  const on = mentioned.includes(person.id);
+                  return (
+                    <button
+                      key={person.id}
+                      type="button"
+                      aria-pressed={on}
+                      disabled={busy}
+                      onClick={() =>
+                        setMentioned((prev) =>
+                          on ? prev.filter((id) => id !== person.id) : [...prev, person.id],
+                        )
+                      }
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs transition",
+                        on
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-background hover:border-primary/60",
+                      )}
+                    >
+                      {person.display_name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="font-medium text-muted-foreground">{t("leave.app.handover")}</span>
               <input

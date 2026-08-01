@@ -259,3 +259,18 @@ export const keysEmployeeLinks = {
   "admin.p360.links.history": "Full change history",
   "admin.p360.links.historyHint": "Every field ever changed on this record, by whom and why.",
 } as const;
+
+/** The attendance board's scope control. */
+export const keysAttendanceBoard = {
+  "admin.board.title": "Attendance Board",
+  "admin.board.subtitle.day": "{date}, Asia/Kolkata — a settled day.",
+  "admin.board.subtitle.month": "{month}, Asia/Kolkata — every employee-day in the month.",
+  "admin.board.day": "Day",
+  "admin.board.month": "Month",
+  "admin.board.prev": "Previous",
+  "admin.board.next": "Next",
+  "admin.board.today": "Back to today",
+  "admin.board.liveNow": "Live",
+  "admin.board.historicNote":
+    "A settled day: expected-by, yet-to-reach and overdue are not shown, because they are measured against the current time.",
+} as const;

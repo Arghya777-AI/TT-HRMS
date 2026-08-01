@@ -25,7 +25,22 @@
  */
 import { useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { Clock, RefreshCw, Users } from "lucide-react";
+import { fmtMonthLong, isIstMonthKey, type IstMonthKey } from "@/lib/datetime";
+import {
+  fromDayRecord,
+  fromTodayBoard,
+  isLiveScope,
+  rangeFor,
+  type BoardRow,
+  monthOf,
+  stepScope,
+  type BoardScope,
+} from "../attendanceBoard";
+import { flattenDayRecords, useDayRecords } from "../hooks/useAttendanceRecords";
+
+/** Rows per page when reading history. One page covers a month for a small venue. */
+const DAY_PAGE = 200;
+import { ChevronLeft, ChevronRight, Clock, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -42,7 +57,6 @@ import { SelectField } from "../components/Field";
 import { useBoardSlice, useBoardTotal, useIstToday } from "../hooks/useCommandCentre";
 import { useTodayBoard } from "../hooks/useLiveBoard";
 import { useRefOptions } from "../hooks/useMasters";
-import type { TodayBoardRow } from "../api/attendance.api";
 import type { BoardSlice } from "../api/command.api";
 
 /** The URL state a Command Centre chip deep-links into. */
@@ -90,6 +104,29 @@ export default function LiveBoardPage() {
   const [params, setParams] = useSearchParams();
   const istDate = useIstToday();
 
+  /*
+    ── THE SCOPE: A DAY OR A MONTH ────────────────────────────────────────────────
+
+    `?date=` picks a single day and `?month=` a whole one; absent both, today. Today is
+    served by `v_attendance_today_board` and stays LIVE — it is the only source that can
+    answer "expected by", "yet to reach" and "overdue", all computed against now().
+
+    Any other day, and every month INCLUDING the current one, is served by
+    `v_day_enriched`. The current month is deliberately not live: the today view returns
+    one row per employee, so using it for a month would silently drop every other day.
+
+    Both are normalised by `attendanceBoard.ts` into one row shape, so a column renderer
+    never branches on which view it came from — that branching is how a column starts
+    showing a different number depending on the date selected.
+  */
+  const monthParam = params.get("month");
+  const dateParam = params.get("date");
+  const scope: BoardScope = isIstMonthKey(monthParam ?? "")
+    ? { kind: "month", month: monthParam ?? "" }
+    : { kind: "day", date: dateParam !== null && dateParam !== "" ? dateParam : istDate };
+  const live = isLiveScope(scope, istDate);
+  const range = rangeFor(scope);
+
   const rawState = params.get("state");
   const state: BoardState | null = isBoardState(rawState) ? rawState : null;
   const departmentId = params.get("department") ?? "";
@@ -105,7 +142,28 @@ export default function LiveBoardPage() {
   );
 
   const board = useTodayBoard(filters, istDate);
-  const rows = board.data ?? [];
+
+  /*
+    The historical query is ENABLED ONLY when the scope is not live, so selecting a past
+    date does not keep a second request in flight against today, and today does not pay for
+    a query it will not read.
+  */
+  const history = useDayRecords(
+    {
+      from: range.from,
+      to: range.to,
+      ...(departmentId !== "" ? { departmentIds: [departmentId] } : {}),
+    },
+    live ? 1 : DAY_PAGE,
+  );
+
+  const rows: BoardRow[] = useMemo(
+    () =>
+      live
+        ? (board.data ?? []).map(fromTodayBoard)
+        : flattenDayRecords(history.data).map(fromDayRecord),
+    [live, board.data, history.data],
+  );
   const total = useBoardTotal(istDate);
 
   // One server count per tile — the same predicate the rows use.
@@ -117,6 +175,19 @@ export default function LiveBoardPage() {
     off: useBoardSlice(STATE_TO_SLICE.off, istDate),
   };
 
+  /** One writer for the scope, so `date` and `month` can never both be set. */
+  const setScopeParam = (next: BoardScope) => {
+    const p = new URLSearchParams(params);
+    p.delete("date");
+    p.delete("month");
+    if (next.kind === "day") {
+      if (next.date !== istDate) p.set("date", next.date);
+    } else {
+      p.set("month", next.month);
+    }
+    setParams(p, { replace: true });
+  };
+
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value === "") next.delete(key);
@@ -124,9 +195,9 @@ export default function LiveBoardPage() {
     setParams(next, { replace: true });
   };
 
-  const columns: DataGridColumn<TodayBoardRow>[] = [
+  const columns: DataGridColumn<BoardRow>[] = [
     {
-      key: "display_name",
+      key: "displayName",
       header: t("admin.live.col.employee"),
       width: "15rem",
       sortable: true,
@@ -139,74 +210,74 @@ export default function LiveBoardPage() {
       */
       render: (r) => (
         <Link
-          to={`/admin/attendance/punches?emp=${r.employee_id}&from=${istDate}&to=${istDate}`}
+          to={`/admin/attendance/punches?emp=${r.employeeId}&from=${istDate}&to=${istDate}`}
           className="block rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={t("admin.live.openScans", { name: r.display_name })}
+          title={t("admin.live.openScans", { name: r.displayName })}
         >
-          <PersonCell name={r.display_name} code={r.employee_code} secondary={r.department_name} />
+          <PersonCell name={r.displayName} code={r.employeeCode} secondary={r.departmentName} />
         </Link>
       ),
     },
     {
-      key: "shift_code",
+      key: "shiftCode",
       header: t("admin.live.col.shift"),
       width: "7rem",
       // The bare code, never shift_display_label — that field is built as
       // "G — 09:30 AM to 06:30 PM" and 12-hour clocks are banned (DR-53).
-      render: (r) => dash(r.shift_code),
+      render: (r) => dash(r.shiftCode),
     },
     {
-      key: "expected_by",
+      key: "expectedBy",
       header: t("admin.live.col.expected"),
       width: "8rem",
       align: "right",
       render: (r) => (
-        <span className="num">{r.expected_by === null ? "—" : fmtTime(r.expected_by)}</span>
+        <span className="num">{r.expectedBy === null ? "—" : fmtTime(r.expectedBy)}</span>
       ),
     },
     {
-      key: "first_in_hm",
+      key: "firstInHm",
       header: t("admin.live.col.firstIn"),
       width: "8rem",
       align: "right",
       sortable: true,
       // Pre-rendered IST wall clock from the view.
-      render: (r) => <span className="num font-medium">{dash(r.first_in_hm)}</span>,
+      render: (r) => <span className="num font-medium">{dash(r.firstInHm)}</span>,
     },
     {
-      key: "last_out_hm",
+      key: "lastOutHm",
       header: t("admin.live.col.lastOut"),
       width: "8rem",
       align: "right",
-      render: (r) => <span className="num">{dash(r.last_out_hm)}</span>,
+      render: (r) => <span className="num">{dash(r.lastOutHm)}</span>,
     },
     {
-      key: "punch_count",
+      key: "punchCount",
       header: t("admin.live.col.scans"),
       width: "6rem",
       align: "right",
-      render: (r) => <span className="num">{formatNumber(r.punch_count)}</span>,
+      render: (r) => <span className="num">{formatNumber(r.punchCount)}</span>,
     },
     {
-      key: "worked_hm",
+      key: "workedMinutes",
       header: t("admin.live.col.worked"),
       width: "8rem",
       align: "right",
       hideBelow: "md",
       // Prefer the view's own string; fall back to formatting its minutes.
       render: (r) => (
-        <span className="num">{r.worked_hm ?? fmtDurationHm(r.worked_minutes)}</span>
+        <span className="num">{fmtDurationHm(r.workedMinutes)}</span>
       ),
     },
     {
-      key: "late_minutes",
+      key: "lateMinutes",
       header: t("admin.live.col.late"),
       width: "7rem",
       align: "right",
       hideBelow: "lg",
       render: (r) =>
-        r.is_late ? (
-          <span className="num text-warning">{fmtDurationHm(r.late_minutes)}</span>
+        r.isLate ? (
+          <span className="num text-warning">{fmtDurationHm(r.lateMinutes)}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -221,14 +292,14 @@ export default function LiveBoardPage() {
       overtime stays zero, so that is shown in its place rather than a misleading dash.
     */
     {
-      key: "overtime_minutes",
+      key: "overtimeMinutes",
       header: t("admin.live.col.overtime"),
       width: "9rem",
       align: "right",
       render: (r) => {
-        const ot = r.overtime_minutes ?? 0;
-        const approved = r.approved_overtime_minutes ?? 0;
-        const extra = r.extra_work_minutes ?? 0;
+        const ot = r.overtimeMinutes ?? 0;
+        const approved = r.approvedOvertimeMinutes ?? 0;
+        const extra = r.extraWorkMinutes ?? 0;
         if (ot === 0 && extra > 0) {
           return (
             <span className="num text-xs" title={t("admin.live.extraWorkHint")}>
@@ -274,8 +345,14 @@ export default function LiveBoardPage() {
     <div className="container py-6">
       <PageHeader
         icon={Clock}
-        title={t("admin.live.title")}
-        subtitle={t("admin.live.subtitle", { date: fmtCivilDateWeekday(istDate) })}
+        title={t("admin.board.title")}
+        subtitle={
+          scope.kind === "month"
+            ? t("admin.board.subtitle.month", { month: fmtMonthLong(scope.month as IstMonthKey) })
+            : live
+              ? t("admin.live.subtitle", { date: fmtCivilDateWeekday(istDate) })
+              : t("admin.board.subtitle.day", { date: fmtCivilDateWeekday(scope.date) })
+        }
         actions={
           <div className="flex items-center gap-3">
             {lastLooked !== null ? (
@@ -285,8 +362,8 @@ export default function LiveBoardPage() {
             ) : null}
             <Button
               variant="outline"
-              onClick={() => void board.refetch()}
-              disabled={board.isFetching}
+              onClick={() => void (live ? board.refetch() : history.refetch())}
+              disabled={live ? board.isFetching : history.isFetching}
             >
               <RefreshCw
                 className={cn("mr-2 size-4", board.isFetching && "animate-spin")}
@@ -298,7 +375,16 @@ export default function LiveBoardPage() {
         }
       />
 
-      {/* Presence tiles — server counts, each one a filter on the grid below. */}
+      {/*
+        Presence tiles — server counts, each one a filter on the grid below.
+
+        THEY ARE TODAY'S COUNTS AND ONLY TODAY'S. Every one is a `count=exact` against
+        `v_attendance_today_board`, which is hardcoded to `util.ist_today()`, so on a
+        historical scope they would show today's numbers above yesterday's rows. Rather than
+        render five confidently wrong figures they are hidden, and the note below says which
+        columns stop applying on a settled day.
+      */}
+      {live ? (
       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {TILES.map((tile) => {
           const q = counts[tile.state];
@@ -323,8 +409,74 @@ export default function LiveBoardPage() {
           );
         })}
       </div>
+      ) : (
+        <p className="mt-4 rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {t("admin.board.historicNote")}
+        </p>
+      )}
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3">
+      {/*
+        ── SCOPE: A DAY, OR A MONTH ──────────────────────────────────────────────
+        Prev/next step the day (or the month) without a date picker, because stepping is
+        what an administrator does most; the date and month inputs are there for a jump.
+        "Today" returns to the live view, which is the only scope that can answer
+        "expected by", "yet to reach" and "overdue".
+      */}
+      <section className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label={t("admin.board.prev")}
+            onClick={() => setScopeParam(stepScope(scope, -1))}
+          >
+            <ChevronLeft className="size-4" aria-hidden />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label={t("admin.board.next")}
+            onClick={() => setScopeParam(stepScope(scope, 1))}
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </Button>
+        </div>
+
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-muted-foreground">{t("admin.board.day")}</span>
+          <input
+            type="date"
+            value={scope.kind === "day" ? scope.date : ""}
+            onChange={(event) => setScopeParam({ kind: "day", date: event.target.value })}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-muted-foreground">{t("admin.board.month")}</span>
+          <input
+            type="month"
+            value={scope.kind === "month" ? scope.month : monthOf(scope.date)}
+            onChange={(event) => setScopeParam({ kind: "month", month: event.target.value })}
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+          />
+        </label>
+
+        {!live ? (
+          <Button variant="ghost" size="sm" onClick={() => setScopeParam({ kind: "day", date: istDate })}>
+            {t("admin.board.today")}
+          </Button>
+        ) : (
+          <span className="rounded-full bg-success/15 px-2.5 py-1 text-xs font-medium text-success">
+            {t("admin.board.liveNow")}
+          </span>
+        )}
+      </section>
+
+
         <SelectField
           label={t("admin.live.filter.department")}
           value={departmentId}
@@ -362,7 +514,7 @@ export default function LiveBoardPage() {
             />
           }
         >
-          <DataGrid columns={columns} rows={rows} rowKey={(r) => r.employee_id} pageSize={50} />
+          <DataGrid columns={columns} rows={rows} rowKey={(r) => r.employeeId} pageSize={50} />
         </StateBoundary>
       </div>
 

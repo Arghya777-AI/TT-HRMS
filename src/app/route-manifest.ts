@@ -168,7 +168,7 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   ["/admin/org/custom-fields", "Custom Field Designer", "A", "admin-org", Cog, "Define typed extra fields without a deploy."],
   ["/admin/org/events", "Event Register", "A", "admin-org", CalendarDays, "Booked events that drive staffing requirements."],
   // §4 Attendance
-  ["/admin/attendance/live", "Live Board", "A", "admin-attendance", Clock, "Who is in right now, by department and gate."],
+  ["/admin/attendance/live", "Attendance Board", "A", "admin-attendance", Clock, "Who is in right now, by department and gate."],
   ["/admin/attendance/days", "Day Records", "A", "admin-attendance", Clock, "The computed day per employee, with every field."],
   ["/admin/attendance/punches", "Punch Log", "A", "admin-attendance", ScanFace, "The raw append-only scan log."],
   ["/admin/attendance/punches/new", "Manual Punch", "A", "admin-attendance", ScanFace, "Record a punch by code when the camera fails."],

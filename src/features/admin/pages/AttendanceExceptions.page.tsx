@@ -143,6 +143,8 @@ function dayRoute(row: DayRow): string {
 export default function AttendanceExceptionsPage() {
   const [params, setParams] = useSearchParams();
 
+  /* `?emp=<uuid>` scopes every count and the queue to one person — see ExceptionFilters. */
+  const employeeId = params.get("emp") ?? "";
   const kind = asKnown(params.get("kind"), EXCEPTION_KINDS);
   const severity = asKnown(params.get("severity"), EXCEPTION_SEVERITIES);
   const dateParam = params.get("date");
@@ -155,8 +157,9 @@ export default function AttendanceExceptionsPage() {
       ...(kind !== "" ? { kinds: [kind] } : {}),
       ...(severity !== "" ? { severities: [severity] } : {}),
       ...(onDate !== null ? { from: onDate, to: onDate } : {}),
+      ...(employeeId !== "" ? { employeeIds: [employeeId] } : {}),
     }),
-    [kind, severity, onDate],
+    [kind, severity, onDate, employeeId],
   );
 
   /**

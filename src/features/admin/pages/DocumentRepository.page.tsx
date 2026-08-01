@@ -77,6 +77,15 @@ export default function DocumentRepositoryPage() {
   const [confidentialOnly, setConfidentialOnly] = useState(false);
   const [archived, setArchived] = useState(false);
 
+  /*
+    `?emp=<uuid>` SCOPES THE REPOSITORY TO ONE PERSON.
+
+    `DocumentFilters.employeeId` has existed all along and this screen never read the URL,
+    so a link "this employee's documents" would have landed on every document in the venue
+    while implying one person's. That is why the employee record did not link here until
+    now — a filter that is silently ignored is worse than no link.
+  */
+  const employeeId = params.get("emp") ?? "";
   const rawStatus = params.get("status");
   const status: DocumentStatus | "" = documentStatusValues.includes(
     (rawStatus ?? "") as DocumentStatus,
@@ -106,8 +115,10 @@ export default function DocumentRepositoryPage() {
       ...(confidentialOnly ? { confidentialOnly: true } : {}),
       ...(expiringBefore !== "" ? { expiringOnOrBefore: expiringBefore } : {}),
       ...(archived ? { archived: true } : {}),
+      ...(employeeId !== "" ? { employeeId } : {}),
     };
   }, [
+    employeeId,
     typeId,
     category,
     categoryTypeIds,

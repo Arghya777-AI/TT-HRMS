@@ -258,6 +258,10 @@ export const keysEmployeeLinks = {
 
   "admin.p360.links.face": "Face enrolment",
   "admin.p360.links.faceHint": "Consent, capture, approval and whether the gate will match them.",
+  "admin.p360.links.exceptions": "Attendance exceptions",
+  "admin.p360.links.exceptionsHint": "Missing scans, single punches and anomalies raised for them.",
+  "admin.p360.links.documents": "Their documents",
+  "admin.p360.links.documentsHint": "Everything on file, with expiry and verification state.",
   "admin.p360.links.history": "Full change history",
   "admin.p360.links.historyHint": "Every field ever changed on this record, by whom and why.",
 } as const;

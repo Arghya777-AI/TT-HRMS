@@ -552,6 +552,15 @@ export interface ExceptionFilters {
   readonly to?: string;
   readonly kinds?: readonly string[];
   readonly severities?: readonly string[];
+  /**
+   * Scope the queue to named employees.
+   *
+   * `v_exception_queue` has published `employee_id` all along and this filter did not
+   * exist, so "this employee's exceptions" could not be asked for — which is why the
+   * employee record linked to the attendance screen instead and left the exception queue
+   * unreachable per person.
+   */
+  readonly employeeIds?: readonly string[];
 }
 
 /** One predicate builder, so the queue and its per-kind counts cannot disagree. */
@@ -561,6 +570,8 @@ function exceptionFilters(f: ExceptionFilters): Filter[] {
   if (f.to !== undefined) filters.push(lte("ist_date", f.to));
   if (f.kinds && f.kinds.length > 0) filters.push(inList("exception_kind", f.kinds));
   if (f.severities && f.severities.length > 0) filters.push(inList("severity", f.severities));
+  if (f.employeeIds && f.employeeIds.length > 0)
+    filters.push(inList("employee_id", f.employeeIds));
   return filters;
 }
 

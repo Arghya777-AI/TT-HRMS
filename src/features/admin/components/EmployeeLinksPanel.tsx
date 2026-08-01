@@ -23,11 +23,13 @@
  */
 import { Link } from "react-router-dom";
 import {
+  AlertTriangle,
   Banknote,
   CalendarClock,
   CalendarDays,
   Clock,
   FileText,
+  FolderOpen,
   ScanFace,
   ScrollText,
   ShieldCheck,
@@ -56,11 +58,17 @@ interface LinkSpec {
 /*
   ONLY DESTINATIONS THAT ACTUALLY HONOUR THE SCOPE.
 
-  Checked one by one, because a link that silently ignores its filter is worse than no
-  link — it drops an administrator on 78 rows while implying one. `LeaveAdjustments`
-  read no params at all until this change; `DocumentRepository` reads only `status` and
-  `AttendanceExceptions` only kind/severity/date, so neither is linked from here yet.
-  Both are listed in the commit as known gaps rather than papered over.
+  Checked one by one, because a link that silently ignores its filter is worse than no link
+  — it drops an administrator on 78 rows while implying one. Three did not honour it and
+  were left out of the first version of this panel rather than papered over; all three now
+  do, so all three are linked:
+
+    LeaveAdjustments      read no url params at all      → `?emp=` pre-selects the employee
+    DocumentRepository    read only `status`             → `?emp=` scopes the repository
+    AttendanceExceptions  read only kind/severity/date   → `?emp=` scopes queue AND counts
+
+  `ExceptionFilters` had no employee field at all, even though `v_exception_queue` has
+  published `employee_id` since it was created.
 */
 function linksFor(code: string, id: string): readonly LinkSpec[] {
   const c = encodeURIComponent(code);
@@ -124,6 +132,18 @@ function linksFor(code: string, id: string): readonly LinkSpec[] {
       labelKey: "admin.p360.links.face",
       hintKey: "admin.p360.links.faceHint",
       icon: FileText,
+    },
+    {
+      to: `/admin/attendance/exceptions?emp=${e}`,
+      labelKey: "admin.p360.links.exceptions",
+      hintKey: "admin.p360.links.exceptionsHint",
+      icon: AlertTriangle,
+    },
+    {
+      to: `/admin/documents/repository?emp=${e}`,
+      labelKey: "admin.p360.links.documents",
+      hintKey: "admin.p360.links.documentsHint",
+      icon: FolderOpen,
     },
     {
       to: `/admin/people/${c}/audit`,

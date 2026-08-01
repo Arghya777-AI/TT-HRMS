@@ -17,6 +17,30 @@
       `env(safe-area-inset-*)`.
     -->
     <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!--
+      CATCH THE INSTALL PROMPT BEFORE REACT EXISTS.
+
+      `beforeinstallprompt` fires once, early, usually while the app's JavaScript is still
+      downloading. A listener added later in a React effect simply misses it — and a missed
+      event cannot be recovered, so the one-tap "Install app" button would never have appeared
+      and every employee would have been sent to the manual steps instead. Stashing it here, in
+      the document head, is the only place guaranteed to be listening in time.
+
+      `preventDefault()` suppresses Chrome's own mini-infobar so ours is the single offer.
+    -->
+    <script>
+      window.__ttInstallPrompt = null;
+      window.addEventListener("beforeinstallprompt", function (event) {
+        event.preventDefault();
+        window.__ttInstallPrompt = event;
+        window.dispatchEvent(new Event("tt:install-available"));
+      });
+      window.addEventListener("appinstalled", function () {
+        window.__ttInstallPrompt = null;
+        window.dispatchEvent(new Event("tt:installed"));
+      });
+    </script>
     <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

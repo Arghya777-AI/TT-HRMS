@@ -47,6 +47,7 @@ import { TodayCard } from "../components/TodayCard";
 import { EqualHeightRow } from "../components/EqualHeightRow";
 import { AttentionCard } from "../components/AttentionCard";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
+import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
 import { CompOffCard, LeaveBalancesCard } from "../components/BalancesCards";
 import {
@@ -108,6 +109,15 @@ export default function HomePage() {
 
   return (
     <div className="container py-6">
+      {/*
+        THE INSTALL OFFER, ON THE SCREEN EVERY EMPLOYEE LANDS ON. `md:hidden` because it is only
+        about phones. It was originally only inside the "More" menu, which assumes somebody goes
+        looking for it — and the staff this is for will not. It removes itself once installed.
+      */}
+      <div className="mb-4 md:hidden">
+        <InstallAppCard autoOpenGuideOnIos />
+      </div>
+
       {!online ? (
         <p
           className="mb-4 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning"

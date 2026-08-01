@@ -127,6 +127,13 @@ export const qk = {
     /** Holidays on my calendar over an explicit window — the calendar wash. */
     holidays: (holidayCalendarId: string, from: string, to: string) =>
       ["leave", "holidays", holidayCalendarId, from, to] as const,
+    /**
+     * Which dates in a from–to range would cost this employee leave (migration 039900).
+     * Keyed on the employee AND both ends: a different rota or a different range is a
+     * different answer, and reusing one for the other is how a preview goes stale.
+     */
+    countable: (employeeId: string, from: string, to: string) =>
+      ["leave", "countable", employeeId, from, to] as const,
   },
   compOff: {
     ...domainKeys("comp-off"),

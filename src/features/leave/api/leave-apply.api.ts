@@ -31,6 +31,7 @@
  */
 import { z } from "zod";
 import {
+  QueryError,
   dbDate,
   dbDateNullable,
   dbInt,
@@ -45,7 +46,7 @@ import {
   gte,
   inList,
   lte,
-  QueryError,
+  rpcMany,
   rpcOne,
   selectMany,
   selectOne,
@@ -646,4 +647,71 @@ export async function fetchColleagues(
     limit,
     ...(signal ? { signal } : {}),
   });
+}
+
+// -----------------------------------------------------------------------------
+// 9. Which dates in a range would actually cost leave (migration 039900)
+// -----------------------------------------------------------------------------
+
+export const COUNTABLE_DATES_FN = "leave_countable_dates";
+
+export const countableDateSchema = z.object({
+  leave_date: dbDate,
+  is_weekly_off: z.boolean(),
+  is_holiday: z.boolean(),
+  holiday_name: z.string().nullable(),
+  /** False for a weekly off or a holiday — the day is free and costs no balance. */
+  would_count: z.boolean(),
+  /** 1, 0.5 or 0 — the same figure the engine writes to `leave_request_days.day_value`. */
+  day_value: z.number(),
+  /**
+   * True when a leave type's own rules decide this day and none was supplied. A sandwich type
+   * counts the weekly off in the middle of a leave; without a type the answer given is the
+   * plain one, and this flag is how the screen can avoid promising it.
+   */
+  type_dependent: z.boolean(),
+});
+
+export type CountableDate = z.infer<typeof countableDateSchema>;
+
+/**
+ * Advisory preview of a from–to range, per date.
+ *
+ * ADVISORY IS THE POINT. `calc_leave_days` is the authority but takes an EXISTING request, so
+ * it cannot answer about a range somebody is still typing — the old screen had to write a
+ * draft to find out. This is a read-only mirror of the engine's own day loop
+ * (`rebuild_leave_request_days`): the same `resolve_policy` lookups for rota and holiday
+ * calendar, the same active/non-optional/department/location holiday filter, and the same
+ * per-leave-type counting rules.
+ *
+ * VERIFIED, NOT ASSUMED: 279 comparisons — 31 days × 9 active leave types, for an employee
+ * whose rota is overridden by a policy assignment — matched the engine's own
+ * `leave_request_days` rows date for date, flag for flag, value for value. The check that
+ * caught the first version was exactly this one: that employee's `weekly_off_rule_id` column
+ * says Sunday + alternate Saturday, while `resolve_policy` says Tuesday, and the engine
+ * follows `resolve_policy`.
+ *
+ * `leaveTypeId` is optional. Omit it to paint a calendar before a type is chosen — the answer
+ * is then the plain reading, with `type_dependent` set on the days a type could change.
+ *
+ * The real request still gets its `total_days` stamped by `calc_leave_days` on submit.
+ */
+export async function fetchCountableDates(
+  employeeId: string,
+  fromDate: string,
+  toDate: string,
+  leaveTypeId?: string | null,
+  signal?: AbortSignal,
+): Promise<CountableDate[]> {
+  return rpcMany(
+    COUNTABLE_DATES_FN,
+    {
+      p_employee_id: employeeId,
+      p_from: fromDate,
+      p_to: toDate,
+      p_leave_type_id: leaveTypeId ?? null,
+    },
+    countableDateSchema,
+    signal ? { signal } : {},
+  );
 }

@@ -30,6 +30,7 @@ import {
   keysLeaveApplication,
   keysLeaveApplicationExtra,
   keysLeaveMentions,
+  keysLeaveRange,
 } from "./keys/leave-application";
 import {
   keysOvertimeRules,
@@ -89,6 +90,7 @@ export const en = {
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,
+  ...keysLeaveRange,
   ...keysOvertimeRules,
   ...keysAssignShift,
   ...keysGrace,

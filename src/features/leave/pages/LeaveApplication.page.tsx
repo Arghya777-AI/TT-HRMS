@@ -6,22 +6,35 @@
  * places link to `/me/leave/apply` and that is the one an employee finds. The old
  * `LeaveApply.page` is deleted, not orphaned.
  *
- * WHAT WAS LOST IN THAT SWAP, stated rather than glossed: the old screen ran a server preview
- * and listed the individual dates it would count. This one shows the total the server
- * computed per request after filing, not before. The arithmetic is still the server's — no
- * browser ever counts the days — but the employee no longer sees WHICH dates were excluded
- * until the request exists. Worth restoring.
+ * THE PER-DATE PREVIEW LOST IN THAT SWAP IS BACK, and by a better route. The old screen got it
+ * by writing a draft and reading `calc_leave_days` off it; this one asks
+ * `leave_countable_dates` (migration 040000), which answers for a range nobody has committed
+ * to yet — so the dates that will be excluded are visible while the employee is still choosing
+ * them, not after a draft exists.
+ *
+ * A RANGE, NOT A START DATE. This screen shipped with one date field and sent
+ * `to_date = from_date`, which meant a three-day allocation filed three ONE-day requests whose
+ * `total_days` could never match what was allocated. That was a real bug and the range is its
+ * fix: `from_date` and `to_date` are both the employee's, and the calendar shows their own
+ * weekly offs and holidays inside the selection.
  *
  * THE ORDER IS THE FEATURE. The existing form asks for dates and derives a length, which is
  * backwards for somebody who knows they want three days and has to work out which balances
  * cover them. This asks the number FIRST, then the dates, then the split — and it shows what
- * is left to allocate as they go, so the arithmetic is never theirs to do.
+ * is left to allocate as they go, so the arithmetic is never theirs to do. The dates then
+ * report back what they actually cost, and `rangeMismatch` says so when the two disagree
+ * rather than quietly overriding either.
  *
- * ONE APPLICATION, SEVERAL TYPES. 0.5 from Week-off and 1.5 from Earned Leave is one act
- * here and becomes two `leave_requests` sharing an `application_group_id` (migration 039700).
- * Each row is still guarded independently per type by the five triggers around
- * `leave_requests`, including the per-type balance check — which is exactly why this shape was
- * chosen over putting the leave type on the day.
+ * ONE APPLICATION, SEVERAL TYPES, DISJOINT DATES. 0.5 from Week-off and 1.5 from Earned Leave
+ * is one act here and becomes `leave_requests` rows sharing an `application_group_id`
+ * (migration 039700). Each row is still guarded independently per type by the triggers around
+ * `leave_requests`, including the per-type balance check — which is why this shape was chosen
+ * over putting the leave type on the day.
+ *
+ * The rows get DIFFERENT dates, and that is forced, not stylistic: `leave_requests_no_overlap`
+ * refuses a request whose date range touches another live one for the same employee. Giving
+ * every type the same range — what this screen did — meant every two-type application was
+ * refused. `splitAllocationsAcrossDates` deals the counted dates out instead.
  *
  * SICK LEAVE IS EXCLUSIVE AND THE FORM SAYS SO BEFORE SUBMIT. Choosing it clears any other
  * allocation and disables the rest, rather than letting somebody build an application the
@@ -29,10 +42,13 @@
  * verified live: "Sick Leave must be taken on its own and cannot be combined with another
  * leave type". The screen is the courtesy; the trigger is the rule.
  *
- * NOTHING HERE COUNTS DAYS AGAINST A CALENDAR. Which dates are weekly offs or holidays is
- * `calc_leave_days`' answer, and a browser copy would disagree the first time a rota changed.
- * The employee states a number; the server decides which dates it lands on and the request
- * carries its own `total_days`.
+ * NOTHING HERE COUNTS DAYS AGAINST A CALENDAR. Which dates are weekly offs or holidays comes
+ * from the server both times: `leave_countable_dates` for the advisory preview, and
+ * `calc_leave_days` for the `total_days` actually stamped on each filed request. The preview
+ * is a read-only mirror of the engine's own day loop, verified against it over 279 date-by-date
+ * comparisons. A browser copy would have been wrong immediately: TT0013's employee record says
+ * WO-SUN-ALTSAT while `resolve_policy` — which the engine follows — says WO-MIDWEEK-TUE, so
+ * reading the employee column marks Sunday free and Tuesday chargeable, backwards on both.
  *
  * @route /me/leave/apply
  */
@@ -44,10 +60,22 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { t } from "@/shared/i18n/en";
 import { mutationUserMessage } from "@/shared/api/query";
-import { nowIstDate } from "@/lib/datetime";
+import { fmtCivilDayMonthWeekday, nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useColleagues, useMyLeaveContext } from "../hooks/useLeaveApply";
+import { useColleagues, useCountableDates, useMyLeaveContext } from "../hooks/useLeaveApply";
+import { LeaveRangeCalendar } from "../components/LeaveRangeCalendar";
+import {
+  countedDatesOf,
+  freeDayReason,
+  rangeMismatch,
+  rangeProblem,
+  splitAllocationsAcrossDates,
+  summariseRange,
+  type RangeMismatch,
+  type RangeProblem,
+  type SplitProblem,
+} from "../leaveRange";
 import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
 import {
   allocationProblems,
@@ -92,6 +120,44 @@ function problemText(problem: AllocationProblem): string {
   }
 }
 
+/** Why the chosen range cannot be priced, in a sentence. */
+function rangeProblemText(problem: RangeProblem): string {
+  switch (problem.kind) {
+    case "incomplete":
+      return t("leave.app.range.problem.incomplete");
+    case "inverted":
+      return t("leave.app.range.problem.inverted");
+    case "tooLong":
+      return t("leave.app.range.problem.tooLong", { days: formatNumber(problem.days) });
+  }
+}
+
+/**
+ * The dates cannot be dealt out across the chosen types. The only way this happens is two
+ * half days of different types wanting the same date — a date cannot carry two requests past
+ * `leave_requests_no_overlap` — so the sentence says what to do about it.
+ */
+function splitProblemText(problem: SplitProblem): string {
+  return t("leave.app.range.problem.notEnoughDates", {
+    needed: formatNumber(problem.datesNeeded),
+    available: formatNumber(problem.datesAvailable),
+  });
+}
+
+/**
+ * The dates and the split disagree. Both numbers are named, because the employee has to decide
+ * which of the two to change and cannot without seeing them.
+ */
+function mismatchText(mismatch: RangeMismatch): string {
+  const args = {
+    counted: formatNumber(mismatch.counted),
+    allocated: formatNumber(mismatch.allocated),
+  };
+  return mismatch.kind === "allocatedMore"
+    ? t("leave.app.range.mismatchMore", args)
+    : t("leave.app.range.mismatchLess", args);
+}
+
 export default function LeaveApplicationPage() {
   const contextQuery = useMyLeaveContext();
   const context = contextQuery.data ?? null;
@@ -106,6 +172,7 @@ export default function LeaveApplicationPage() {
 
   const [totalDays, setTotalDays] = useState("1");
   const [fromDate, setFromDate] = useState(nowIstDate());
+  const [toDate, setToDate] = useState(nowIstDate());
   const [allocations, setAllocations] = useState<readonly Allocation[]>([]);
   const [reason, setReason] = useState("");
   const [contact, setContact] = useState("");
@@ -120,7 +187,31 @@ export default function LeaveApplicationPage() {
   const total = Number.parseFloat(totalDays) || 0;
   const remaining = remainingDays(total, allocations);
   const problems = allocationProblems(total, allocations, types);
-  const ready = canSubmitAllocation(total, allocations, types) && reason.trim().length >= 10;
+  /* ── The range, and what it costs ──────────────────────────────────────────
+     `rangeProblem` is answered without the server so an inverted range costs no round trip;
+     `countable` is the server's per-date verdict and `summary` is arithmetic over it. */
+  const badRange = rangeProblem(fromDate, toDate);
+  const countable = useCountableDates(fromDate, toDate);
+  const summary = useMemo(() => summariseRange(countable.data ?? []), [countable.data]);
+  const mismatch = rangeMismatch(summary.countedDays, total);
+
+  /* The dates each type will actually carry. Computed here rather than at submit so a split
+     that cannot be made is shown BEFORE the button is pressed — two half days of different
+     types need two dates and the overlap guard would otherwise refuse the second request. */
+  const split = useMemo(
+    () => splitAllocationsAcrossDates(countedDatesOf(summary.dates), allocations),
+    [summary.dates, allocations],
+  );
+
+  /* Submitting over a range the allocation does not match would hand the employee a refusal
+     with a number this screen never showed them — `total_days` is stamped from the DATES. */
+  const ready =
+    canSubmitAllocation(total, allocations, types) &&
+    reason.trim().length >= 10 &&
+    badRange === null &&
+    mismatch === null &&
+    split.problem === null &&
+    split.segments.length > 0;
 
   /** Unpaid leave, if the venue has such a type — what a shortfall can be taken as. */
   const lwpType = useMemo(() => types.find((type) => !type.isPaid) ?? null, [types]);
@@ -158,23 +249,22 @@ export default function LeaveApplicationPage() {
     if (context === null) return;
     setBusy(true);
     setFailure(null);
-    // One member per allocated type. Every member carries the SAME range: the server expands
-    // it and stamps each request's own `total_days`, so the split is by type, not by date.
-    const members = allocations
-      .filter((a) => a.days > 0)
-      .map((a) => {
-        const type = types.find((candidate) => candidate.id === a.typeId);
-        return {
-          leaveTypeId: a.typeId,
-          leaveTypeName: type?.name ?? "",
-          fromDate,
-          toDate: fromDate,
-          portion: (a.days % 1 === 0.5 ? "first_half" : "full_day") as
-            | "full_day"
-            | "first_half"
-            | "second_half",
-        };
-      });
+    /*
+      ONE MEMBER PER SEGMENT, WITH DISJOINT DATES. Not one member per type over the shared
+      range: `leave_requests_no_overlap` refuses a request whose dates touch another live one
+      for the same employee, so two types over the same range meant the second was always
+      rejected. `split` deals the counted dates out — see `splitAllocationsAcrossDates`.
+    */
+    const members = split.segments.map((segment) => {
+      const type = types.find((candidate) => candidate.id === segment.typeId);
+      return {
+        leaveTypeId: segment.typeId,
+        leaveTypeName: type?.name ?? "",
+        fromDate: segment.fromDate,
+        toDate: segment.toDate,
+        portion: segment.portion as "full_day" | "first_half" | "second_half",
+      };
+    });
 
     void submitLeaveApplication({
       employeeId: context.id,
@@ -255,15 +345,6 @@ export default function LeaveApplicationPage() {
                 className="num h-10 w-28 rounded-md border bg-background px-3 text-lg font-semibold tabular-nums"
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="font-medium text-muted-foreground">{t("leave.app.startOn")}</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(event) => setFromDate(event.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm"
-              />
-            </label>
             <Button
               variant="outline"
               size="sm"
@@ -274,6 +355,185 @@ export default function LeaveApplicationPage() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">{t("leave.app.daysHint")}</p>
+
+          {/* ── The dates ────────────────────────────────────────────────────
+              Typed fields AND a calendar, both writing the same two pieces of state. The
+              fields are faster for anyone who knows the dates; the calendar is the only
+              thing that can show a weekly off before it is chosen. */}
+          <div className="mt-4 border-t pt-4">
+            <h3 className="text-xs font-semibold">{t("leave.app.range.title")}</h3>
+            <div className="mt-2 grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+              <div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-medium text-muted-foreground">
+                      {t("leave.app.range.from")}
+                    </span>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(event) => setFromDate(event.target.value)}
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-medium text-muted-foreground">
+                      {t("leave.app.range.to")}
+                    </span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      min={fromDate}
+                      onChange={(event) => setToDate(event.target.value)}
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                    />
+                  </label>
+                </div>
+                <div className="mt-3">
+                  <LeaveRangeCalendar
+                    fromDate={fromDate}
+                    toDate={toDate}
+                    onChange={(nextFrom, nextTo) => {
+                      setFromDate(nextFrom);
+                      setToDate(nextTo);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* ── What these dates actually cost ───────────────────────── */}
+              <div className="min-w-0">
+                {badRange !== null ? (
+                  <p className="rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                    {rangeProblemText(badRange)}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <p className="num text-2xl font-semibold tabular-nums">
+                        {countable.isPending
+                          ? "—"
+                          : t("leave.app.range.counted", {
+                              days: formatNumber(summary.countedDays),
+                            })}
+                      </p>
+                      {summary.dates.length > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          {t("leave.app.range.countedOf", {
+                            counted: formatNumber(summary.countedDays),
+                            span: formatNumber(summary.dates.length),
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {summary.dates.length === 0
+                        ? ""
+                        : summary.freeDays === 0
+                          ? t("leave.app.range.freeNone")
+                          : t("leave.app.range.freeSome", {
+                              free: formatNumber(summary.freeDays),
+                              weeklyOffs: formatNumber(summary.weeklyOffs),
+                              holidays: formatNumber(summary.holidays),
+                            })}
+                    </p>
+
+                    {split.problem !== null ? (
+                      <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                        {splitProblemText(split.problem)}
+                      </p>
+                    ) : null}
+
+                    {mismatch !== null ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                        <span className="min-w-0 flex-1">{mismatchText(mismatch)}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setTotalDays(String(summary.countedDays));
+                            setAllocations([]);
+                          }}
+                        >
+                          {t("leave.app.range.useCounted", {
+                            days: formatNumber(summary.countedDays),
+                          })}
+                        </Button>
+                      </div>
+                    ) : null}
+
+                    {/* Which dates each type will carry. Shown because the split is not
+                        obvious and the employee is entitled to see it before it is filed —
+                        these become separate requests with separate numbers. */}
+                    {split.segments.length > 1 ? (
+                      <div className="mt-3 rounded-md border bg-muted/30 p-2.5">
+                        <p className="text-xs font-medium">{t("leave.app.range.perType")}</p>
+                        <ul className="mt-1 space-y-0.5 text-xs">
+                          {split.segments.map((segment, index) => (
+                            <li
+                              key={`${segment.typeId}-${segment.fromDate}-${index}`}
+                              className="flex flex-wrap items-baseline justify-between gap-x-2"
+                            >
+                              <span className="font-medium">
+                                {types.find((type) => type.id === segment.typeId)?.name ??
+                                  segment.typeId}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {segment.fromDate === segment.toDate
+                                  ? fmtCivilDayMonthWeekday(segment.fromDate)
+                                  : `${fmtCivilDayMonthWeekday(segment.fromDate)} – ${fmtCivilDayMonthWeekday(segment.toDate)}`}
+                                {" · "}
+                                {t("leave.app.range.segmentDays", {
+                                  days: formatNumber(segment.expectedDays),
+                                })}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 text-[0.65rem] text-muted-foreground">
+                          {t("leave.app.range.perTypeHint")}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {/* The per-date list — the preview the old screen had, now shown before
+                        anything is filed rather than after. */}
+                    {summary.dates.length > 0 ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {t("leave.app.range.perDate")}
+                        </p>
+                        <ul className="mt-1 max-h-56 space-y-0.5 overflow-y-auto pr-1 text-xs">
+                          {summary.dates.map((day) => {
+                            const reason = freeDayReason(day);
+                            return (
+                              <li
+                                key={day.leave_date}
+                                className={cn(
+                                  "flex items-baseline justify-between gap-2 rounded px-1.5 py-0.5",
+                                  reason === null ? "" : "text-muted-foreground",
+                                )}
+                              >
+                                <span>{fmtCivilDayMonthWeekday(day.leave_date)}</span>
+                                <span className="shrink-0">
+                                  {reason === null
+                                    ? "1"
+                                    : reason === "weekly_off"
+                                      ? `${t("leave.app.range.weeklyOff")} · ${t("leave.app.range.notCounted")}`
+                                      : `${day.holiday_name ?? t("leave.app.range.holiday")} · ${t("leave.app.range.notCounted")}`}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* ── 2. Where the days come from ─────────────────────────────────── */}

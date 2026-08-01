@@ -21,7 +21,7 @@ export const keysLeaveApplication = {
   "leave.app.startOn": "Starting",
   "leave.app.suggest": "Fill from my balances",
   "leave.app.daysHint":
-    "Half days are allowed. Weekly offs and holidays inside your dates are worked out by the system, not counted against you here.",
+    "Half days are allowed. Pick your dates below and the weekly offs and holidays inside them are shown and excluded before you submit.",
 
   "leave.app.step2": "2 · Where should these days come from?",
   "leave.app.allPlaced": "All days placed",
@@ -73,4 +73,50 @@ export const keysLeaveMentions = {
   "leave.app.mention": "Mention colleagues (optional)",
   "leave.app.mentionHint":
     "Each person you pick is notified that you named them on this leave. It does not ask them to approve anything.",
+} as const;
+
+/**
+ * The from–to range picker (migration 039900).
+ *
+ * EVERY SENTENCE HERE NAMES A DATE OR A NUMBER. "Weekly offs are excluded" is a policy
+ * statement; "2 of these days are your weekly offs and cost you nothing" is an answer. The
+ * employee is deciding whether to take Friday to Tuesday, and the only useful reply is what
+ * that costs them.
+ */
+export const keysLeaveRange = {
+  "leave.app.range.title": "Which dates?",
+  "leave.app.range.from": "From",
+  "leave.app.range.to": "To",
+  "leave.app.range.pickEnd": "Pick the last day on the calendar, or type it above.",
+  "leave.app.range.gridLabel": "Choose the first and last day of your leave",
+  "leave.app.range.prevMonth": "Previous month",
+  "leave.app.range.nextMonth": "Next month",
+  "leave.app.range.weeklyOff": "Weekly off",
+  "leave.app.range.holiday": "Holiday",
+  "leave.app.range.loading": "checking your weekly offs…",
+  "leave.app.range.paintFailed": "Could not load your weekly offs — the dates below are still checked on submit.",
+
+  "leave.app.range.counted": "{days} day(s) of leave",
+  "leave.app.range.countedOf": "{counted} of {span} days count",
+  "leave.app.range.freeNone": "Nothing in these dates is free — every day counts.",
+  "leave.app.range.freeSome":
+    "{free} day(s) inside these dates cost you nothing: {weeklyOffs} weekly off, {holidays} holiday.",
+  "leave.app.range.perDate": "Day by day",
+  "leave.app.range.perType": "Which dates come from which balance",
+  "leave.app.range.perTypeHint":
+    "Each of these is filed as its own request under one application, because a request carries one leave type and two requests cannot share a date.",
+  "leave.app.range.segmentDays": "{days} day(s)",
+  "leave.app.range.notCounted": "not counted",
+
+  "leave.app.range.problem.incomplete": "Choose both a first and a last day.",
+  "leave.app.range.problem.inverted": "The last day cannot be before the first day.",
+  "leave.app.range.problem.tooLong": "{days} days is too long to apply for in one go.",
+  "leave.app.range.problem.notEnoughDates":
+    "This split needs {needed} separate dates and these dates give {available}. Two half days of different types each need a date of their own — lengthen the dates, or take one of them as a full day.",
+
+  "leave.app.range.mismatchMore":
+    "These dates cost {counted} day(s), but you have placed {allocated}. Change the dates or the split — the server counts the dates.",
+  "leave.app.range.mismatchLess":
+    "These dates cost {counted} day(s) and you have only placed {allocated}. Place the rest, or shorten the dates.",
+  "leave.app.range.useCounted": "Use {days}",
 } as const;

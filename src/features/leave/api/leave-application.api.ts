@@ -7,7 +7,7 @@
  * five triggers around `leave_requests`, per type — which is the whole reason this shape was
  * chosen over putting the type on the day.
  *
- * ── TWO FACTS ABOUT THE SERVER THAT DICTATE THIS CODE ────────────────────────
+ * ── THREE FACTS ABOUT THE SERVER THAT DICTATE THIS CODE ──────────────────────
  *
  * 1. A REQUEST CANNOT BE BORN `pending`. `leave_requests_submit_guard` is a BEFORE trigger
  *    that calls `rebuild_leave_request_days(NEW.id, …)`, so on a direct pending INSERT the
@@ -23,6 +23,18 @@
  * 2. THE COMBINATION GUARD IS AN `AFTER` CONSTRAINT TRIGGER, judged per row against the
  *    group. So the FIRST member submits cleanly and a violating member is refused when IT is
  *    submitted — the failure names the offending type, which is what the screen shows.
+ *
+ * 3. `leave_requests_no_overlap` REFUSES TWO REQUESTS WHOSE DATE RANGES TOUCH, for the same
+ *    employee, in any live status:
+ *
+ *      leave request overlaps existing request LR-… for the same employee   (23P01)
+ *
+ *    This function used to give every member the SAME range, on the reasoning that the split
+ *    was "by type, not by date". The overlap guard makes that impossible: the second member
+ *    was refused every time, so any application drawing on two leave types failed. Members now
+ *    arrive as SEGMENTS with disjoint dates — `splitAllocationsAcrossDates` deals the counted
+ *    dates out — and each segment's own `total_days` is stamped from its own range, so the
+ *    parts add up to what the employee asked for.
  *
  * ── WHY DRAFTS ARE CREATED FIRST, ALL OF THEM, BEFORE ANY SUBMIT ─────────────
  * A partially submitted application is the worst outcome: one leave type approved, another
@@ -46,7 +58,13 @@ const memberSchema = z.object({
   status: z.string(),
 });
 
-/** One leg of the application: this many days from this leave type. */
+/**
+ * One leg of the application: this leave type, over THESE dates.
+ *
+ * The dates are the caller's to choose and MUST NOT overlap another member's — see fact 3.
+ * `splitAllocationsAcrossDates` is what produces them; this type is the contract between the
+ * two.
+ */
 export interface ApplicationMember {
   readonly leaveTypeId: string;
   readonly leaveTypeName: string;

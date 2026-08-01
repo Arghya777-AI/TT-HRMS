@@ -19,11 +19,13 @@ import {
   fetchLeaveTypeRules,
   fetchMyLeaveContext,
   fetchColleagues,
+  fetchCountableDates,
   previewLeaveRequest,
   submitLeaveRequest,
   withdrawLeaveRequest,
   type ApprovalTrail,
   type CalendarHoliday,
+  type CountableDate,
   type LeaveAllocationDay,
   type EmployeeRef,
   type LeavePreview,
@@ -33,6 +35,7 @@ import {
   type SubmitLeaveInput,
 } from "../api/leave-apply.api";
 import type { LeaveRequest } from "../api/leave.api";
+import { rangeProblem } from "../leaveRange";
 
 const NO_EMPLOYEE = "no-employee";
 
@@ -163,6 +166,33 @@ export function useColleagues(): UseQueryResult<EmployeeRef[], Error> {
     queryKey: qk.leave.list({ what: "colleagues" }),
     queryFn: ({ signal }) => fetchColleagues(300, signal),
     staleTime: 5 * 60_000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Which dates in a from–to range would actually cost leave, per date.
+ *
+ * A QUERY, unlike the preview beside it — it writes nothing, so it is safe to re-run whenever
+ * either end of the range moves, and safe for react-query to cache and revalidate. The preview
+ * is a mutation because it creates a draft; this only reads the rota.
+ *
+ * Disabled until the range is complete and sane. `rangeProblem` is checked HERE rather than
+ * relying on the server's own guards so an inverted or absurd range costs no round trip and
+ * shows no error the employee has to decode.
+ */
+export function useCountableDates(
+  fromDate: string,
+  toDate: string,
+): UseQueryResult<CountableDate[], Error> {
+  const employeeId = useEmployeeId();
+  const ok = employeeId !== null && rangeProblem(fromDate, toDate) === null;
+  return useQuery({
+    queryKey: qk.leave.countable(employeeId ?? NO_EMPLOYEE, fromDate, toDate),
+    queryFn: ({ signal }) => fetchCountableDates(requireEmployeeId(employeeId), fromDate, toDate, null, signal),
+    enabled: ok,
+    // The rota and the holiday calendar do not move during an application.
+    staleTime: 5 * 60 * 1000,
     retry: shouldRetryQuery,
   });
 }

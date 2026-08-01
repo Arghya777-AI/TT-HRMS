@@ -9,7 +9,7 @@
  * Anything absent here renders <PageStub> from the route manifest metadata, so
  * the route always exists, is deep-linkable, and never 404s mid-build.
  *
- * 188 of 191 routes are built.
+ * 189 of 192 routes are built.
  */
 import type { ComponentType, LazyExoticComponent } from "react";
 
@@ -83,8 +83,8 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/admin/kiosk/policy": () => import("./admin/pages/KioskPolicy.page"),
   "/admin/kiosk/purge": () => import("./admin/pages/TemplatePurge.page"),
   "/admin/kiosk/templates": () => import("./admin/pages/FaceTemplates.page"),
-  "/admin/leave/apply": () => import("./admin/pages/LeaveOnBehalf.page"),
   "/admin/leave/adjustments": () => import("./admin/pages/LeaveAdjustments.page"),
+  "/admin/leave/apply": () => import("./admin/pages/LeaveOnBehalf.page"),
   "/admin/leave/balances": () => import("./admin/pages/LeaveBalances.page"),
   "/admin/leave/calendar": () => import("./admin/pages/OrgLeaveCalendar.page"),
   "/admin/leave/comp-off": () => import("./admin/pages/CompOffLedger.page"),
@@ -172,6 +172,7 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/me/attendance": () => import("./attendance/pages/MyAttendance.page"),
   "/me/attendance/:date": () => import("./attendance/pages/AttendanceDayDetail.page"),
   "/me/comp-off": () => import("./leave/pages/CompOff.page"),
+  "/me/documents": () => import("./docs/pages/MyDocuments.page"),
   "/me/helpdesk": () => import("./helpdesk/pages/Helpdesk.page"),
   "/me/helpdesk/:id": () => import("./helpdesk/pages/Ticket.page"),
   "/me/holidays": () => import("./holidays/pages/Holidays.page"),
@@ -186,7 +187,6 @@ export const PAGE_REGISTRY: Readonly<Record<string, PageLoader>> = {
   "/me/policies/:slug": () => import("./policies/pages/PolicyReader.page"),
   "/me/profile/basic": () => import("./profile/pages/ProfileBasic.page"),
   "/me/profile/custom": () => import("./profile/pages/ProfileCustom.page"),
-  "/me/documents": () => import("./docs/pages/MyDocuments.page"),
   "/me/profile/documents": () => import("./profile/pages/ProfileDocuments.page"),
   "/me/profile/employment": () => import("./profile/pages/ProfileEmployment.page"),
   "/me/profile/history": () => import("./profile/pages/ProfileHistory.page"),

@@ -71,6 +71,7 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/regularizations", title: "Regularizations", hint: "Your correction requests and where each one stands.", cap: "me.view", domain: "attendance", phase: "P1", icon: ClipboardList },
   { path: "/me/regularizations/new", title: "New regularization", hint: "Ask for a punch correction with evidence and a live preview.", cap: "me.view", domain: "attendance", phase: "P1", icon: ClipboardList },
   { path: "/me/leave", title: "Leave", hint: "Balances per type, plus every request you've made.", cap: "me.view", domain: "leave", phase: "P1", icon: CalendarDays },
+  { path: "/me/leave/apply-combined", title: "Apply for leave", hint: "Say how many days, then split them across your balances.", cap: "me.view", domain: "leave", phase: "P1", icon: CalendarDays },
   { path: "/me/leave/apply", title: "Apply for leave", hint: "Server-previewed day allocation before you can submit.", cap: "me.view", domain: "leave", phase: "P1", icon: CalendarDays },
   { path: "/me/leave/calendar", title: "Leave calendar", hint: "Your leave, offs, holidays and team density counts.", cap: "me.view", domain: "leave", phase: "P1", icon: CalendarDays },
   { path: "/me/leave/:id", title: "Leave request", hint: "Allocation table and the full approval trail.", cap: "me.view", domain: "leave", phase: "P1", icon: CalendarDays },

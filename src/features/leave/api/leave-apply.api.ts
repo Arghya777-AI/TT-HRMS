@@ -111,6 +111,12 @@ export const leaveTypeRuleSchema = z.object({
   applies_to_employment_types: z.array(z.string()).nullable(),
   gender_restriction: z.string().nullable(),
   colour_hex: z.string().nullable(),
+  /**
+   * False when this type must be taken ALONE — a combined application may not mix it with
+   * any other type. Added by migration 039700 for Sick Leave. A property of the type, so
+   * the allocation form never names a code.
+   */
+  allows_combination: z.boolean(),
 });
 
 export type LeaveTypeRule = z.infer<typeof leaveTypeRuleSchema>;
@@ -121,7 +127,7 @@ const LEAVE_TYPE_RULE_COLUMNS =
   "max_backdated_days, requires_document_after_days, availing_allowed_during_probation, " +
   "allow_negative_balance, max_negative_days, count_weekly_off_as_leave, " +
   "count_holiday_as_leave, min_service_months, max_times_in_service, " +
-  "applies_to_employment_types, gender_restriction, colour_hex";
+  "applies_to_employment_types, gender_restriction, colour_hex, allows_combination";
 
 /** Active leave types, in the order the admin console assigned them. */
 export async function fetchLeaveTypeRules(signal?: AbortSignal): Promise<LeaveTypeRule[]> {

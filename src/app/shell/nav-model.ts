@@ -89,6 +89,9 @@ const ME_ITEMS: readonly NavItem[] = [
     badge: "leave.pending",
     mobileSlot: 3,
   },
+  // Applying is its own task, not a tab of "my leave". It is also where the combined
+  // application lives — the only screen that can draw one request from several balances.
+  { labelKey: "shell.nav.applyLeave", to: "/me/leave/apply-combined", icon: CalendarPlus, cap: "me.view" },
   { labelKey: "shell.nav.compOff", to: "/me/comp-off", icon: HeartHandshake, cap: "me.view", badge: "compOff.expiring" },
   {
     labelKey: "shell.nav.salary",

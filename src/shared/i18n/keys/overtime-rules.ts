@@ -193,3 +193,19 @@ export const keysStageDocs = {
   "admin.stageDocs.uploaded": "{n} attached.",
   "admin.stageDocs.failed": "{name} could not be attached: {reason}",
 } as const;
+
+/**
+ * The missing admin rail entry.
+ *
+ * Seven screens under /admin/time/* had no nav entry, so the whole section was reachable
+ * only by URL — the same defect the Face & kiosk comment in nav-model records, in a second
+ * section. "Time & policy" rather than "Shifts" because the group also owns weekly offs,
+ * holidays, attendance policies, pay periods and the resolver.
+ */
+export const keysNavTime = {
+  "shell.nav.admin.time": "Time & policy",
+  "shell.nav.admin.org": "Organisation",
+  "shell.nav.admin.workflow": "Approvals & workflow",
+  "shell.nav.admin.comms": "Communications",
+  "shell.nav.admin.assets": "Assets",
+} as const;

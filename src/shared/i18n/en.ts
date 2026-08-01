@@ -34,6 +34,7 @@ import {
   keysAttachDocs,
   keysCompOffManual,
   keysStageDocs,
+  keysNavTime,
 } from "./keys/overtime-rules";
 import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
@@ -81,6 +82,7 @@ export const en = {
   ...keysAttachDocs,
   ...keysCompOffManual,
   ...keysStageDocs,
+  ...keysNavTime,
   ...keysRolesIst,
   ...keysAnalytics,
   ...keysAnalyticsPlanned,

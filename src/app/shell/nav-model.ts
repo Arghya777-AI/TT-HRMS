@@ -14,7 +14,11 @@ import {
   BarChart3,
   CalendarDays,
   ClipboardList,
+  Building2,
+  Workflow,
+  Bell,
   Clock,
+  Clock3,
   FileText,
   Fingerprint,
   Gauge,
@@ -124,7 +128,26 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   { labelKey: "shell.nav.admin.attendance", to: "/admin/attendance/live", icon: Clock, cap: "admin.access" },
   { labelKey: "shell.nav.admin.leave", to: "/admin/leave/requests", icon: CalendarDays, cap: "admin.access" },
   { labelKey: "shell.nav.admin.payroll", to: "/admin/payroll/runs", icon: Banknote, cap: "admin.access" },
-  { labelKey: "shell.nav.admin.documents", to: "/admin/documents/vault", icon: FileText, cap: "admin.access" },
+  { labelKey: "shell.nav.admin.documents", to: "/admin/documents/repository", icon: FileText, cap: "admin.access" },
+  // Time & policy. SEVEN screens live under /admin/time/* — shifts, weekly offs,
+  // holidays, attendance policies, pay periods, policy assignments, the resolver — and
+  // NONE of them had a nav entry, so the whole section was reachable only by typing a
+  // URL. Reported as "where is that option?" while being told to go to Time & policy,
+  // which is exactly what the Face & kiosk comment above describes; this is the same
+  // defect in a second section.
+  //
+  // It points at `shifts` because editing a shift window or its grace is the task an
+  // admin comes here for; the other six are reachable from that screen's own section
+  // tabs.
+  { labelKey: "shell.nav.admin.time", to: "/admin/time/shifts", icon: Clock3, cap: "admin.access" },
+  // FOUR MORE SECTIONS with no rail entry, found by railCoverage.test.ts once it started
+  // asserting coverage by domain: Organisation (10 screens), Communications (7), Assets (6)
+  // and Workflow (5). 28 screens reachable only by typing a URL, on top of the 7 under
+  // Time & policy. Each points at the screen an admin comes to the section for.
+  { labelKey: "shell.nav.admin.org", to: "/admin/org/departments", icon: Building2, cap: "admin.access" },
+  { labelKey: "shell.nav.admin.workflow", to: "/admin/workflow/inbox", icon: Workflow, cap: "admin.access", badge: "admin.alerts" },
+  { labelKey: "shell.nav.admin.comms", to: "/admin/comms/announcements", icon: Bell, cap: "admin.access" },
+  { labelKey: "shell.nav.admin.assets", to: "/admin/assets/master", icon: Package, cap: "admin.access" },
   // Face & kiosk. Nine screens live under /admin/kiosk/* — enrolment, devices,
   // templates, match review, consent, operators, policy, purge, abuse — and NONE
   // of them had a nav entry, so the entire section was reachable only by typing a

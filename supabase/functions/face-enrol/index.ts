@@ -144,6 +144,14 @@ const GATE_DEFAULTS = {
   minContrast: 0.06,
   maxYawDeg: 15,
   /**
+   * The turn poses. `maxYawDeg` stays 15 for the three FRONTAL poses; these two are the ones
+   * that ask the subject to turn, and refusing them was the defect described at the yaw gate.
+   * 35 is where the aligned crop starts to degrade faster than the extra angular coverage is
+   * worth; 15 is the floor below which a "turn" adds nothing the frontal sample has not got.
+   */
+  maxTurnYawDeg: 35,
+  minTurnYawDeg: 15,
+  /**
    * 25, not 10, and the reason is the ESTIMATOR not the head.
    *
    * `facePipeline.poseFromLandmarks` computes pitch as
@@ -331,14 +339,25 @@ function insideBand(value: number, low: number, high: number): number {
  * carry a template past the 0.70 `quality_score` floor. Deliberate: the per-sample
  * gates are the floor, the template score is the bar.
  */
-export function sampleQuality(m: z.infer<typeof SampleMetrics>, g: Gates): number {
+export function sampleQuality(
+  m: z.infer<typeof SampleMetrics>,
+  g: Gates,
+  turning = false,
+): number {
   const detection = aboveThreshold(m.detection_score, g.minDetectionScore, 0.9);
   const sharpness = aboveThreshold(m.sharpness, g.minSharpness, g.minSharpness + 280);
   const brightness = insideBand(m.brightness, g.minBrightness, g.maxBrightness);
   const contrast = aboveThreshold(m.contrast, g.minContrast, g.minContrast + 0.14);
   const size = aboveThreshold(m.face_px, g.minFacePx, g.minFacePx + 240);
+  /*
+    A TURN MUST NOT COST QUALITY SCORE. `|yaw| / maxYawDeg` scored a deliberately turned head as
+    poor, and the medoid is chosen by score — so even once turns are accepted, the frontal
+    samples would win the nomination every time and the turned ones would sit unused. The yaw
+    term is therefore measured against whichever ceiling applies to this pose.
+  */
+  const yawCeilingForScore = turning ? g.maxTurnYawDeg : g.maxYawDeg;
   const pose = 1 - 0.5 * clamp01(Math.max(
-    Math.abs(m.yaw) / g.maxYawDeg,
+    Math.abs(m.yaw) / yawCeilingForScore,
     Math.abs(m.pitch) / g.maxPitchDeg,
     Math.abs(m.roll) / g.maxRollDeg,
   ));
@@ -382,8 +401,30 @@ function gateSample(sample: SampleInput, g: Gates): RejectedSample | null {
   if (m.contrast < g.minContrast) {
     return fail("contrast", `Too little contrast (${m.contrast.toFixed(3)} < ${g.minContrast}).`);
   }
-  if (Math.abs(m.yaw) > g.maxYawDeg) {
-    return fail("yaw", `Head turned ${m.yaw.toFixed(1)}°; keep within ±${g.maxYawDeg}°.`);
+  /*
+    YAW IS GATED AGAINST THE POSE THAT WAS ASKED FOR, not one frontal envelope.
+
+    It used to be `|yaw| > 15` for every sample including the two that explicitly ask the
+    subject to TURN — so a real turn was refused, the subject straightened up, and a frontal
+    frame was stored under the label "left". The evidence is in the data this wrote: across all
+    365 stored templates the yaw spread is -11.6 to +12.0 degrees, pinned against that ceiling,
+    and every employee is enrolled as five copies of the same frontal photograph. That is why
+    recognition fails as soon as somebody looks slightly away from the camera.
+
+    The client mirrors these windows (`enrolPoseWindows.ts`) so the operator is guided rather
+    than refused, but this remains the authority.
+  */
+  const turning = sample.pose_prompt === "left" || sample.pose_prompt === "right";
+  const yawCeiling = turning ? g.maxTurnYawDeg : g.maxYawDeg;
+  const yawFloor = turning ? g.minTurnYawDeg : 0;
+  if (Math.abs(m.yaw) > yawCeiling) {
+    return fail("yaw", `Head turned ${m.yaw.toFixed(1)}°; keep within ±${yawCeiling}°.`);
+  }
+  if (turning && Math.abs(m.yaw) < yawFloor) {
+    return fail(
+      "yaw",
+      `This pose needs a real turn: head is at ${m.yaw.toFixed(1)}°, turn to at least ±${yawFloor}°.`,
+    );
   }
   // PITCH IS NOT A GATE. It is recorded, and it still costs a little quality score
   // (the `pose` term), but it can no longer reject a sample.
@@ -852,7 +893,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    const perSampleQuality = accepted.map((s) => sampleQuality(s.metrics, gates));
+    const perSampleQuality = accepted.map((s) =>
+      sampleQuality(s.metrics, gates, s.pose_prompt === "left" || s.pose_prompt === "right"));
     // `secure.face_templates.blur_score` is `numeric(6,4)` — it cannot hold a raw
     // variance-of-Laplacian (those run into the hundreds and would raise a numeric
     // overflow). Store the NORMALISED sharpness score instead: 0.5 exactly at the

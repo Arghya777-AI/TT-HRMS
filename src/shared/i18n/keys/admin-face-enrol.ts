@@ -223,6 +223,19 @@ export const keysAdminFaceEnrol = {
   "shell.nav.admin.faceKiosk": "Face & kiosk",
   "admin.emp360.enrolFace": "Enrol face",
   "admin.emp360.enrolFace.hint": "Register or review this employee's face on this device.",
+  /*
+    THE TURN PROMPTS ASK FOR A REAL TURN NOW.
+
+    They used to read "Turn slightly left" while the gate refused anything past 12.75 degrees,
+    so the operator turned, was rejected, straightened up, and a frontal frame was stored. The
+    wording is deliberately "one side" / "the other side" rather than left and right: the yaw
+    estimate's sign depends on the camera and the mirrored preview together, so naming a
+    direction risks telling somebody to turn the wrong way. What recognition needs is coverage
+    on both sides, not a particular order.
+  */
+  "admin.enrolCap.turnMore": "Turn your head a bit further to the side, and hold it",
+  "admin.enrolCap.turnLess": "That is too far around — come back towards the camera a little",
+  "admin.enrolCap.turnOtherWay": "Now turn to the OTHER side",
   "admin.enrolCap.poseTooFarYaw": "Turn back towards the camera a little — that is too far to the side.",
   "admin.enrolCap.poseTooFarPitch": "Lift your chin a little — that is tilted too far.",
   "admin.enrolCap.poseTooFarRoll": "Straighten your head a little — it is tilted to one side.",

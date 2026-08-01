@@ -40,6 +40,11 @@ import { cn } from "@/lib/utils";
 import { t, type MessageKey } from "@/shared/i18n/en";
 import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
 import {
+  ENROL_POSES,
+  poseWindowComplaint,
+  type EnrolPose,
+} from "../enrolPoseWindows";
+import {
   DESCRIPTOR_INPUT_SIZE,
   loadFaceModels,
   readFrame,
@@ -55,13 +60,16 @@ import {
 } from "../hooks/useKioskConsole";
 import { useEmployeeRefOptions } from "../hooks/useMasters";
 
-const POSES = ["straight", "left", "right", "chin_down", "smile"] as const;
+const POSES = ENROL_POSES;
 
 /** One actionable sentence per complaint. Never "invalid frame". */
 const CAPTURE_GUIDANCE: Readonly<Record<CaptureComplaint, MessageKey>> = {
   yaw: "admin.enrolCap.poseTooFarYaw",
   pitch: "admin.enrolCap.poseTooFarPitch",
   roll: "admin.enrolCap.poseTooFarRoll",
+  turnMore: "admin.enrolCap.turnMore",
+  turnLess: "admin.enrolCap.turnLess",
+  turnOtherWay: "admin.enrolCap.turnOtherWay",
   tooFar: "admin.enrolCap.tooFar",
   tooClose: "admin.enrolCap.tooClose",
   tooDark: "admin.enrolCap.tooDark",
@@ -147,6 +155,9 @@ export type CaptureComplaint =
   | "yaw"
   | "pitch"
   | "roll"
+  | "turnMore"
+  | "turnLess"
+  | "turnOtherWay"
   | "tooFar"
   | "tooClose"
   | "tooDark"
@@ -155,7 +166,14 @@ export type CaptureComplaint =
   | "lowContrast"
   | "lowScore";
 
-/** Which way the subject has over-turned, or null when the pose is usable. */
+/**
+ * Which way the subject has over-turned, or null when the pose is usable.
+ *
+ * SUPERSEDED for the turn poses by `poseWindowComplaint`. This frontal-only form is what stored
+ * five copies of the same photograph for every employee: it refused `|yaw| > 12.75°` whichever
+ * pose had been asked for, so "turn to one side" was rejected as "turned too far" and the
+ * subject straightened up. Kept for the three FRONTAL poses, which it judges correctly.
+ */
 export function poseComplaint(
   quality: { yaw: number; pitch: number; roll: number },
 ): "yaw" | "pitch" | "roll" | null {
@@ -175,17 +193,22 @@ export function poseComplaint(
  * Is this frame one `face-enrol` will accept? Quality first, then pose, because
  * "come closer" is more actionable than "turn a little less" when both are true.
  */
-export function captureComplaint(quality: {
-  yaw: number;
-  pitch: number;
-  roll: number;
-  face_px: number;
-  face_fraction: number;
-  brightness: number;
-  contrast: number;
-  sharpness: number;
-  detection_score: number;
-}): CaptureComplaint | null {
+export function captureComplaint(
+  quality: {
+    yaw: number;
+    pitch: number;
+    roll: number;
+    face_px: number;
+    face_fraction: number;
+    brightness: number;
+    contrast: number;
+    sharpness: number;
+    detection_score: number;
+  },
+  /** Which pose is being asked for, and which way the first turn went. Omitted = frontal. */
+  pose?: EnrolPose,
+  firstTurnYaw?: number | null,
+): CaptureComplaint | null {
   if (quality.detection_score < ENROL_GATES.minDetectionScore) return "lowScore";
   if (quality.face_px < ENROL_GATES.minFacePx) return "tooFar";
   // Both directions, and before pose: "move back" is more actionable than "turn less".
@@ -195,7 +218,25 @@ export function captureComplaint(quality: {
   if (quality.brightness > ENROL_GATES.maxBrightness) return "tooBright";
   if (quality.sharpness < ENROL_GATES.minSharpness) return "tooBlurry";
   if (quality.contrast < ENROL_GATES.minContrast) return "lowContrast";
-  return poseComplaint(quality);
+
+  // Pose last, and against THIS pose's window: "come closer" is more actionable than
+  // "turn a little more" when both are true.
+  if (pose === undefined) return poseComplaint(quality);
+  const window = poseWindowComplaint(pose, quality, { firstTurnYaw: firstTurnYaw ?? null });
+  switch (window) {
+    case null:
+      return null;
+    case "straighten_head":
+      return "roll";
+    case "face_forward":
+      return "yaw";
+    case "turn_more":
+      return "turnMore";
+    case "turn_less":
+      return "turnLess";
+    case "turn_other_way":
+      return "turnOtherWay";
+  }
 }
 
 type Pose = (typeof POSES)[number];
@@ -342,7 +383,20 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
         // the server would accept it. Previously only pose was checked here and
         // three quality axes were looser than the server's, which is what produced
         // "Only 2 of 5 captures passed" with no way to tell why.
-        const complaint = captureComplaint(verdict.reading.quality);
+        /*
+          The pose is passed in, which is the whole point: the same frame is acceptable for
+          "turn to one side" and unacceptable for "look straight ahead". `firstTurnYaw` is the
+          yaw of whichever turn was captured first, so the second turn is required to be the
+          OTHER side rather than the same side twice.
+        */
+        const firstTurn = samples.find(
+          (sample) => sample.pose_prompt === "left" || sample.pose_prompt === "right",
+        );
+        const complaint = captureComplaint(
+          verdict.reading.quality,
+          currentPose,
+          firstTurn?.metrics.yaw ?? null,
+        );
         if (complaint !== null) {
           stable.current = 0;
           setGuidance(t(CAPTURE_GUIDANCE[complaint]));

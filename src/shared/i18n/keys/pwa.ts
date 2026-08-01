@@ -35,6 +35,11 @@ export const keysPwa = {
   "pwa.guide.iosStep2": "Tap “Add to Home Screen”, then “Add”",
   "pwa.guide.iosWhere": "The Share button is at the bottom of your screen",
 
+  /* Safari on a Mac installs from the File menu, not a ⋯ menu it does not have. */
+  "pwa.guide.macLead": "Safari on a Mac does this from the File menu.",
+  "pwa.guide.macStep1": "Open the File menu in Safari",
+  "pwa.guide.macStep2": "Choose “Add to Dock”, then “Add”",
+
   "pwa.guide.otherStep1": "Open the browser menu",
   "pwa.guide.otherStep2": "Tap “Install app” or “Add to Home screen”",
 

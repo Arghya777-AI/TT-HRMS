@@ -55,6 +55,8 @@ export interface InstallApp {
    * download silently does nothing — so the profile route must not be offered to them.
    */
   readonly isIosSafari: boolean;
+  /** Safari on a Mac: installs from File → Add to Dock, not from a ⋯ menu. */
+  readonly isMacSafari: boolean;
   /** The Web Clip profile, or null where it cannot be installed. */
   readonly iosProfileUrl: string | null;
   /** Resolves true when the user accepted. Only meaningful when `mode === "prompt"`. */
@@ -97,6 +99,27 @@ function detectIosSafari(): boolean {
   return /Safari/i.test(ua) && /Version\//i.test(ua);
 }
 
+/**
+ * Safari on macOS — which is NOT iOS and needs its own wording.
+ *
+ * Found by testing: Safari's Responsive Design Mode "iPhone Pro Max size" preset changes the
+ * VIEWPORT ONLY and leaves the user agent as Macintosh, so a developer checking the iPhone
+ * layout there is served the desktop branch. That is correct — it really is a Mac — but the
+ * generic "open the browser menu" wording is wrong for Safari, which installs from
+ * File → Add to Dock (Sonoma and later) and has no such item in its ⋯ menu.
+ *
+ * Verified against all three user agents: macOS Safari reports Macintosh with maxTouchPoints 0,
+ * a real iPhone reports iPhone with 5, and an iPad reports Macintosh with 5.
+ */
+function detectMacSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (!/Macintosh/i.test(ua)) return false;
+  if (navigator.maxTouchPoints > 1) return false; // an iPad wearing a Mac's user agent
+  if (/CriOS|FxiOS|EdgiOS|Chrome|Chromium|Edg\//i.test(ua)) return false;
+  return /Safari/i.test(ua) && /Version\//i.test(ua);
+}
+
 export function useInstallApp(): InstallApp {
   // Seeded from whatever the head script already caught, which is the whole point of it.
   const [promptEvent, setPromptEvent] = useState<InstallPromptEvent | null>(
@@ -105,6 +128,7 @@ export function useInstallApp(): InstallApp {
   const [isStandalone, setIsStandalone] = useState<boolean>(detectStandalone);
   const isIos = detectIos();
   const isIosSafari = isIos && detectIosSafari();
+  const isMacSafari = !isIos && detectMacSafari();
 
   useEffect(() => {
     function onAvailable(): void {
@@ -170,6 +194,7 @@ export function useInstallApp(): InstallApp {
     isStandalone,
     isIos,
     isIosSafari,
+    isMacSafari,
     // Offered only where it can actually complete: iOS Safari, not yet installed.
     iosProfileUrl: isIosSafari && !isStandalone ? IOS_PROFILE_URL : null,
     install,

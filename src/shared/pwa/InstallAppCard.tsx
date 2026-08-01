@@ -63,7 +63,7 @@ export interface InstallAppCardProps {
 export function InstallAppCard({
   autoOpenGuideOnIos = false,
 }: InstallAppCardProps = {}): React.JSX.Element | null {
-  const { mode, isIos, isIosSafari, iosProfileUrl, install } = useInstallApp();
+  const { mode, isIos, isIosSafari, isMacSafari, iosProfileUrl, install } = useInstallApp();
   const [guideOpen, setGuideOpen] = useState(false);
   const [iosNextOpen, setIosNextOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -224,7 +224,11 @@ export function InstallAppCard({
               {t("pwa.guide.title")}
             </h2>
             <p className="mt-1 text-center text-sm text-muted-foreground">
-              {isIos ? t("pwa.guide.iosLead") : t("pwa.guide.otherLead")}
+              {isIos
+                ? t("pwa.guide.iosLead")
+                : isMacSafari
+                  ? t("pwa.guide.macLead")
+                  : t("pwa.guide.otherLead")}
             </p>
 
             <ol className="mt-5 space-y-4">
@@ -233,10 +237,14 @@ export function InstallAppCard({
                   aria-hidden
                   className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
                 >
-                  {isIos ? <Share className="size-6" /> : <MoreGlyph />}
+                  {isIos || isMacSafari ? <Share className="size-6" /> : <MoreGlyph />}
                 </span>
                 <p className="min-w-0 text-sm font-medium">
-                  {isIos ? t("pwa.guide.iosStep1") : t("pwa.guide.otherStep1")}
+                  {isIos
+                    ? t("pwa.guide.iosStep1")
+                    : isMacSafari
+                      ? t("pwa.guide.macStep1")
+                      : t("pwa.guide.otherStep1")}
                 </p>
               </li>
               <li className="flex items-center gap-3 rounded-lg border bg-card p-3">
@@ -247,7 +255,11 @@ export function InstallAppCard({
                   <Plus className="size-6" />
                 </span>
                 <p className="min-w-0 text-sm font-medium">
-                  {isIos ? t("pwa.guide.iosStep2") : t("pwa.guide.otherStep2")}
+                  {isIos
+                    ? t("pwa.guide.iosStep2")
+                    : isMacSafari
+                      ? t("pwa.guide.macStep2")
+                      : t("pwa.guide.otherStep2")}
                 </p>
               </li>
             </ol>

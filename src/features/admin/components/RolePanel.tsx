@@ -53,12 +53,22 @@ const KEY = ["admin", "employee-roles"] as const;
 
 /**
  * `<employee_code>@tamarindtree.co` is a LOGIN IDENTITY, not a mailbox — minted by
- * `employee-account-create` for staff with no email of their own. Mail to it is
- * accepted by the sender and delivered nowhere, so any screen offering to email
- * somebody has to be able to tell the two apart.
+ * `employee-account-create` for staff with no email of their own, using the
+ * `security.login_email_domain` setting. Mail to it is accepted by the sender and
+ * delivered nowhere, so any screen offering to email somebody has to tell the two
+ * apart.
+ *
+ * MATCH THE WHOLE DOMAIN, NOT A CODE PATTERN. The first version tested
+ * /^tt\d+@tamarindtree\.co$/, which caught `tt0016@` and missed `005@`, `S7@` and
+ * `PR11@` — the venue's own employee numbers are not all `TT####`. That would have
+ * sent 35 messages into a domain with no mailboxes, and the bounces land on the
+ * sending reputation of the account HR actually uses.
  */
+const LOGIN_IDENTITY_DOMAIN = "tamarindtree.co";
+
 function isSyntheticIdentity(email: string | null): boolean {
-  return /^tt\d+@tamarindtree\.co$/i.test((email ?? "").trim());
+  const at = (email ?? "").trim().toLowerCase().split("@")[1] ?? "";
+  return at === LOGIN_IDENTITY_DOMAIN;
 }
 
 const ROLE_CHIP: Readonly<Record<EffectiveRole, StatusChipEntry>> = {

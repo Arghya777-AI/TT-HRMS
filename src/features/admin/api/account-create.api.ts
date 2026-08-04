@@ -20,6 +20,7 @@
  */
 import { z } from "zod";
 import { invokeEdgeFn } from "@/shared/api/invoke";
+import { dbUuid, eq, updateRow } from "@/shared/api/query";
 
 export const EMPLOYEE_ACCOUNT_CREATE_FN = "employee-account-create";
 
@@ -76,5 +77,50 @@ export async function createEmployeeAccount(input: {
       reason: input.reason,
     },
     accountCreatedSchema,
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Force a password change on an account that already exists
+// -----------------------------------------------------------------------------
+
+/**
+ * Re-arm `profiles.must_change_password` for an employee who already has a login.
+ *
+ * WHY THIS EXISTS. `employee-account-create` 409s on an employee whose
+ * `profile_id` is already set, and its own message says to "reset the password
+ * instead" — a feature that existed nowhere. Four other places in the codebase
+ * name an "admin reset" as the recovery path for accounts that cannot receive
+ * mail (they are minted on a domain with no mailboxes), and none of them was
+ * built. So an admin had no way to make anybody change their password: not after
+ * handing a credential over in person, not after one was shared, not at all.
+ *
+ * WHAT IT DOES AND DOES NOT DO. It does not set a password — only the Auth admin
+ * API can, and that needs the service role, so a real temporary-password re-issue
+ * is an edge function and a deploy. This flips the flag `FirstRunGate` reads, so
+ * the next time the person signs in with the password they already have, they are
+ * held at step 1 of first-run until they replace it. That is the whole of "force
+ * a change" minus the new credential, and it is reachable from the browser today
+ * because `profiles__admin_update` lets an admin write any profile in scope.
+ *
+ * NOT REVERSIBLE THROUGH THIS FUNCTION, deliberately: clearing the flag is the
+ * account holder's act, performed by changing the password (see
+ * `clearMustChangePassword`, called the moment `auth.updateUser` succeeds).
+ */
+export async function forcePasswordChange(
+  profileId: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  // updateRow, not updateOne: this one carries the reason into `x-reason`, so the
+  // audit row says who forced the change and why. `profiles` is not in
+  // audit.reason_required_tables, so the database would accept a bare write — that
+  // is exactly why the reason has to be insisted on here instead.
+  await updateRow(
+    "profiles",
+    [eq("id", profileId)],
+    { must_change_password: true },
+    z.object({ id: dbUuid }),
+    { reason, columns: "id", ...(signal ? { signal } : {}) },
   );
 }

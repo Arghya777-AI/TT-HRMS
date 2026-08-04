@@ -1,5 +1,5 @@
 -- =============================================================================
--- 092 · vinodmaurya0410@gmail.com becomes a super admin
+-- 096 · vinodmaurya0410@gmail.com becomes a super admin
 --
 -- WHY A MIGRATION AND NOT THE ROLES SCREEN
 -- ----------------------------------------
@@ -50,7 +50,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 092: grant super_admin and the global admin scope to vinodmaurya0410@gmail.com', true);
+SELECT set_config('app.reason', 'migration 096: grant super_admin and the global admin scope to vinodmaurya0410@gmail.com', true);
 SELECT set_config('app.source', 'migration', true);
 
 DO $$
@@ -88,7 +88,7 @@ BEGIN
   */
   UPDATE public.user_roles
      SET revoked_at    = now(),
-         revoke_reason = 'migration 092: superseded by the super_admin grant',
+         revoke_reason = 'migration 096: superseded by the super_admin grant',
          updated_at    = now()
    WHERE user_id = v_profile
      AND revoked_at IS NULL
@@ -100,7 +100,7 @@ BEGIN
   ) THEN
     INSERT INTO public.user_roles (user_id, role, granted_by, granted_at, granted_reason)
     VALUES (v_profile, 'super_admin', NULL, now(),
-            'migration 092: platform owner account, granted out of band because only a super_admin may grant super_admin');
+            'migration 096: platform owner account, granted out of band because only a super_admin may grant super_admin');
   END IF;
 
   IF NOT EXISTS (

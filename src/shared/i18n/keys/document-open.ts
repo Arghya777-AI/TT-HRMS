@@ -84,6 +84,14 @@ export const keysDocumentOpen = {
   "admin.roles.login.emailPlaceholder": "Login email (optional)",
   "admin.roles.login.created": "Login created for {email}. They must change this on first sign-in.",
   "admin.roles.login.copy": "Copy password",
+  // Explicit dismissal, because dismissing is what destroys the only copy.
+  "admin.roles.login.dismiss": "Done — I have saved it",
+  "admin.roles.login.force": "Force password change",
+  "admin.roles.login.forcing": "Applying…",
+  "admin.roles.login.forced":
+    "Done. They will be asked to set a new password the next time they sign in.",
+  "admin.roles.login.forceReasonPrompt":
+    "Why must {name} change their password? (at least 10 characters — this is recorded)",
   "admin.roles.login.copied": "Copied",
   // No second chance, so it says so rather than letting somebody navigate away.
   "admin.roles.login.onceOnly":

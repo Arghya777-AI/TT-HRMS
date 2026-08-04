@@ -36,7 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { mutationUserMessage } from "@/shared/api/query";
-import { markFirstRunComplete } from "@/features/profile/api/profile.api";
+import { clearMustChangePassword, markFirstRunComplete } from "@/features/profile/api/profile.api";
 import { passwordIssues } from "@/shared/auth/password";
 import { t } from "@/shared/i18n/en";
 import { AuthLayout } from "./AuthLayout";
@@ -78,10 +78,25 @@ function isStep(n: number): n is Step {
 }
 
 function initialStep(mustChangePassword: boolean): Step {
-  const floor: Step = mustChangePassword ? 1 : 2;
+  /*
+    WHEN THE PASSWORD IS STILL THE ISSUED ONE, STEP 1 IS NOT RESUMABLE PAST.
+
+    The first version of this only RAISED the stored step to a floor, never capped
+    it. With `must_change_password` true the floor was 1, so a stored 2, 3 or 4 was
+    honoured verbatim — and step 1 is the only screen that calls
+    `auth.updateUser({ password })`. A joiner who had reached step 4 in this tab,
+    or anyone handed a temporary password in a tab where an earlier wizard had
+    stored a later step, resumed past the password change and never made one.
+    `sessionStorage` is not cleared on sign-out either, so the stale key outlives
+    the session that wrote it.
+
+    So while the flag is set, the answer is always 1 regardless of what is stored:
+    a forced change that can be resumed past is not a forced change.
+  */
+  if (mustChangePassword) return 1;
+
   const raw = Number.parseInt(sessionStorage.getItem(STEP_KEY) ?? "", 10);
-  if (!isStep(raw)) return floor;
-  return raw < floor ? floor : raw;
+  return isStep(raw) && raw >= 2 ? raw : 2;
 }
 
 export default function FirstRun() {
@@ -147,6 +162,29 @@ export default function FirstRun() {
       if (error) {
         toast.error(error.message);
         return;
+      }
+      /*
+        CLEAR THE FLAG HERE, WHERE THE PASSWORD ACTUALLY CHANGED.
+
+        It used to be cleared only by `finish()`, three steps later, with no
+        reference to whether this call had ever run — so the one fact
+        `must_change_password` asserts ("the password is still the one we issued")
+        was being retracted by completing an unrelated form, and left standing by
+        somebody who changed their password and then closed the tab. Both
+        directions were wrong.
+
+        Failure is deliberately NOT fatal: the password IS changed at this point,
+        and blocking the wizard would strand someone whose credential is already
+        the new one. `finish()` writes it again, so a transient failure self-heals;
+        until then the only cost is being asked once more.
+      */
+      if (user?.id) {
+        try {
+          await clearMustChangePassword(user.id);
+          await refresh();
+        } catch {
+          // Not fatal: finish() writes the same flag, so this self-heals.
+        }
       }
       setStep(2);
     } finally {

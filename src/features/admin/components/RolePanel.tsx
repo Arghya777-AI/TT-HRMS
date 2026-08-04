@@ -23,6 +23,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { KeyRound, ShieldCheck, TriangleAlert, Users } from "lucide-react";
 import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ import {
   type EffectiveRole,
   type EmployeeRoleRow,
 } from "../api/roles.api";
-import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
+import { createEmployeeAccount, forcePasswordChange, type AccountCreated } from "../api/account-create.api";
 
 const KEY = ["admin", "employee-roles"] as const;
 
@@ -72,11 +73,11 @@ const ROLE_CHIP: Readonly<Record<EffectiveRole, StatusChipEntry>> = {
  * with a copy button and a plain warning. No mail is sent — `emailSent` comes back false — so
  * the screen says the slip has to be handed over rather than implying one is in flight.
  */
-function CreateLoginCell({ row, onDone }: { row: EmployeeRoleRow; onDone: () => void }) {
+function CreateLoginCell(
+  { row, onIssued }: { row: EmployeeRoleRow; onIssued: (issued: AccountCreated) => void },
+) {
   const [email, setEmail] = useState("");
-  const [issued, setIssued] = useState<AccountCreated | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const stepUp = useStepUp();
 
@@ -108,50 +109,25 @@ function CreateLoginCell({ row, onDone }: { row: EmployeeRoleRow; onDone: () => 
         return await provision();
       }
     },
+    /*
+      THE CREDENTIAL IS HANDED TO THE PARENT, AND NOTHING IS REFETCHED YET.
+
+      This used to `setIssued(result)` here and then invalidate the roles query. The
+      function has just set `employees.profile_id`, so the refetched row was no
+      longer `profile_id === null` — RoleCell switched to the role picker and
+      unmounted THIS component, destroying the temporary password it was in the
+      middle of displaying. The password is returned exactly once and nulled on
+      replay, and no admin reset exists to issue another, so those few hundred
+      milliseconds were the only chance anyone had to read it.
+
+      So the parent holds it, and the refetch waits until the admin dismisses it.
+    */
     onSuccess: (result) => {
       setError(null);
-      setIssued(result);
-      onDone();
+      onIssued(result);
     },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   });
-
-  if (issued !== null) {
-    return (
-      <div className="flex flex-col items-end gap-1 text-right">
-        <span className="text-xs font-medium text-success">
-          {t("admin.roles.login.created", { email: issued.account.email ?? "" })}
-        </span>
-        {issued.tempPassword !== null ? (
-          <>
-            <code className="select-all rounded bg-muted px-2 py-1 text-sm">{issued.tempPassword}</code>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                void navigator.clipboard.writeText(issued.tempPassword ?? "").then(() => {
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1_500);
-                }).catch(() => {
-                  // Clipboard refused; the password is selectable on screen.
-                });
-              }}
-            >
-              {copied ? t("admin.roles.login.copied") : t("admin.roles.login.copy")}
-            </button>
-            {/* Said plainly, because it is true and there is no second chance. */}
-            <span className="max-w-[18rem] text-xs text-warning">
-              {t("admin.roles.login.onceOnly")}
-            </span>
-          </>
-        ) : (
-          <span className="max-w-[18rem] text-xs text-muted-foreground">
-            {t("admin.roles.login.replayed")}
-          </span>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -182,12 +158,86 @@ function CreateLoginCell({ row, onDone }: { row: EmployeeRoleRow; onDone: () => 
   );
 }
 
+/**
+ * The issued credential, rendered by the PARENT of the cell that created it.
+ *
+ * It lives here because `RoleCell` survives the refetch that flips
+ * `row.profile_id` from null to a uuid, and `CreateLoginCell` does not. The
+ * temporary password comes back from the function exactly once — nulled on an
+ * idempotent replay — and there is no admin reset anywhere in the product to
+ * issue another, so losing it on screen means the account has to be reached some
+ * other way entirely.
+ *
+ * Dismissal is explicit for the same reason: an accidental click elsewhere should
+ * not be what destroys it.
+ */
+function IssuedCredential(
+  { issued, onDismiss }: { issued: AccountCreated; onDismiss: () => void },
+) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex flex-col items-end gap-1 text-right">
+      <span className="text-xs font-medium text-success">
+        {t("admin.roles.login.created", { email: issued.account.email ?? "" })}
+      </span>
+      {issued.tempPassword !== null ? (
+        <>
+          <code className="select-all rounded bg-muted px-2 py-1 text-sm">{issued.tempPassword}</code>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              void navigator.clipboard.writeText(issued.tempPassword ?? "").then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1_500);
+              }).catch(() => {
+                // Clipboard refused; the password is selectable on screen.
+              });
+            }}
+          >
+            {copied ? t("admin.roles.login.copied") : t("admin.roles.login.copy")}
+          </button>
+          {/* Said plainly, because it is true and there is no second chance. */}
+          <span className="max-w-[18rem] text-xs text-warning">
+            {t("admin.roles.login.onceOnly")}
+          </span>
+        </>
+      ) : (
+        <span className="max-w-[18rem] text-xs text-muted-foreground">
+          {t("admin.roles.login.replayed")}
+        </span>
+      )}
+      <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
+        {t("admin.roles.login.dismiss")}
+      </Button>
+    </div>
+  );
+}
+
 function RoleCell({ row }: { row: EmployeeRoleRow }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  // Held HERE, not in CreateLoginCell: this component survives the refetch that
+  // gives the row a profile_id, and that cell does not. See IssuedCredential.
+  const [issued, setIssued] = useState<AccountCreated | null>(null);
   // The reason travels WITH the mutation, not through a module-level or window
   // variable: two rows changed in quick succession would otherwise race and one
   // would be audited with the other's reason.
+  /*
+    Forcing a change is a SEPARATE mutation from setting a role, because they fail
+    differently and the operator needs to know which one refused: a role change can
+    be rejected by the manager-needs-a-team rule, this one only by scope.
+  */
+  const force = useMutation({
+    mutationFn: (reason: string) => forcePasswordChange(row.profile_id ?? "", reason),
+    onSuccess: () => {
+      setError(null);
+      toast.success(t("admin.roles.login.forced"));
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
   const change = useMutation({
     mutationFn: (v: { role: AssignableRole; reason: string }) =>
       setEmployeeRole(row.employee_id, v.role, v.reason),
@@ -198,6 +248,17 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   });
 
+  if (issued !== null) {
+    return (
+      <IssuedCredential
+        issued={issued}
+        onDismiss={() => {
+          setIssued(null);
+          void qc.invalidateQueries({ queryKey: KEY });
+        }}
+      />
+    );
+  }
   if (!row.can_manage) {
     return <span className="text-xs text-muted-foreground">{t("admin.roles.adminOnly")}</span>;
   }
@@ -207,7 +268,7 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
       People never created a login, which is why a confirmed employee could have no way in at
       all. Once the login exists this cell becomes the ordinary role picker on the next refetch.
     */
-    return <CreateLoginCell row={row} onDone={() => void qc.invalidateQueries({ queryKey: KEY })} />;
+    return <CreateLoginCell row={row} onIssued={setIssued} />;
   }
 
   return (
@@ -226,6 +287,26 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
           change.mutate({ role: v as AssignableRole, reason: reason.trim() });
         }}
       />
+      {/*
+        The only way to make somebody replace a credential that has been handed
+        over, shared or simply grown old. It sets no password — see
+        forcePasswordChange — so the person signs in with what they have and is
+        held at step 1 until they change it.
+      */}
+      <button
+        type="button"
+        className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        disabled={force.isPending}
+        onClick={() => {
+          const reason = window.prompt(
+            t("admin.roles.login.forceReasonPrompt", { name: row.display_name ?? "" }),
+          );
+          if (reason === null || reason.trim().length < 10) return;
+          force.mutate(reason.trim());
+        }}
+      >
+        {force.isPending ? t("admin.roles.login.forcing") : t("admin.roles.login.force")}
+      </button>
       {error !== null ? (
         <span className="max-w-[20rem] text-right text-xs text-destructive">{error}</span>
       ) : null}

@@ -173,9 +173,30 @@ export async function unenrolFactor(factorId: string): Promise<void> {
  * A raw `<svg>` document is not a valid `img` source; percent-encoding it into a
  * `data:` URL is, and it keeps the QR out of the DOM as markup — no
  * `dangerouslySetInnerHTML` on a server-supplied string.
+ *
+ * REPORTED: "QR code is not generated" — the dialog showed a broken-image icon
+ * with the alt text, while the typed secret beside it was correct. The cause was
+ * the media type, not the SVG: this returned
+ *
+ *     data:image/svg+xml;utf-8,%3Csvg…
+ *
+ * and `;utf-8` is not a valid media-type parameter. RFC 2397 parameters are
+ * `attribute=value`, so the charset has to be written `;charset=utf-8`; a bare
+ * token makes the whole URL malformed and the image never loads.
+ *
+ * Two other shapes are handled because GoTrue's response has changed across
+ * versions and neither is worth another broken dialog:
+ *   * already a `data:` URL — passed through untouched;
+ *   * empty, or not an SVG at all — returns "" so the caller can omit the `<img>`
+ *     entirely rather than render a broken one. The secret and the six-digit
+ *     field are the actual enrolment path; the QR is a convenience.
  */
 export function qrSvgToDataUrl(svg: string): string {
-  return `data:image/svg+xml;utf-8,${encodeURIComponent(svg)}`;
+  const s = svg.trim();
+  if (s === "") return "";
+  if (s.startsWith("data:")) return s;
+  if (!s.startsWith("<svg") && !s.startsWith("<?xml")) return "";
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(s)}`;
 }
 
 // =============================================================================

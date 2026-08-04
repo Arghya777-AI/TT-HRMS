@@ -1,5 +1,5 @@
 -- =============================================================================
--- 094 · remove the demo data, so every figure on every screen is real
+-- 098 · remove the demo data, so every figure on every screen is real
 --
 -- REPORTED: "all data should be real, no dummy data across page even attendence,
 --            leave etc." … "there should not be any demo-data".
@@ -44,7 +44,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 094: purge seeded demo transactional data so every screen shows only real records', true);
+SELECT set_config('app.reason', 'migration 098: purge seeded demo transactional data so every screen shows only real records', true);
 SELECT set_config('app.source', 'migration', true);
 
 DO $$
@@ -144,7 +144,7 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER %I', v_guard.tbl, v_guard.trg);
     v_guards := v_guards || format('%s.%s', v_guard.tbl, v_guard.trg);
   END LOOP;
-  RAISE NOTICE 'migration 094 lifted % append-only guard(s): %',
+  RAISE NOTICE 'migration 098 lifted % append-only guard(s): %',
     coalesce(array_length(v_guards, 1), 0), coalesce(array_to_string(v_guards, ', '), '(none)');
 
   -- ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  RAISE NOTICE 'migration 094 deleted: %', COALESCE(NULLIF(v_counts, ''), '(nothing)');
+  RAISE NOTICE 'migration 098 deleted: %', COALESCE(NULLIF(v_counts, ''), '(nothing)');
 
   -- ---------------------------------------------------------------------------
   -- 1c. Put every guard back
@@ -170,7 +170,7 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I ENABLE TRIGGER %I',
                    split_part(v_t, '.', 1), split_part(v_t, '.', 2));
   END LOOP;
-  RAISE NOTICE 'migration 094 restored % append-only guard(s)', coalesce(array_length(v_guards, 1), 0);
+  RAISE NOTICE 'migration 098 restored % append-only guard(s)', coalesce(array_length(v_guards, 1), 0);
 
   -- ---------------------------------------------------------------------------
   -- 2. The demo employees themselves
@@ -209,7 +209,7 @@ BEGIN
 
   DELETE FROM public.employees WHERE deleted_at IS NOT NULL;
   GET DIAGNOSTICS v_n = ROW_COUNT;
-  RAISE NOTICE 'migration 094 removed % archived demo employee record(s)', v_n;
+  RAISE NOTICE 'migration 098 removed % archived demo employee record(s)', v_n;
 
   -- ---------------------------------------------------------------------------
   -- 3. Their logins
@@ -231,7 +231,7 @@ BEGIN
         WHERE r.user_id = u.id AND r.revoked_at IS NULL AND r.role <> 'employee'
      );
   GET DIAGNOSTICS v_n = ROW_COUNT;
-  RAISE NOTICE 'migration 094 removed % orphaned demo login(s)', v_n;
+  RAISE NOTICE 'migration 098 removed % orphaned demo login(s)', v_n;
 END $$;
 
 -- -----------------------------------------------------------------------------

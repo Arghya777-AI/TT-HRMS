@@ -1,5 +1,5 @@
 -- =============================================================================
--- 093 · Aadhaar, PAN and bank proof are HR's to upload, not the employee's
+-- 097 · Aadhaar, PAN and bank proof are HR's to upload, not the employee's
 --
 -- REPORTED: "adhar, pan, bank-account/cancel-cheque/bank passbook should be
 --            mandatory and it should be upload by HR/admin only".
@@ -44,7 +44,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 093: statutory and bank documents become HR-upload-only, via a dedicated flag instead of the visibility one', true);
+SELECT set_config('app.reason', 'migration 097: statutory and bank documents become HR-upload-only, via a dedicated flag instead of the visibility one', true);
 SELECT set_config('app.source', 'migration', true);
 
 -- -----------------------------------------------------------------------------

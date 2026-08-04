@@ -230,6 +230,32 @@ export async function fetchMyEmployeeProfile(
  * `profiles` is not in `audit.reason_required_tables`, so no `x-reason` is
  * required; the audit trigger still records the change.
  */
+/**
+ * Record that the issued password has been replaced — and NOTHING else.
+ *
+ * Separate from {@link markFirstRunComplete} because the two flags state two
+ * different facts. `must_change_password` means "the credential is still the one
+ * HR issued"; `profile_confirmed_at` means "this person has been through the
+ * joining form". Clearing both when only the password changed would release the
+ * joiner from `FirstRunGate` before they had confirmed anything, which is the
+ * opposite of what the wizard is for.
+ *
+ * Called the moment `auth.updateUser({ password })` succeeds, so the flag tracks
+ * the password rather than the completion of an unrelated form.
+ */
+export async function clearMustChangePassword(
+  profileId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await updateOne(
+    PROFILES_TABLE,
+    z.object({ id: dbUuid }),
+    { must_change_password: false },
+    { id: profileId },
+    { columns: "id", ...(signal ? { signal } : {}) },
+  );
+}
+
 export async function markFirstRunComplete(
   profileId: string,
   signal?: AbortSignal,

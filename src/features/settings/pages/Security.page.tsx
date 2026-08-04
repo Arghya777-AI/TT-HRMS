@@ -401,11 +401,19 @@ function AuthenticatorCard() {
 
               {pending !== null ? (
                 <div className="grid gap-4 sm:grid-cols-[auto,1fr] sm:items-start">
-                  <img
-                    src={qrSvgToDataUrl(pending.qrSvg)}
-                    alt={t("security.mfa.dialog.qrAlt")}
-                    className="mx-auto h-44 w-44 rounded-md border bg-white p-2"
-                  />
+                  {/*
+                    Omitted rather than rendered broken when the server sends no
+                    usable QR. A broken-image icon reads as "this screen is
+                    faulty" and stops people using the typed key beside it, which
+                    enrols exactly as well.
+                  */}
+                  {qrSvgToDataUrl(pending.qrSvg) !== "" ? (
+                    <img
+                      src={qrSvgToDataUrl(pending.qrSvg)}
+                      alt={t("security.mfa.dialog.qrAlt")}
+                      className="mx-auto h-44 w-44 rounded-md border bg-white p-2"
+                    />
+                  ) : null}
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground">
                       {t("security.mfa.dialog.manual")}

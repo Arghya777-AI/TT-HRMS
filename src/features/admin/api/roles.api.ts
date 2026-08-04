@@ -16,7 +16,9 @@
  * them" is more useful than anything this file could paraphrase.
  */
 import { z } from "zod";
-import { dbUuid, rpcOne, selectMany } from "@/shared/api/query";
+import { dbUuid, inList, rpcOne, selectMany } from "@/shared/api/query";
+
+const PROFILES_TABLE = "profiles";
 
 export const EMPLOYEE_ROLES_VIEW = "v_employee_roles";
 
@@ -49,10 +51,23 @@ export const employeeRoleRowSchema = z.object({
   can_manage: z.boolean(),
 });
 
-export type EmployeeRoleRow = z.infer<typeof employeeRoleRowSchema>;
+/**
+ * The row as the screen needs it: the view's columns plus the login address.
+ *
+ * `v_employee_roles` deliberately carries no email — it is about ROLES. But a
+ * screen that offers to email somebody has to know whether there is a mailbox to
+ * reach, and whether it is a real one or a synthetic
+ * `<employee_code>@tamarindtree.co` identity with nothing behind it. Merged here
+ * rather than added to the view, so this needs no migration to be applied.
+ */
+export type EmployeeRoleRow = z.infer<typeof employeeRoleRowSchema> & {
+  readonly login_email: string | null;
+};
+
+const profileEmailSchema = z.object({ id: dbUuid, email: z.string() });
 
 export async function fetchEmployeeRoles(signal?: AbortSignal): Promise<EmployeeRoleRow[]> {
-  return selectMany(EMPLOYEE_ROLES_VIEW, employeeRoleRowSchema, {
+  const rows = await selectMany(EMPLOYEE_ROLES_VIEW, employeeRoleRowSchema, {
     // Mismatches first: those are the rows somebody has to act on. Then the people
     // with the most reports, who matter most if their role is wrong.
     order: [
@@ -62,6 +77,26 @@ export async function fetchEmployeeRoles(signal?: AbortSignal): Promise<Employee
     limit: 500,
     ...(signal ? { signal } : {}),
   });
+
+  /*
+    One extra read, not one per row. `profiles` is admin-readable
+    (`profiles__admin_read`), and an empty id list is skipped entirely so a
+    directory of people with no logins costs nothing.
+  */
+  const profileIds = rows.map((r) => r.profile_id).filter((id): id is string => id !== null);
+  if (profileIds.length === 0) return rows.map((r) => ({ ...r, login_email: null }));
+
+  const emails = await selectMany(PROFILES_TABLE, profileEmailSchema, {
+    filters: [inList("id", profileIds)],
+    columns: "id,email",
+    limit: 500,
+    ...(signal ? { signal } : {}),
+  });
+  const byId = new Map(emails.map((p) => [p.id, p.email]));
+  return rows.map((r) => ({
+    ...r,
+    login_email: r.profile_id === null ? null : (byId.get(r.profile_id) ?? null),
+  }));
 }
 
 /**

@@ -63,6 +63,7 @@ import {
 } from "../people/fields";
 import { usePeopleRefs } from "../hooks/usePeople";
 import { insertEmployee } from "../api/employees.api";
+import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
 import {
   OTHER_FIELDS,
   OTHER_VALUE,
@@ -71,6 +72,7 @@ import {
   resolveOtherMasters,
 } from "../people/orgOther";
 import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
+import { sendCredentialEmail } from "../api/credential-mail.api";
 import { mutationUserMessage } from "@/shared/api/query";
 import { useDefaultCompanyId } from "../hooks/useMasters";
 
@@ -98,12 +100,27 @@ export default function AddEmployeePage() {
    */
   const [account, setAccount] = useState<AccountCreated | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [mailing, setMailing] = useState(false);
+  const [mailed, setMailed] = useState<string | null>(null);
   /** A failure creating an "Other" master, before any employee exists. */
   const [otherError, setOtherError] = useState<string | null>(null);
   /** Documents collected on the Documents step, uploaded once the employee id exists. */
   const [staged, setStaged] = useState<readonly StagedDocument[]>([]);
   const [docResults, setDocResults] = useState<{ ok: number; failures: string[] } | null>(null);
   const qc = useQueryClient();
+  /*
+    STEP-UP BELONGS TO THIS ACTION TOO, NOT ONLY TO THE ROLES PANEL.
+
+    `employee.account.create` is seeded `requires_step_up = true`, so on an ordinary
+    password session the provisioning below refused with 403
+    MFA_STEP_UP_REQUIRED — and the only thing that happened was a sentence beside
+    the new employee code. The employee existed with no login, which is exactly the
+    state this wizard was changed to prevent, and the admin had to go to another
+    screen and do it again. So the refusal opens the authenticator prompt and
+    retries the SAME request, as RolePanel already does.
+  */
+  const stepUp = useStepUp();
 
   const step: WizardStepId = WIZARD_STEPS[stepIndex] ?? "identity";
   const isReview = step === "review";
@@ -137,12 +154,23 @@ export default function AddEmployeePage() {
     mutationFn: async (input, reason) => {
       const row = await insertEmployee(input, reason);
       const loginEmail = String(input["work_email"] ?? input["personal_email"] ?? "").trim();
-      try {
-        const provisioned = await createEmployeeAccount({
+      const provision = () =>
+        createEmployeeAccount({
           employeeId: row.id,
           ...(loginEmail !== "" ? { loginEmail } : {}),
           reason: `provisioning the portal login for ${row.employee_code}`,
         });
+      try {
+        let provisioned;
+        try {
+          provisioned = await provision();
+        } catch (err) {
+          // A second factor is part of the action; only a REFUSED prompt is a failure.
+          if (!isStepUpRequired(err)) throw err;
+          const upgraded = await stepUp.ensureAal2();
+          if (!upgraded) throw err;
+          provisioned = await provision();
+        }
         setAccount(provisioned);
         setAccountError(null);
       } catch (err) {
@@ -327,9 +355,58 @@ export default function AddEmployeePage() {
                   <code className="num mt-1 inline-block select-all rounded bg-muted px-2 py-1 text-lg">
                     {account.tempPassword}
                   </code>
+                  {/* The roles panel has this and the wizard did not, so the only
+                      copy of a once-only credential had to be retyped by hand. */}
+                  <button
+                    type="button"
+                    className="ml-3 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(account.tempPassword ?? "")
+                        .then(() => setCopied(true))
+                        .catch(() => {
+                          // Clipboard refused; the password is selectable on screen.
+                        });
+                    }}
+                  >
+                    {copied ? t("admin.roles.login.copied") : t("admin.roles.login.copy")}
+                  </button>
+                  {/* Same reason as the roles panel: this is the only moment the
+                      password exists in the app, so it is the only moment it can
+                      be emailed. */}
+                  {(account.account.email ?? "") !== "" ? (
+                    <button
+                      type="button"
+                      className="ml-3 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      disabled={mailing}
+                      onClick={() => {
+                        setMailing(true);
+                        void sendCredentialEmail({
+                          employeeId: created?.id ?? "",
+                          displayName: (values["display_name"] ?? "").trim(),
+                          loginEmail: account.account.email ?? "",
+                          tempPassword: account.tempPassword ?? "",
+                        })
+                          .then((r) => {
+                            setMailed(
+                              r.sandboxed === true
+                                ? t("admin.roles.login.mailSandboxed")
+                                : t("admin.roles.login.mailSent", { email: account.account.email ?? "" }),
+                            );
+                          })
+                          .catch((e: unknown) => setMailed(e instanceof Error ? e.message : String(e)))
+                          .finally(() => setMailing(false));
+                      }}
+                    >
+                      {mailing ? t("admin.roles.login.mailSending") : t("admin.roles.login.mail")}
+                    </button>
+                  ) : null}
                   <p className="mt-2 max-w-prose text-xs text-warning">
                     {t("admin.people.add.done.tempOnce")}
                   </p>
+                  {mailed !== null ? (
+                    <p className="mt-2 max-w-prose text-xs text-muted-foreground">{mailed}</p>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -476,6 +553,27 @@ export default function AddEmployeePage() {
         <div className="mt-4 space-y-4">
           <Notice tone="info">{t("admin.people.add.review.codeNotice.body")}</Notice>
 
+          {/*
+            ── THE TWO TICKBOXES THAT SWITCH SOMEBODY OFF ────────────────────────────
+
+            REPORTED: a new employee could not mark attendance at all. The self-punch
+            card told them "attendance is not tracked for your record", which was
+            true and unexplainable from where they stood — `exclude_from_attendance`
+            had been ticked on the Time & policy step, six steps earlier, and the
+            Review step then listed it as one more "Yes" among forty rows of text.
+
+            So the two flags that make a person invisible to the engines get said out
+            loud, in the tone that matches the consequence, at the last moment before
+            the record is written. Nothing is blocked: excluding a contractor or a
+            consultant from attendance is legitimate. It just cannot be silent.
+          */}
+          {(values["exclude_from_attendance"] ?? "") === "true" ? (
+            <Notice tone="warning">{t("admin.people.add.review.excludedAttendance")}</Notice>
+          ) : null}
+          {(values["exclude_from_payroll"] ?? "") === "true" ? (
+            <Notice tone="warning">{t("admin.people.add.review.excludedPayroll")}</Notice>
+          ) : null}
+
           {everyGroup.map((group) => {
             const filled = group.fields.filter(
               (f) => (values[f.name] ?? "").trim() !== "" && f.derived !== true,
@@ -565,6 +663,10 @@ export default function AddEmployeePage() {
         onConfirm={submit}
         onCancel={() => setReasonOpen(false)}
       />
+
+      {/* Without this mounted, `ensureAal2` has no prompt to show and the retry
+          above could never succeed. */}
+      {stepUp.dialog}
     </div>
   );
 }

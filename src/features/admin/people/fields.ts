@@ -442,9 +442,24 @@ export function timePolicyGroups(refs: PeopleRefs): readonly FieldGroup[] {
           options: refs.shifts,
         },
         {
+          /*
+            REQUIRED, because there is no safe default and a blank one is invisible.
+
+            77 of the first 79 employees were created with this empty. Nothing
+            complained: `resolve_policy` found a COMPANY-scope assignment and used
+            that instead, and the company default was the seeded "Tuesday Off". So
+            every one of them had Tuesdays off and their real Sunday off computed as
+            a working day — while the employee's own screen displayed the rule on
+            their record, which the engine was ignoring.
+
+            An unset weekly off is not a neutral state: with no rule at all the
+            engine treats every day as a working day, so a genuine day off becomes
+            an absence and is deducted. The admin has to say which it is.
+          */
           name: "weekly_off_rule_id",
           label: t("admin.people.field.weeklyOff"),
           kind: "select",
+          required: true,
           help: t("admin.people.help.weeklyOff"),
           options: refs.weeklyOffRules,
         },

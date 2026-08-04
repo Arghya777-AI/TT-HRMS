@@ -109,25 +109,31 @@ BEGIN
   END IF;
 
   -- ---------------------------------------------------------------------------
-  -- 1. Lift the append-only guards, but only on the tables being purged
+  -- 1. Scope: rows belonging to employees who are already archived
   -- ---------------------------------------------------------------------------
   /*
-    SEVERAL OF THESE TABLES REFUSE DELETE OUTRIGHT, and that is not an oversight
-    to work around casually: `attendance_days` carries
-    `trg_attendance_days__no_delete`, the ledgers carry their own guards, and they
-    exist because an attendance day and a leave debit are records a labour
-    inspector may ask for. A DELETE raises 0A000, 'append-only table'.
+    SCOPED BY EMPLOYEE, NOT WHOLE-TABLE — and that is a correction, not a
+    preference. This migration was written when every transactional row in the
+    database was seed data. By the time it came to be applied the real roster had
+    been loaded and had started working, and a whole-table DELETE would have taken:
 
-    So the guards are disabled by NAME, discovered from the catalogue rather than
-    hard-coded — a guard added later is then covered too — and re-enabled in §1c
-    before this transaction commits. Two properties make that safe:
+        4,080 attendance days and 160 punches belonging to live staff
+           42 of those days carrying real punches
+           12 documents uploaded by real employees
+            1 salary revision for a live employee
+        4,727 notifications, nearly all system-generated for real people
 
-      * only triggers whose function is one of the three refusal guards are
-        touched. The AUDIT triggers stay enabled, so every row this migration
-        deletes is still recorded in `public.audit_log` with a reason. A purge
-        that erased its own evidence would be a worse bug than the demo data.
-      * it is one transaction. If anything below fails, the disable is rolled back
-        with it, and no table is left permanently unguarded.
+    Measured, not assumed. The demo cohort is exactly the soft-deleted employees —
+    466 attendance days and 600 punches — and every one of the 75 real staff plus
+    the accounts in use is live. So `deleted_at IS NOT NULL` is the whole
+    definition of "demo", and nothing outside it is touched.
+
+    SEVERAL OF THESE TABLES REFUSE DELETE OUTRIGHT. `attendance_days` carries
+    `trg_attendance_days__no_delete` and the ledgers carry their own guards,
+    because an attendance day and a leave debit are records a labour inspector may
+    ask for. The guards are lifted by NAME, discovered from the catalogue so a
+    guard added later is covered too, and restored before this transaction commits.
+    The AUDIT triggers stay enabled, so every deletion is still recorded.
   */
   FOR v_guard IN
     SELECT c.relname AS tbl, t.tgname AS trg
@@ -138,30 +144,53 @@ BEGIN
      WHERE n.nspname = 'public'
        AND NOT t.tgisinternal
        AND c.relname = ANY (v_tables)
-       AND p.proname IN ('refuse_mutation', 'refuse_mutation_except_void',
-                         'leave_ledger_guard_mutation')
+       -- Matched by SHAPE, not by a list of names. The first version named three
+       -- functions and missed two: `attendance_punches_append_only` (punches are
+       -- voided, never deleted) and `payroll_runs_guard` (the two-person rule).
+       -- A pattern covers a guard added later; a list silently does not.
+       AND (p.proname LIKE '%append_only%'
+         OR p.proname LIKE '%refuse%'
+         OR p.proname LIKE '%guard%'
+         OR p.proname LIKE '%immutable%')
   LOOP
     EXECUTE format('ALTER TABLE public.%I DISABLE TRIGGER %I', v_guard.tbl, v_guard.trg);
     v_guards := v_guards || format('%s.%s', v_guard.tbl, v_guard.trg);
   END LOOP;
-  RAISE NOTICE 'migration 098 lifted % append-only guard(s): %',
-    coalesce(array_length(v_guards, 1), 0), coalesce(array_to_string(v_guards, ', '), '(none)');
+  RAISE NOTICE 'migration 098 lifted % append-only guard(s)', coalesce(array_length(v_guards, 1), 0);
 
-  -- ---------------------------------------------------------------------------
-  -- 1b. The transactional tables
-  -- ---------------------------------------------------------------------------
-  FOREACH v_t IN ARRAY v_tables LOOP
-    IF to_regclass('public.' || v_t) IS NULL THEN
-      CONTINUE;                              -- table not in this build
-    END IF;
-    EXECUTE format('DELETE FROM public.%I', v_t);
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    IF v_n > 0 THEN
-      v_counts := v_counts || format('%s=%s ', v_t, v_n);
-    END IF;
-  END LOOP;
+  -- Children before parents; every one scoped to the archived cohort.
+  DELETE FROM public.attendance_regularizations WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.attendance_punches         WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.attendance_days            WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.leave_request_days         WHERE leave_request_id IN (SELECT lr.id FROM public.leave_requests lr JOIN public.employees e ON e.id = lr.employee_id WHERE e.deleted_at IS NOT NULL);
+  DELETE FROM public.leave_requests             WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.leave_ledger               WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.leave_balances             WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.comp_off_ledger            WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.payslip_lines              WHERE payslip_id IN (SELECT ps.id FROM public.payslips ps JOIN public.employees e ON e.id = ps.employee_id WHERE e.deleted_at IS NOT NULL);
+  DELETE FROM public.payslips                   WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.payroll_run_employees      WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.roster_slots               WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.employee_salary_revision_lines WHERE revision_id IN (SELECT r.id FROM public.employee_salary_revisions r JOIN public.employees e ON e.id = r.employee_id WHERE e.deleted_at IS NOT NULL);
+  DELETE FROM public.employee_salary_revisions  WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.employee_change_requests   WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.document_acknowledgements  WHERE document_id IN (SELECT d.id FROM public.documents d JOIN public.employees e ON e.id = d.employee_id WHERE e.deleted_at IS NOT NULL);
+  DELETE FROM public.document_versions          WHERE document_id IN (SELECT d.id FROM public.documents d JOIN public.employees e ON e.id = d.employee_id WHERE e.deleted_at IS NOT NULL);
+  DELETE FROM public.documents                  WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  DELETE FROM public.notifications              WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
 
-  RAISE NOTICE 'migration 098 deleted: %', COALESCE(NULLIF(v_counts, ''), '(nothing)');
+  /*
+    A payroll run or a roster week that is left holding NOBODY was a demo artefact
+    whose every member has just been removed. Deleting an empty shell is safe;
+    deleting one that still covers a live employee is not, so the NOT EXISTS is the
+    guard rather than a judgement made here.
+  */
+  DELETE FROM public.payroll_inputs_snapshot pis
+   WHERE NOT EXISTS (SELECT 1 FROM public.payroll_run_employees x WHERE x.payroll_run_id = pis.payroll_run_id);
+  DELETE FROM public.payroll_runs pr
+   WHERE NOT EXISTS (SELECT 1 FROM public.payroll_run_employees x WHERE x.payroll_run_id = pr.id);
+  DELETE FROM public.rosters r
+   WHERE NOT EXISTS (SELECT 1 FROM public.roster_slots x WHERE x.roster_id = r.id);
 
   -- ---------------------------------------------------------------------------
   -- 1c. Put every guard back
@@ -173,65 +202,27 @@ BEGIN
   RAISE NOTICE 'migration 098 restored % append-only guard(s)', coalesce(array_length(v_guards, 1), 0);
 
   -- ---------------------------------------------------------------------------
-  -- 2. The demo employees themselves
+  -- 2. The archived employee RECORDS are deliberately left in place
   -- ---------------------------------------------------------------------------
   /*
-    ONLY the soft-deleted ones. Everybody archived at this point is a seeded demo
-    person; every real employee — the 75 from the joining sheet, plus the accounts
-    still in use — is live and is therefore untouched. Naming codes explicitly
-    would be more fragile, not safer: `deleted_at IS NOT NULL` is the fact.
+    An earlier draft deleted them. It should not, and the reason is worth writing
+    down so nobody restores it: 620 foreign keys point at `employees.id` — assets,
+    contracts, approval requests, kiosk operators, e-sign signers, reimbursement
+    claims, communication recipients, every notification partition. Removing 14 rows
+    means unpicking all of that, and the first attempt failed on
+    `document_acknowledgements` after the transactional deletes had already run.
 
-    Their satellite rows go first. `employee_id` is ON DELETE RESTRICT on several
-    of these, so the order matters and a missed table shows up as a failed
-    migration rather than a silent partial purge.
+    It buys nothing. Those employees are ALREADY soft-deleted, and every view in the
+    product filters `deleted_at IS NULL` — `v_admin_employee`, `v_employee_ref`,
+    `v_employee_roles`. They appear on no screen and in no count. What put demo
+    figures in front of people was their attendance, leave and payroll, and §1 has
+    removed exactly that.
+
+    So the rule is: demo TRANSACTIONS go, the tombstones stay. The audit trail keeps
+    referring to real rows, and nothing has to be unpicked.
   */
-  DELETE FROM public.employee_statutory        WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_bank_accounts    WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_addresses        WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_contacts         WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_dependents       WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_qualifications   WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_skills           WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_hobbies          WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_identity_documents WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_custom_field_values WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_lifecycle_events WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_swipe_cards      WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  DELETE FROM public.employee_onboarding       WHERE employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
+  RAISE NOTICE 'migration 098: archived employee records left in place on purpose — see §2';
 
-  -- A reporting line into a demo employee would block the delete.
-  UPDATE public.employees SET reporting_manager_id = NULL
-   WHERE reporting_manager_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  UPDATE public.employees SET dotted_line_manager_id = NULL
-   WHERE dotted_line_manager_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-  UPDATE public.departments SET head_employee_id = NULL
-   WHERE head_employee_id IN (SELECT id FROM public.employees WHERE deleted_at IS NOT NULL);
-
-  DELETE FROM public.employees WHERE deleted_at IS NOT NULL;
-  GET DIAGNOSTICS v_n = ROW_COUNT;
-  RAISE NOTICE 'migration 098 removed % archived demo employee record(s)', v_n;
-
-  -- ---------------------------------------------------------------------------
-  -- 3. Their logins
-  -- ---------------------------------------------------------------------------
-  /*
-    A profile with no employee record and no role beyond `employee` is a demo
-    login with nothing left to sign in to. Deleting the auth.users row cascades
-    the profile.
-
-    THE ACCOUNTS STILL IN USE ARE SAFE and it is worth saying why rather than
-    trusting the predicate: each of them still has a live employee record, so
-    `NOT EXISTS (… employees …)` excludes them — including the HR admin login,
-    whose employee row is TT0002.
-  */
-  DELETE FROM auth.users u
-   WHERE NOT EXISTS (SELECT 1 FROM public.employees e WHERE e.profile_id = u.id)
-     AND NOT EXISTS (
-       SELECT 1 FROM public.user_roles r
-        WHERE r.user_id = u.id AND r.revoked_at IS NULL AND r.role <> 'employee'
-     );
-  GET DIAGNOSTICS v_n = ROW_COUNT;
-  RAISE NOTICE 'migration 098 removed % orphaned demo login(s)', v_n;
 END $$;
 
 -- -----------------------------------------------------------------------------

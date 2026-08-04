@@ -4661,7 +4661,8 @@ export const en = {
   "admin.people.help.manager": "Who approves their leave and regularisations. Manager access is derived from this line, never granted.",
   "admin.people.help.dottedManager": "A second reporting line for visibility. It does not confer approval rights.",
   "admin.people.help.shift": "The window their punches are judged against — late, early and worked hours all follow from it.",
-  "admin.people.help.weeklyOff": "Which days are offs. Fixed, alternate or rotating.",
+  "admin.people.help.weeklyOff":
+    "Which days are offs. Fixed, alternate or rotating. Required: with none set the engine treats every day as a working day, so a real day off is recorded as an absence and deducted.",
   "admin.people.help.holidayCalendar": "The holiday list that applies to them.",
   "admin.people.help.attendancePolicy": "Grace, break deduction, half-day and absent thresholds.",
   "admin.people.help.payPeriod": "Which monthly cycle their payroll is computed in.",
@@ -4782,6 +4783,13 @@ export const en = {
   "admin.people.add.review.codeNotice.title": "About the employee code",
   "admin.people.add.review.codeNotice.body":
     "You are not asked for an employee code because the database allocates it — in sequence, once, and permanently. It appears the moment the record is created and can never be edited or reused.",
+  // Named consequences, not flag names: the reader has to know what the tick does
+  // to the person, and the self-punch card's own refusal is quoted so the two
+  // screens say the same thing.
+  "admin.people.add.review.excludedAttendance":
+    "“Exclude from attendance” is ticked. No attendance days will be computed for this person, and if they sign in to mark their own attendance they will be told “attendance is not tracked for your record, so there is nothing to mark”. Correct for a consultant or a contractor; wrong for anyone who works to a shift. Go back to Time & policy to untick it.",
+  "admin.people.add.review.excludedPayroll":
+    "“Exclude from payroll” is ticked. This person will not appear in any payroll run and no payslip will be produced for them.",
   "admin.people.add.reason.title": "Create this employee record",
   "admin.people.add.reason.description":
     "A new employee record for {name} will be created. Say why — it is stored against your name in the audit trail.",

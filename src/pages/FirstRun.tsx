@@ -25,7 +25,7 @@
  * and step 1 cannot be passed without setting a new password, so the last step was
  * unreachable and the gate never opened.
  */
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2, ScanFace } from "lucide-react";
@@ -43,6 +43,8 @@ import { AuthLayout } from "./AuthLayout";
 import { useQuery } from "@tanstack/react-query";
 import { OnboardingChecklist } from "@/features/onboarding/components/OnboardingChecklist";
 import { fetchMyOnboardingStatus } from "@/features/onboarding/api/onboarding.api";
+import { fetchMyEmployeeProfile } from "@/features/profile/api/profile.api";
+import { fetchContacts } from "@/features/profile/api/personal.api";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -131,6 +133,55 @@ export default function FirstRun() {
   });
   const skipPack = packSettled.data !== undefined &&
     (packSettled.data.waived || packSettled.data.submitted);
+
+  /*
+    ── STEP 2 IS SKIPPED WHEN THE RECORD ALREADY ANSWERS IT ────────────────────────
+
+    REPORTED: "once I login and fill other details then during change password time
+    why it is asking to fill these details again".
+
+    Step 2 asks for a mobile number and an emergency contact and wrote them
+    unconditionally, with no reference to whether the employee record already had
+    them. So anyone who had already given HR those details — or who had been
+    through this wizard once before without reaching the end — was asked for them
+    again, and a second emergency contact was inserted on top of the first.
+
+    Asking a person for something the system already knows is how a form teaches
+    people that it is not paying attention. So it is skipped when both facts are on
+    file, exactly as the document pack is skipped when there is nothing left to owe.
+
+    Defaults to SHOWING the step while the reads are in flight or if they fail: being
+    asked once too often is a far better failure than a joiner with no emergency
+    contact on record.
+  */
+  const detailsOnFile = useQuery({
+    queryKey: ["firstRun", "detailsOnFile", employee?.employeeId ?? "none"],
+    // employeeId is `string | null`, so a truthiness check, not `!== undefined`.
+    enabled: Boolean(employee?.employeeId),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const id = employee?.employeeId;
+      if (id === null || id === undefined) return false;
+      const [me, contacts] = await Promise.all([
+        fetchMyEmployeeProfile(signal),
+        fetchContacts(id, signal),
+      ]);
+      const hasMobile = (me?.mobile ?? "").trim() !== "";
+      const hasEmergency = contacts.some((c) => c.contact_kind === "emergency");
+      return hasMobile && hasEmergency;
+    },
+  });
+  const skipDetails = detailsOnFile.data === true;
+
+  /*
+    A step can become skippable AFTER it is already the current one — the reads
+    above resolve a moment later, and sessionStorage can restore a 2 from an
+    earlier visit. Without this the page would render its header and progress dots
+    over an empty body, which is the dead end the document step used to have.
+  */
+  useEffect(() => {
+    if (step === 2 && skipDetails) setStep(3);
+  }, [step, skipDetails]);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [mobile, setMobile] = useState("");
@@ -186,7 +237,9 @@ export default function FirstRun() {
           // Not fatal: finish() writes the same flag, so this self-heals.
         }
       }
-      setStep(2);
+      // Straight to 3 when the record already holds the mobile and the emergency
+      // contact: step 2 would have nothing left to ask.
+      setStep(skipDetails ? 3 : 2);
     } finally {
       setBusy(false);
     }
@@ -301,7 +354,7 @@ export default function FirstRun() {
         </form>
       ) : null}
 
-      {step === 2 ? (
+      {step === 2 && !skipDetails ? (
         <form onSubmit={submitDetails} className="space-y-4">
           {employee ? (
             <dl className="rounded-md border bg-muted/30 p-3 text-sm">

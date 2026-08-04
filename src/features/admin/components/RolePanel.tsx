@@ -24,7 +24,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, ShieldCheck, TriangleAlert, Users } from "lucide-react";
+import { KeyRound, Mail, ShieldCheck, TriangleAlert, Users } from "lucide-react";
 import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,8 +47,19 @@ import {
   type EmployeeRoleRow,
 } from "../api/roles.api";
 import { createEmployeeAccount, forcePasswordChange, type AccountCreated } from "../api/account-create.api";
+import { sendCredentialEmail, sendPasswordResetLink } from "../api/credential-mail.api";
 
 const KEY = ["admin", "employee-roles"] as const;
+
+/**
+ * `<employee_code>@tamarindtree.co` is a LOGIN IDENTITY, not a mailbox — minted by
+ * `employee-account-create` for staff with no email of their own. Mail to it is
+ * accepted by the sender and delivered nowhere, so any screen offering to email
+ * somebody has to be able to tell the two apart.
+ */
+function isSyntheticIdentity(email: string | null): boolean {
+  return /^tt\d+@tamarindtree\.co$/i.test((email ?? "").trim());
+}
 
 const ROLE_CHIP: Readonly<Record<EffectiveRole, StatusChipEntry>> = {
   employee: { label: t("admin.roles.role.employee"), tone: "neutral" },
@@ -172,9 +183,38 @@ function CreateLoginCell(
  * not be what destroys it.
  */
 function IssuedCredential(
-  { issued, onDismiss }: { issued: AccountCreated; onDismiss: () => void },
+  { issued, row, onDismiss }: { issued: AccountCreated; row: EmployeeRoleRow; onDismiss: () => void },
 ) {
   const [copied, setCopied] = useState(false);
+
+  /*
+    EMAILING IT IS ONLY POSSIBLE HERE, WHILE THE PASSWORD IS STILL IN HAND.
+
+    The database keeps a bcrypt hash and nothing else, and the function nulls the
+    password on replay — so there is no later screen that could offer to send it.
+    Hence a button on the credential itself rather than a general action on the row.
+
+    Not automatic: an admin who is provisioning ten accounts to hand over on paper
+    should not be mailing ten passwords as a side effect of clicking Create login.
+  */
+  const mail = useMutation({
+    mutationFn: () =>
+      sendCredentialEmail({
+        employeeId: row.employee_id,
+        displayName: row.display_name ?? row.employee_code ?? "",
+        loginEmail: issued.account.email ?? "",
+        tempPassword: issued.tempPassword ?? "",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        r.sandboxed === true
+          ? t("admin.roles.login.mailSandboxed")
+          : t("admin.roles.login.mailSent", { email: issued.account.email ?? "" }),
+      );
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : String(e)),
+  });
+
   return (
     <div className="flex flex-col items-end gap-1 text-right">
       <span className="text-xs font-medium text-success">
@@ -207,6 +247,23 @@ function IssuedCredential(
           {t("admin.roles.login.replayed")}
         </span>
       )}
+      {/* Offered only when there is something to send and somewhere to send it. */}
+      {issued.tempPassword !== null && (issued.account.email ?? "") !== "" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={mail.isPending}
+          onClick={() => mail.mutate()}
+        >
+          <Mail className="mr-2 size-4" aria-hidden />
+          {mail.isPending
+            ? t("admin.roles.login.mailSending")
+            : mail.isSuccess
+              ? t("admin.roles.login.mailAgain")
+              : t("admin.roles.login.mail")}
+        </Button>
+      ) : null}
       <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
         {t("admin.roles.login.dismiss")}
       </Button>
@@ -238,6 +295,20 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   });
 
+  /*
+    Emails a set-your-password link. Separate from `force`, which only re-arms the
+    flag and sends nothing: an admin who wants somebody to change their password
+    usually also wants them TOLD, and those are two different failures to report.
+  */
+  const invite = useMutation({
+    mutationFn: (email: string) => sendPasswordResetLink(email),
+    onSuccess: () => {
+      setError(null);
+      toast.success(t("admin.roles.login.linkSent"));
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  });
+
   const change = useMutation({
     mutationFn: (v: { role: AssignableRole; reason: string }) =>
       setEmployeeRole(row.employee_id, v.role, v.reason),
@@ -252,6 +323,7 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
     return (
       <IssuedCredential
         issued={issued}
+        row={row}
         onDismiss={() => {
           setIssued(null);
           void qc.invalidateQueries({ queryKey: KEY });
@@ -307,6 +379,21 @@ function RoleCell({ row }: { row: EmployeeRoleRow }) {
       >
         {force.isPending ? t("admin.roles.login.forcing") : t("admin.roles.login.force")}
       </button>
+      {/*
+        Only offered where there is a real mailbox to reach. A synthetic
+        <employee_code>@tamarindtree.co identity has none, so a link sent there
+        would be silently discarded and HR would believe it had arrived.
+      */}
+      {(row.login_email ?? "").trim() !== "" && !isSyntheticIdentity(row.login_email) ? (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          disabled={invite.isPending}
+          onClick={() => invite.mutate(row.login_email ?? "")}
+        >
+          {invite.isPending ? t("admin.roles.login.linkSending") : t("admin.roles.login.link")}
+        </button>
+      ) : null}
       {error !== null ? (
         <span className="max-w-[20rem] text-right text-xs text-destructive">{error}</span>
       ) : null}

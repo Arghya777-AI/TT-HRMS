@@ -86,6 +86,20 @@ export const keysDocumentOpen = {
   "admin.roles.login.copy": "Copy password",
   // Explicit dismissal, because dismissing is what destroys the only copy.
   "admin.roles.login.dismiss": "Done — I have saved it",
+  "admin.roles.login.mail": "Email these details",
+  "admin.roles.login.mailAgain": "Send again",
+  "admin.roles.login.mailSending": "Sending…",
+  "admin.roles.login.mailSent": "Sent to {email}. They will be asked to set their own password on first sign-in.",
+  // The sandbox exists until a sending domain is verified, and a "sent" toast that
+  // did not say so would have HR believing the employee received it.
+  "admin.roles.login.mailSandboxed":
+    "Sent — but the email sandbox is on, so it went to the sandbox address, not to the employee. Clear comms.sandbox_redirect_to once the sending domain is verified.",
+  "admin.roles.login.link": "Email a set-password link",
+  "admin.roles.login.linkSending": "Sending…",
+  // "Accepted for delivery", not "delivered": GoTrue answers identically whether or
+  // not the address exists, so claiming it arrived would be a guess.
+  "admin.roles.login.linkSent":
+    "Sent to their inbox — they choose their own password from the link. If it does not arrive, check Authentication → SMTP and the hourly email limit.",
   "admin.roles.login.force": "Force password change",
   "admin.roles.login.forcing": "Applying…",
   "admin.roles.login.forced":

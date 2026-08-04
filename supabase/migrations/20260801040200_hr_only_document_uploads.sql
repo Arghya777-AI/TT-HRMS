@@ -97,7 +97,6 @@ CREATE POLICY documents__self__insert ON public.documents
     AND employee_id = app.current_employee_id()
     AND company_id  = app.current_employee_company_id()
     AND uploaded_by = app.ctx_actor_id()
-    AND status = 'pending_review'
     AND virus_scan_status = 'pending'
     AND current_version = 1
     AND is_system_generated = false
@@ -122,10 +121,17 @@ CREATE POLICY documents__self__insert ON public.documents
         AND dt.is_active
         AND dt.deleted_at IS NULL
         AND dt.visible_to_employee
-        AND dt.employee_uploadable          -- ← 093
+        AND dt.employee_uploadable          -- the one clause this migration adds
         AND NOT dt.requires_esign
         AND NOT dt.requires_acknowledgement
         AND (NOT dt.requires_expiry OR documents.expiry_date IS NOT NULL)
+        -- Kept from migration 20260801038100: the status the TYPE demands, and only
+        -- that one. Rebased rather than copied from the older 021000 body, which
+        -- hardcoded 'pending_review' — replacing it would have quietly undone the
+        -- rule that an employee cannot park a photograph in a review queue.
+        AND documents.status = (
+          CASE WHEN dt.requires_approval THEN 'pending_review' ELSE 'approved' END
+        )::public.document_status
     )
   );
 

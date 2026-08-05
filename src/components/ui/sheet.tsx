@@ -29,9 +29,21 @@ const sheetVariants = cva(
   {
     variants: {
       side: {
-        top: "inset-x-0 top-0 border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+        /*
+          THE EDGE-ANCHORED SIDES PAD FOR THE DEVICE'S OWN CHROME.
+
+          A sheet pinned to an edge is flush with the display edge, not with the usable
+          area — the app paints under the iOS status bar and home indicator by design
+          (index.html: `black-translucent` + `viewport-fit=cover`). So the bottom sheet's
+          last row sat under the home bar, which is where the tab bar's "More" menu opens
+          and therefore one tap from the bar that was reported as unreadable.
+
+          `max()` against the base `p-6`, so nothing changes on a device that reports no
+          inset — this only ever adds room where the hardware takes some.
+        */
+        top: "inset-x-0 top-0 border-b pt-[max(1.5rem,env(safe-area-inset-top))] data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
         bottom:
-          "inset-x-0 bottom-0 rounded-t-xl border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+          "inset-x-0 bottom-0 rounded-t-xl border-t pb-[max(1.5rem,env(safe-area-inset-bottom))] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
         left: "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
         right:
           "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",

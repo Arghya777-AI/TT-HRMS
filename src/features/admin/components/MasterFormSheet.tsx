@@ -159,7 +159,12 @@ export function MasterFormSheet({
             ))}
           </div>
 
-          <div className="sticky bottom-0 space-y-3 border-t bg-background p-5 sm:p-6">
+          {/*
+            `sticky bottom-0` sticks to the bottom of the VIEWPORT, which on a phone with
+            a home indicator is behind it — so Save sat under the home bar and the swipe
+            gesture won the fight for the touch. `max()` leaves the desktop padding alone.
+          */}
+          <div className="sticky bottom-0 space-y-3 border-t bg-background p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 sm:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
             {formError ? (
               <p className="text-sm font-medium text-destructive" role="alert">
                 {formError}

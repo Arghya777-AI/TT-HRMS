@@ -282,16 +282,40 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const railWidth = collapsed ? "lg:w-[72px]" : "lg:w-[264px]";
+  /*
+    THE RAIL'S WIDTH IS SPENT TWICE — here, and as the main column's left offset below.
+    The two must stay equal or the result is either a strip of bare background or a
+    header sliding under the rail, so the four literals are written out in both places
+    and must be edited together. They cannot be shared through a constant: Tailwind
+    generates classes by finding them as literal text in the source, so a class name
+    built from a template string produces no CSS at all.
+
+    `env(safe-area-inset-left)` is in all of them because the rail shows from `md:` up
+    and a phone in landscape is wider than that — an iPhone 14 Pro is 852px on its side.
+    With the notch on the left that inset is around 59px, over a 72px rail, which covers
+    the icons completely. Widening by the inset and padding by the same amount leaves a
+    full 72px of usable rail beside the notch.
+  */
+  const railWidth = collapsed
+    ? "lg:w-[calc(72px_+_env(safe-area-inset-left))]"
+    : "lg:w-[calc(264px_+_env(safe-area-inset-left))]";
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="min-h-dvh bg-background">
         {/* Desktop / tablet rail */}
+        {/*
+          The rail appears from `md:` up, and that includes an iPad added to the home
+          screen — which has a status bar and a home indicator of its own. `inset-y-0`
+          pins it to the display edges, so without these the monogram sat under the clock
+          and Sign out sat under the home bar. `pl` is for landscape on a notched phone
+          held with the notch on the left.
+        */}
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-card md:flex",
-            "md:w-[72px]",
+            "md:w-[calc(72px_+_env(safe-area-inset-left))]",
+            "pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]",
             railWidth,
           )}
         >
@@ -318,8 +342,42 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         {/* Main column */}
-        <div className={cn("flex min-h-dvh flex-col md:pl-[72px]", collapsed ? "lg:pl-[72px]" : "lg:pl-[264px]")}>
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className={cn(
+          "flex min-h-dvh flex-col md:pl-[calc(72px_+_env(safe-area-inset-left))]",
+          collapsed
+            ? "lg:pl-[calc(72px_+_env(safe-area-inset-left))]"
+            : "lg:pl-[calc(264px_+_env(safe-area-inset-left))]",
+        )}>
+          {/*
+            ── THE HEADER PAINTS UNDER THE iOS STATUS BAR, SO IT HAS TO PAD FOR IT ───────
+
+            REPORTED from an iPhone home-screen install: the clock and the battery were
+            drawn on top of the search field.
+
+            index.html sets `apple-mobile-web-app-status-bar-style: black-translucent`
+            with `viewport-fit=cover`, which is deliberate — it is what makes the app fill
+            the screen instead of sitting in a letterbox — and its consequence is that the
+            web view's origin is the top of the DISPLAY, not the top of the usable area.
+            The status bar is then the app's problem. index.html's own comment already
+            claimed "the shell pads with env(safe-area-inset-*)"; the shell did not.
+
+            THE HEIGHT IS ADDITIVE, WHICH IS THE WHOLE TRICK. `h-14` with `pt-[env(...)]`
+            would be worse than nothing: `box-sizing: border-box` subtracts the padding
+            from the 56px, so the row would shrink to 9px on a notched phone instead of
+            moving down. So the inset is added to the height and applied as padding —
+            56px of usable header, wherever it starts.
+
+            Left and right insets too, for landscape, where the notch takes a bite out of
+            one side and the first thing in the row would sit under it. `max()` keeps the
+            old 12px gutter on every device that reports no inset at all.
+          */}
+          <header
+            className={cn(
+              "sticky top-0 z-20 flex items-center gap-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+              "h-[calc(3.5rem_+_env(safe-area-inset-top))] pt-[env(safe-area-inset-top)]",
+              "pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]",
+            )}
+          >
             {/* Mobile brand (rail is hidden below md) */}
             <Link to="/me" className="md:hidden" aria-label={t("app.name")}>
               <BrandLogo variant="mark" decorative className="h-8 w-8" />
@@ -429,12 +487,41 @@ export function AppShell({ children }: { children: ReactNode }) {
             every page at once — the alternative is remembering to pad sixty pages, and
             the sixty-first would be wrong.
           */}
-          <main className="flex-1 pb-40 md:pb-24">{children}</main>
+          {/*
+            AND THE HOME INDICATOR IS ADDED ON TOP OF ALL OF IT. Both figures below are
+            measured from the viewport's bottom edge, which on a notched phone is BEHIND
+            the home bar — so without the inset the last ~34px of reserved space is space
+            the user cannot see, and the save button creeps back under the floating one.
+          */}
+          <main className="flex-1 pb-[calc(10rem_+_env(safe-area-inset-bottom))] md:pb-[calc(6rem_+_env(safe-area-inset-bottom))]">
+            {children}
+          </main>
         </div>
 
-        {/* Mobile bottom bar — 4 slots + More */}
+        {/*
+          ── MOBILE BOTTOM BAR — 4 slots + More ────────────────────────────────────────
+
+          REPORTED from an iPhone: "Tab on buttom doesn't give proper visibility" — the
+          labels were sliced off along the bottom edge.
+
+          THE CAUSE WAS THE FIX FOR THE HOME BAR EATING ITSELF. This was `h-14` with
+          `pb-[env(safe-area-inset-bottom)]`, and Tailwind sets `box-sizing: border-box`,
+          so the padding came OUT of the 56px rather than being added to it. On an iPhone
+          with a 34px home indicator that leaves 22px of usable bar for a 20px icon and a
+          line of 11px text — hence icons touching the border and labels cut in half. On
+          an Android phone with no inset the same class read as a perfectly good bar,
+          which is why it survived.
+
+          Adding the inset to the height keeps 56px of real, tappable bar wherever the
+          home indicator happens to be. Side insets are for landscape, where the notch
+          would otherwise sit on top of the first tab.
+        */}
         <nav
-          className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-stretch border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t bg-card md:hidden",
+            "h-[calc(3.5rem_+_env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)]",
+            "pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
+          )}
           aria-label={t("shell.nav.group.me")}
         >
           {MOBILE_ITEMS.map((item) => {
@@ -519,7 +606,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button
             asChild
             size="lg"
-            className="fixed bottom-[88px] right-4 z-[40] h-14 rounded-full shadow-lg md:bottom-6"
+            /*
+              88px was chosen to clear a 56px tab bar with a 32px gap — but the bar is now
+              56px PLUS the home indicator, so on an iPhone the button had crept down onto
+              its top edge. Same inset, added to both offsets: `md:` still applies to an
+              iPad in standalone, which has a home bar of its own.
+            */
+            className={cn(
+              "fixed z-[40] h-14 rounded-full shadow-lg",
+              "bottom-[calc(5.5rem_+_env(safe-area-inset-bottom))] md:bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))]",
+              "right-[max(1rem,env(safe-area-inset-right))]",
+            )}
           >
             <Link to={AI_FAB.to} aria-label={t(AI_FAB.labelKey)}>
               <Sparkles className="h-5 w-5" aria-hidden />

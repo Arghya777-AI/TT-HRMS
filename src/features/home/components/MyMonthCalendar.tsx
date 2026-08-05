@@ -45,6 +45,7 @@ import {
 import { asArray } from "@/lib/asArray";
 import { useAttendanceDays } from "@/features/attendance/hooks/useAttendance";
 import type { AttendanceDay } from "@/features/attendance/api/attendance.api";
+import { dayRecordedBy, type RecordedBy } from "../dayRecordedBy";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -73,10 +74,38 @@ const STATUS_STYLE: Readonly<
   pending: { dot: "bg-muted-foreground/25", wash: "", mark: "", key: "home.cal.status.pending" },
 };
 
+/**
+ * Who recorded the day → a pip in the corner of the cell. A SECOND colour code,
+ * answering a different question from the status: not "what was this day" but
+ * "where did this record come from" (see `dayRecordedBy` for the ranking).
+ *
+ * SHAPE AS WELL AS COLOUR, for two reasons. The status palette above already spends
+ * emerald, teal, amber, rose, sky, violet and indigo, so a fourth family of hues
+ * would collide with meanings the reader has only just learned. And this file's rule
+ * is that colour is never the sole carrier of a state — here the second carrier
+ * cannot be a letter, because the cell already has one, so it is the outline.
+ *
+ * `self` is a deliberate neutral grey: it is the ordinary case, very nearly every
+ * working day of the month, and a saturated pip on all of them would drown out the
+ * two marks that actually merit a second look.
+ */
+const RECORDED_STYLE: Readonly<
+  Record<Exclude<RecordedBy, "none">, { pip: string; shape: string; key: string }>
+> = {
+  self: { pip: "bg-foreground/40", shape: "rounded-full", key: "home.cal.by.self" },
+  corrected: { pip: "bg-blue-600", shape: "rotate-45", key: "home.cal.by.corrected" },
+  hr_override: { pip: "bg-orange-500", shape: "", key: "home.cal.by.hrOverride" },
+};
+
+/** Fixed legend order, so the key does not reshuffle itself month to month. */
+const RECORDED_ORDER = ["self", "corrected", "hr_override"] as const;
+const STATUS_ORDER = Object.keys(STATUS_STYLE);
+
 interface Cell {
   readonly date: string;
   readonly dayOfMonth: string;
   readonly day: AttendanceDay | null;
+  readonly recordedBy: RecordedBy;
   readonly isToday: boolean;
   readonly isFuture: boolean;
 }
@@ -94,14 +123,46 @@ export function MyMonthCalendar() {
   const cells = useMemo<Cell[]>(() => {
     const byDate = new Map<string, AttendanceDay>();
     for (const row of rows) byDate.set(row.ist_date, row);
-    return istMonthDates(month).map((date) => ({
-      date,
-      dayOfMonth: date.slice(8, 10),
-      day: byDate.get(date) ?? null,
-      isToday: date === today,
-      isFuture: date > today,
-    }));
+    return istMonthDates(month).map((date) => {
+      const day = byDate.get(date) ?? null;
+      return {
+        date,
+        dayOfMonth: date.slice(8, 10),
+        day,
+        recordedBy: dayRecordedBy(day),
+        isToday: date === today,
+        isFuture: date > today,
+      };
+    });
   }, [rows, month, today]);
+
+  /*
+    ── THE GRID HAD NO KEY, SO THE COLOURS MEANT NOTHING ───────────────────────────
+
+    Two colour codes are on screen now — the status wash and the recorded-by pip — and
+    until this legend there was nothing anywhere that said what any of them stood for.
+    A pink cell marked "A" is only legible to somebody who already knows.
+
+    ONLY WHAT THIS MONTH ACTUALLY CONTAINS. A fixed twelve-status key would be a wall
+    of colours the reader has to search for the two that apply to them, and it would
+    claim the month held a holiday and a comp-off when it held neither. Statuses with
+    no style (one added to the enum ahead of this file) are left out rather than given
+    a blank swatch — they still render in the grid, and the day panel spells them out.
+  */
+  const legend = useMemo(() => {
+    const statuses = new Set<string>();
+    const sources = new Set<RecordedBy>();
+    for (const row of rows) {
+      if (STATUS_STYLE[row.status] !== undefined) statuses.add(row.status);
+      sources.add(dayRecordedBy(row));
+    }
+    return {
+      statuses: STATUS_ORDER.filter((code) => statuses.has(code)).map(
+        (code) => STATUS_STYLE[code]!,
+      ),
+      sources: RECORDED_ORDER.filter((code) => sources.has(code)),
+    };
+  }, [rows]);
 
   const leadingBlanks = useMemo(() => {
     const first = cells[0];
@@ -177,6 +238,23 @@ export function MyMonthCalendar() {
           {cells.map((cell) => {
             const style = cell.day === null ? null : STATUS_STYLE[cell.day.status] ?? null;
             const selected = cell.date === openDate;
+            /*
+              The pip is `aria-hidden`, so the recorded-by fact would be invisible to a
+              screen reader if it were not spelled into the label here. It is the part
+              of a cell least guessable from context: "absent" can be inferred from a
+              missing punch, "set by HR" cannot be inferred from anything.
+            */
+            const words = [
+              cell.date,
+              cell.day === null
+                ? null
+                : style === null
+                  ? cell.day.status
+                  : t(style.key as never),
+              cell.recordedBy === "none"
+                ? null
+                : t(RECORDED_STYLE[cell.recordedBy].key as never),
+            ].filter((word): word is string => word !== null);
             return (
               <button
                 key={cell.date}
@@ -184,14 +262,25 @@ export function MyMonthCalendar() {
                 role="gridcell"
                 disabled={cell.isFuture}
                 aria-pressed={selected}
-                aria-label={
-                  cell.day === null
-                    ? cell.date
-                    : `${cell.date} — ${style === null ? cell.day.status : t(style.key as never)}`
-                }
+                aria-label={words.join(" — ")}
                 onClick={() => setOpenDate(selected ? null : cell.date)}
                 className={cn(
-                  "relative flex aspect-square min-h-9 flex-col items-center justify-center overflow-hidden",
+                  /*
+                    A BOUNDED HEIGHT, NOT `aspect-square`.
+
+                    Square cells take their height from their width, and this card is
+                    full-width on the home page — so seven columns across a desktop
+                    container made every day box about 200px tall, holding an 11px
+                    number and a 6px dot. Reported as "reduce the size of box"; the
+                    real fault was that the box had no ceiling and grew with the
+                    viewport, which is why it looked right in a narrow column and
+                    absurd on a laptop.
+
+                    Fixed height, so the month reads as a month at any width. 44px on
+                    a phone keeps the tap target at the usual minimum, and there the
+                    cells come out roughly square anyway.
+                  */
+                  "relative flex h-11 flex-col items-center justify-center overflow-hidden sm:h-12",
                   "rounded-lg border text-center transition-all duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   cell.isFuture
@@ -215,6 +304,18 @@ export function MyMonthCalendar() {
                 >
                   {cell.dayOfMonth}
                 </span>
+                {/* Top-right, out of the way of the centred number and letter. */}
+                {cell.recordedBy === "none" ? null : (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute right-1 top-1 size-1.5",
+                      RECORDED_STYLE[cell.recordedBy].pip,
+                      RECORDED_STYLE[cell.recordedBy].shape,
+                    )}
+                  />
+                )}
+
                 {/* The letter carries the state; the dot only reinforces it. */}
                 {style !== null && style.mark !== "" ? (
                   <span className="mt-0.5 flex items-center gap-0.5">
@@ -228,6 +329,37 @@ export function MyMonthCalendar() {
             );
           })}
         </div>
+
+        {legend.statuses.length > 0 || legend.sources.length > 0 ? (
+          <ul className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.65rem] leading-tight text-muted-foreground">
+            {legend.statuses.map((status) => (
+              <li key={status.key} className="inline-flex items-center gap-1">
+                <span aria-hidden className={cn("size-1.5 rounded-full", status.dot)} />
+                <span aria-hidden className="font-semibold">{status.mark}</span>
+                {t(status.key as never)}
+              </li>
+            ))}
+            {legend.sources.length > 0 ? (
+              <>
+                <li aria-hidden className="h-3 w-px bg-border" />
+                <li className="font-medium">{t("home.cal.by.legend")}</li>
+                {legend.sources.map((code) => (
+                  <li key={code} className="inline-flex items-center gap-1">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5",
+                        RECORDED_STYLE[code].pip,
+                        RECORDED_STYLE[code].shape,
+                      )}
+                    />
+                    {t(RECORDED_STYLE[code].key as never)}
+                  </li>
+                ))}
+              </>
+            ) : null}
+          </ul>
+        ) : null}
 
         {/* A modal, not a panel underneath: on a phone the panel was below the fold, so a
             tap read as "nothing happened", and opening it shoved the rest of the page down. */}
@@ -296,6 +428,43 @@ export function MyMonthCalendar() {
                   <dd className="text-right font-medium">{openCell.day.holiday_name}</dd>
                 </>
               ) : null}
+
+              {/*
+                The pip in words, because a 6px mark in the corner of a cell is a hint
+                and this is where the hint gets settled.
+              */}
+              {openCell.recordedBy === "none" ? null : (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.recordedBy")}</dt>
+                  <dd className="flex items-center justify-end gap-1.5 text-right font-medium">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 shrink-0",
+                        RECORDED_STYLE[openCell.recordedBy].pip,
+                        RECORDED_STYLE[openCell.recordedBy].shape,
+                      )}
+                    />
+                    {t(RECORDED_STYLE[openCell.recordedBy].key as never)}
+                  </dd>
+                </>
+              )}
+
+              {/*
+                HR's reason, shown to the employee rather than kept on the admin side.
+                `ck_ad__override_reason` makes ten characters of explanation mandatory
+                before a day can be set by hand — a rule whose only purpose is that
+                somebody can later read it, and the person with the most at stake is
+                the one whose day it is.
+              */}
+              {(openCell.day.manual_override_reason ?? "").trim() === "" ? null : (
+                <>
+                  <dt className="text-muted-foreground">{t("home.cal.field.overrideReason")}</dt>
+                  <dd className="col-span-1 text-right font-medium">
+                    {openCell.day.manual_override_reason}
+                  </dd>
+                </>
+              )}
             </dl>
           )}
         </DayDetailDialog>

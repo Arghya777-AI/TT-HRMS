@@ -39,4 +39,20 @@ export const keysHomeCalendar = {
   "home.cal.status.weeklyOffWorked": "Worked on a weekly off",
   "home.cal.status.holidayWorked": "Worked on a holiday",
   "home.cal.status.pending": "Not yet settled",
+
+  /*
+    WHO RECORDED THE DAY — a second colour code, answering a different question from
+    the status words above. Those say what the day was; these say where it came from.
+
+    Phrased from the employee's side ("you", "your request") because this calendar is
+    only ever read by the person whose month it is. "Set by HR" names the actor rather
+    than the mechanism: `manual_override_status` is not a sentence anybody wants to
+    read about their own pay.
+  */
+  "home.cal.by.legend": "Recorded by",
+  "home.cal.by.self": "Your own punches",
+  "home.cal.by.corrected": "Corrected on your request",
+  "home.cal.by.hrOverride": "Set by HR",
+  "home.cal.field.recordedBy": "Recorded by",
+  "home.cal.field.overrideReason": "HR's reason",
 } as const;

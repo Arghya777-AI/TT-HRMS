@@ -343,7 +343,9 @@ export default function AskPage() {
           );
         })()}
 
-        <form onSubmit={submit} className="sticky bottom-4 flex gap-2 rounded-lg border bg-card p-2 shadow-sm">
+        {/* Same home-indicator clearance as the admin action bar: the composer is the one
+            control on this page and it sat in the swipe area on an iPhone. */}
+        <form onSubmit={submit} className="sticky bottom-[max(1rem,env(safe-area-inset-bottom))] flex gap-2 rounded-lg border bg-card p-2 shadow-sm">
           <Input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

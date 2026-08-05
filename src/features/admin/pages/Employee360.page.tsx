@@ -469,8 +469,11 @@ export default function Employee360Page() {
               </div>
             ) : null}
 
+            {/* `bottom-[max(...)]`: the action bar sticks to the viewport's bottom edge, which on a
+                phone with a home indicator is behind it — 16px was not enough to clear the swipe
+                area, so Save fought the gesture and lost. */}
             {isDirty ? (
-              <div className="sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/95 p-4 shadow-lg backdrop-blur">
+              <div className="sticky bottom-[max(1rem,env(safe-area-inset-bottom))] mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/95 p-4 shadow-lg backdrop-blur">
                 <p className="text-sm">
                   {t("admin.p360.pending", { n: String(dirtyFields.length) })}
                   {needsTypedReason ? (

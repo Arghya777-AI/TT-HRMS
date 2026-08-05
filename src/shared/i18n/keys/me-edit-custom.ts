@@ -116,7 +116,7 @@ export const keysMeEditCustom = {
   "profile.docsUpload.error.orphan":
     "The file reached storage but could not be recorded against your record, so nothing has been added. Tell HR before trying again.",
   "profile.docsUpload.error.refused":
-    "The database refused to record this document — employee uploads are not switched on for this project yet. The file reached storage but nothing was added to your record, so tell HR rather than trying again.",
+    "The database refused to record this document. Either this kind of document is one HR files for you — Aadhaar, PAN and bank proof are — or the type does not accept uploads. The file reached storage but nothing was added to your record, so ask HR to add it rather than trying again.",
 
   "profile.docsUpload.limits.title": "What happens to the file",
   "profile.docsUpload.limits.stored":

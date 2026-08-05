@@ -197,12 +197,18 @@ export default function FirstRun() {
   const pwOk = password.length > 0 && pwIssues.length === 0 && confirm === password;
 
   const MOBILE_RE = /^[6-9]\d{9}$/;
-  const detailsOk =
-    MOBILE_RE.test(mobile) &&
+  /*
+    Split into the two independent facts this step collects, because they are now
+    saved independently — see `saveDetailsAndContinue`. `detailsOk` (both present)
+    is still what enables the primary button.
+  */
+  const mobileOk = MOBILE_RE.test(mobile);
+  const emergencyOk =
     emergencyName.trim().length > 1 &&
     emergencyRelation.trim().length > 1 &&
     MOBILE_RE.test(emergencyPhone) &&
     emergencyPhone !== mobile; // an emergency contact cannot be your own number
+  const detailsOk = mobileOk && emergencyOk;
 
   async function submitPassword(e: FormEvent) {
     e.preventDefault();
@@ -245,30 +251,59 @@ export default function FirstRun() {
     }
   }
 
-  async function submitDetails(e: FormEvent) {
-    e.preventDefault();
-    if (!detailsOk || !employee?.employeeId) {
-      // No employee row linked yet — record nothing, but let the user proceed.
+  /*
+    ── EVERY STEP EXCEPT THE PASSWORD CAN BE SKIPPED ───────────────────────────────
+
+    ASKED FOR: "u can keep option to skip other than password creation part like
+    friends details and upload document". The password is the one thing that must
+    happen — until it does, the credential is still the one HR issued and typed into
+    an email — so step 1 stays compulsory. Everything after it is HR's paperwork, and
+    holding a person out of the app until they have their emergency contact's phone
+    number to hand only teaches them to type something false.
+
+    SKIPPING SAVES WHAT IS ALREADY VALID rather than discarding it, which is why the
+    two facts are written separately. A mobile number stands on its own; an emergency
+    contact needs all three of its fields to be a contact at all. Someone who fills
+    in their mobile, cannot remember a relative's number and skips should not find
+    their mobile thrown away for the sake of the half they could not complete.
+
+    Both buttons come here. The primary one is enabled only when both facts are
+    complete; the skip runs the same save with whatever is there. Neither can fail
+    into a dead end: `setStep(3)` is in `finally`.
+  */
+  async function saveDetailsAndContinue() {
+    const id = employee?.employeeId;
+    // Nothing to write against, or nothing worth writing — but never a dead end.
+    if (id === null || id === undefined || (!mobileOk && !emergencyOk)) {
       setStep(3);
       return;
     }
     setBusy(true);
     try {
-      await supabase.from("employees").update({ mobile }).eq("id", employee.employeeId);
-      await supabase.from("employee_contacts").insert({
-        employee_id: employee.employeeId,
-        contact_kind: "emergency",
-        value: emergencyPhone,
-        contact_name: emergencyName.trim(),
-        relationship: emergencyRelation.trim(),
-        is_primary: true,
-      });
+      if (mobileOk) {
+        await supabase.from("employees").update({ mobile }).eq("id", id);
+      }
+      if (emergencyOk) {
+        await supabase.from("employee_contacts").insert({
+          employee_id: id,
+          contact_kind: "emergency",
+          value: emergencyPhone,
+          contact_name: emergencyName.trim(),
+          relationship: emergencyRelation.trim(),
+          is_primary: true,
+        });
+      }
     } catch {
       toast.info("Saved what we could — HR will confirm the rest.");
     } finally {
       setBusy(false);
       setStep(3);
     }
+  }
+
+  async function submitDetails(e: FormEvent) {
+    e.preventDefault();
+    await saveDetailsAndContinue();
   }
 
   /*
@@ -375,15 +410,34 @@ export default function FirstRun() {
           </div>
 
           <fieldset className="space-y-2 rounded-md border p-3">
-            <legend className="px-1 text-xs font-medium text-muted-foreground">Emergency contact (required)</legend>
+            {/* Not "(required)" any more — a label that says required beside a button
+                that says skip teaches the reader to disbelieve the labels. HR still
+                needs it, and their console still shows it outstanding. */}
+            <legend className="px-1 text-xs font-medium text-muted-foreground">Emergency contact</legend>
             <Input placeholder="Full name" value={emergencyName} onChange={(e) => setEmergencyName(e.target.value)} required />
             <Input placeholder="Relationship" value={emergencyRelation} onChange={(e) => setEmergencyRelation(e.target.value)} required />
             <Input placeholder="Phone" inputMode="numeric" maxLength={10} value={emergencyPhone} onChange={(e) => setEmergencyPhone(e.target.value.replace(/\D/g, ""))} required />
           </fieldset>
 
+          {/*
+            SKIP, WHERE "BACK" USED TO BE. Back went to step 1 — and step 1 cannot be
+            walked past without calling `auth.updateUser({ password })`, because that
+            is the only thing its button does. By the time this step is on screen the
+            password has already been changed, so Back led to a screen demanding a
+            SECOND new password before it would let go, escapable only by reloading
+            the tab. That is the same trap the sessionStorage resume was written to
+            close, one step along. There is nothing on step 1 to go back FOR: a
+            password is changed from Settings afterwards, not from here.
+          */}
           <div className="flex gap-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setStep(1)}>
-              {t("auth.firstRun.back")}
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              disabled={busy}
+              onClick={() => void saveDetailsAndContinue()}
+            >
+              Skip for now
             </Button>
             <Button type="submit" className="flex-1" disabled={!detailsOk || busy}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -415,9 +469,14 @@ export default function FirstRun() {
               </p>
             </div>
           </div>
-          {/* Onwards to the paperwork rather than straight out: the gate holds until
-              `submit_onboarding` has accepted, so finishing here would only bounce them
-              back. */}
+          {/*
+            Onwards to the paperwork rather than straight out, so the pack is at least
+            SHOWN once. It is not that finishing here would bounce them back — the gate
+            holds on `must_change_password` and `profile_confirmed_at` only (guards.tsx),
+            both of which `finish()` writes, and `skipPack` above proves it by calling
+            `finish()` directly. Leaving without the documents is a choice the joiner
+            makes on the next screen, not one this button makes silently for them.
+          */}
           <Button
             className="w-full"
             onClick={() => (skipPack ? void finish() : setStep(4))}
@@ -433,9 +492,35 @@ export default function FirstRun() {
         (a password, a phone, how the gate works) while this step's contents are whatever HR
         configured for this employment type, and may be nothing at all.
       */}
-      {step === 4 && !skipPack
-        ? <OnboardingChecklist onSubmitted={() => void finish()} />
-        : null}
+      {step === 4 && !skipPack ? (
+        <div className="space-y-4">
+          <OnboardingChecklist onSubmitted={() => void finish()} />
+          {/*
+            SKIPPING THE PACK IS NOT THE SAME AS SUBMITTING IT, AND MUST NOT LOOK LIKE IT.
+
+            The checklist's own button calls `submit_onboarding()`, which refuses while a
+            required item is missing — correctly, because that RPC is the joiner ASSERTING
+            the paperwork is complete. This one deliberately does not call it. It stamps
+            `profile_confirmed_at` and nothing else, so `employee_onboarding.submitted_at`
+            stays null and HR's console (`v_onboarding_admin`, which counts
+            `is_required_for_onboarding` and never looks at the employee-facing flags) goes
+            on showing this person as outstanding until the documents actually arrive.
+
+            Which is the honest outcome: the obligation survives, the joiner is not locked
+            out of the app over a photograph, and nobody is recorded as having declared
+            something they did not.
+          */}
+          <Button
+            variant="ghost"
+            className="w-full"
+            disabled={busy}
+            onClick={() => void finish()}
+          >
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Skip for now — upload these later from My documents
+          </Button>
+        </div>
+      ) : null}
     </AuthLayout>
   );
 }

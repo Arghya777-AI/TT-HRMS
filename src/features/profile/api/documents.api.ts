@@ -203,13 +203,22 @@ const UPLOADABLE_TYPE_COLUMNS =
  * The types the employee may supply, filtered to exactly what
  * `documents__self__insert` will accept.
  *
- * The three predicates are the policy's, restated so the picker cannot offer a
- * type the database would refuse: `visible_to_employee` (a type whose own copy
- * the employee may not even read is not theirs to file), `NOT requires_esign`
- * (an offer letter or contract is ISSUED and signed, never uploaded) and
- * `NOT requires_acknowledgement` (a policy or SOP is published TO an employee).
- * `is_active AND deleted_at IS NULL` is also what `document_types__authenticated__select`
- * permits, so it is applied here rather than relied on.
+ * The predicates are the policy's, restated so the picker cannot offer a type the
+ * database would refuse: `visible_to_employee` (a type whose own copy the employee
+ * may not even read is not theirs to file), `employee_uploadable` (HR files this
+ * one), `NOT requires_esign` (an offer letter or contract is ISSUED and signed,
+ * never uploaded) and `NOT requires_acknowledgement` (a policy or SOP is published
+ * TO an employee). `is_active AND deleted_at IS NULL` is also what
+ * `document_types__authenticated__select` permits, so it is applied here rather
+ * than relied on.
+ *
+ * REPORTED: a joiner filled in the Aadhaar upload form — issue date, reason, the
+ * lot — chose a file, and only then was told "the database refused to record this
+ * document". Aadhaar, PAN and bank proof had become HR-upload-only
+ * (`employee_uploadable = false`), the insert policy gained a matching clause, and
+ * this list did not. The offer and the refusal disagreed, and the person found out
+ * last. Every predicate in that policy has to appear here, or the screen is lying
+ * about what it will accept.
  */
 export async function fetchUploadableDocumentTypes(
   signal?: AbortSignal,
@@ -219,6 +228,7 @@ export async function fetchUploadableDocumentTypes(
       isTrue("is_active"),
       isNull("deleted_at"),
       isTrue("visible_to_employee"),
+      isTrue("employee_uploadable"),
       isFalse("requires_esign"),
       isFalse("requires_acknowledgement"),
     ],

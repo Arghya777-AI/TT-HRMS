@@ -38,6 +38,15 @@ export interface BoardRow {
   readonly expectedBy: string | null;
   readonly firstInHm: string | null;
   readonly lastOutHm: string | null;
+  /**
+   * The scans as real timestamps, not just "HH:MM".
+   *
+   * `firstInHm` is for reading; these are for arithmetic — the on-site clock ticks from
+   * `firstInAt` (see `liveWorked.ts`), and a string like "10:23" cannot be subtracted from now
+   * without inventing a date for it, which goes wrong at midnight IST.
+   */
+  readonly firstInAt: string | null;
+  readonly lastOutAt: string | null;
   readonly punchCount: number;
   readonly workedMinutes: number;
   readonly isLate: boolean;
@@ -65,6 +74,8 @@ export function fromTodayBoard(row: TodayBoardRow): BoardRow {
     expectedBy: row.expected_by,
     firstInHm: row.first_in_hm,
     lastOutHm: row.last_out_hm,
+    firstInAt: row.first_in_at,
+    lastOutAt: row.last_out_at,
     punchCount: row.punch_count,
     workedMinutes: row.worked_minutes,
     isLate: row.is_late,
@@ -97,6 +108,8 @@ export function fromDayRecord(row: DayRow): BoardRow {
     expectedBy: null,
     firstInHm: row.first_in_hm,
     lastOutHm: row.last_out_hm,
+    firstInAt: row.first_in_at,
+    lastOutAt: row.last_out_at,
     punchCount: row.punch_count,
     workedMinutes: row.total_worked_minutes,
     isLate: row.is_late,

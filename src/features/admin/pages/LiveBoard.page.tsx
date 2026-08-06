@@ -23,9 +23,9 @@
  *
  * @route /admin/attendance/live
  */
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { fmtMonthLong, isIstMonthKey, type IstMonthKey } from "@/lib/datetime";
+import { fmtMonthLong, isIstMonthKey, nowIstDate, type IstMonthKey } from "@/lib/datetime";
 import {
   fromDayRecord,
   fromTodayBoard,
@@ -37,7 +37,8 @@ import {
   type BoardScope,
 } from "../attendanceBoard";
 import { flattenDayRecords, useDayRecords } from "../hooks/useAttendanceRecords";
-import { departmentTotals, grandTotal } from "../departmentTotals";
+import { departmentTotals, grandTotal, type BucketMetric } from "../departmentTotals";
+import { BucketDrillDown } from "../components/BucketDrillDown";
 
 /** Rows per page when reading history. One page covers a month for a small venue. */
 const DAY_PAGE = 200;
@@ -99,6 +100,51 @@ const DAY_CHIP: Readonly<Record<string, StatusChipEntry>> = {
 
 function isBoardState(v: string | null): v is BoardState {
   return v === "in" || v === "yet_to_reach" || v === "off" || v === "late" || v === "overdue";
+}
+
+/**
+ * A number on the subtotals table that opens the people behind it.
+ *
+ * A `<button>` rather than a click handler on the `<td>`: this is a real control, so it has to
+ * be reachable by keyboard and announce its expanded state. `aria-expanded` is what tells a
+ * screen-reader user that a panel appeared below.
+ *
+ * A zero is NOT a button. There is nothing behind it, and a control that opens an empty panel
+ * teaches people that the controls do not work.
+ */
+function DrillCell({
+  value,
+  open,
+  onToggle,
+  tone,
+  children,
+}: {
+  readonly value: number;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly tone?: "warning" | "destructive";
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  if (value === 0) {
+    return <span className="text-muted-foreground">{children}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={cn(
+        "rounded px-1.5 py-0.5 tabular-nums underline decoration-dotted underline-offset-2",
+        "hover:bg-primary/10 hover:decoration-solid focus-visible:outline-none",
+        "focus-visible:ring-2 focus-visible:ring-ring",
+        open && "bg-primary/15 font-semibold",
+        tone === "warning" && "text-warning",
+        tone === "destructive" && "text-destructive",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function LiveBoardPage() {
@@ -171,6 +217,29 @@ export default function LiveBoardPage() {
      figure on this console computed in the browser, and what is deliberately not averaged. */
   const deptTotals = useMemo(() => departmentTotals(rows), [rows]);
   const deptGrand = useMemo(() => grandTotal(deptTotals), [deptTotals]);
+
+  /*
+    Which drill-down is open, if any. ONE AT A TIME on purpose: the panel is a wide table of
+    people and two of them open at once turns the subtotals into a wall. Re-clicking the same
+    cell closes it.
+
+    `dept` is `undefined` for the all-departments footer row and `null` for the unassigned
+    bucket, matching `bucketMembers`.
+  */
+  const [openBucket, setOpenBucket] = useState<
+    { dept: string | null | undefined; metric: BucketMetric } | null
+  >(null);
+  const isOpen = (dept: string | null | undefined, metric: BucketMetric): boolean =>
+    openBucket !== null && openBucket.metric === metric && openBucket.dept === dept;
+  const toggleBucket = (dept: string | null | undefined, metric: BucketMetric): void =>
+    setOpenBucket((prev) => (prev !== null && prev.metric === metric && prev.dept === dept
+      ? null
+      : { dept, metric }));
+
+  /* The date the drill-down asks about for leave. On a range the first day is the honest
+     choice — the panel's own heading says which dates the counts came from. */
+  const drillDate = rows[0]?.istDate ?? nowIstDate();
+  const DEPT_COLUMNS = 7;
 
   // One server count per tile — the same predicate the rows use.
   const counts: Record<BoardState, ReturnType<typeof useBoardSlice>> = {
@@ -563,67 +632,172 @@ export default function LiveBoardPage() {
               </tr>
             </thead>
             <tbody>
-              {deptTotals.map((dept) => (
-                <tr key={dept.departmentName ?? "unassigned"} className="border-b last:border-0">
-                  <td className="px-4 py-2">
-                    {dept.departmentName ?? (
-                      <span className="text-muted-foreground">
-                        {t("admin.board.dept.unassigned")}
-                      </span>
-                    )}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {formatNumber(dept.employees)}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {formatNumber(dept.present)}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {dept.late > 0 ? (
-                      <span className="text-warning">{formatNumber(dept.late)}</span>
-                    ) : (
-                      formatNumber(0)
-                    )}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {formatNumber(dept.onLeave)}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {dept.absent > 0 ? (
-                      <span className="text-destructive">{formatNumber(dept.absent)}</span>
-                    ) : (
-                      formatNumber(0)
-                    )}
-                  </td>
-                  <td className="num px-3 py-2 text-right tabular-nums">
-                    {dept.overtimeMinutes > 0 ? fmtDurationHm(dept.overtimeMinutes) : "—"}
-                  </td>
-                </tr>
-              ))}
+              {deptTotals.map((dept) => {
+                const d = dept.departmentName;
+                return (
+                  <Fragment key={d ?? "unassigned"}>
+                    <tr className="border-b last:border-0">
+                      <td className="px-4 py-2">
+                        {/* The department name opens its whole roster — every person in it,
+                            whatever their state. */}
+                        <DrillCell
+                          value={dept.employees}
+                          open={isOpen(d, "employees")}
+                          onToggle={() => toggleBucket(d, "employees")}
+                        >
+                          {d ?? t("admin.board.dept.unassigned")}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.employees}
+                          open={isOpen(d, "employees")}
+                          onToggle={() => toggleBucket(d, "employees")}
+                        >
+                          {formatNumber(dept.employees)}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.present}
+                          open={isOpen(d, "present")}
+                          onToggle={() => toggleBucket(d, "present")}
+                        >
+                          {formatNumber(dept.present)}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.late}
+                          open={isOpen(d, "late")}
+                          onToggle={() => toggleBucket(d, "late")}
+                          tone="warning"
+                        >
+                          {formatNumber(dept.late)}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.onLeave}
+                          open={isOpen(d, "onLeave")}
+                          onToggle={() => toggleBucket(d, "onLeave")}
+                        >
+                          {formatNumber(dept.onLeave)}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.absent}
+                          open={isOpen(d, "absent")}
+                          onToggle={() => toggleBucket(d, "absent")}
+                          tone="destructive"
+                        >
+                          {formatNumber(dept.absent)}
+                        </DrillCell>
+                      </td>
+                      <td className="num px-3 py-2 text-right tabular-nums">
+                        <DrillCell
+                          value={dept.overtimeMinutes}
+                          open={isOpen(d, "overtime")}
+                          onToggle={() => toggleBucket(d, "overtime")}
+                        >
+                          {dept.overtimeMinutes > 0 ? fmtDurationHm(dept.overtimeMinutes) : "—"}
+                        </DrillCell>
+                      </td>
+                    </tr>
+                    {openBucket !== null && openBucket.dept === d ? (
+                      <BucketDrillDown
+                        rows={rows}
+                        metric={openBucket.metric}
+                        departmentName={d}
+                        istDate={drillDate}
+                        columnCount={DEPT_COLUMNS}
+                      />
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
             {/* Summed from the SAME buckets as the body, so the two provably agree. */}
+            {/* The footer drills too, across EVERY department — `dept: undefined`. Its panel
+                shows the department beside each name, which the per-department panels omit
+                because there it would be the same word on every row. */}
             <tfoot>
               <tr className="border-t-2 font-semibold">
-                <td className="px-4 py-2">{t("admin.board.dept.all")}</td>
-                <td className="num px-3 py-2 text-right tabular-nums">
-                  {formatNumber(deptGrand.employees)}
+                <td className="px-4 py-2">
+                  <DrillCell
+                    value={deptGrand.employees}
+                    open={isOpen(undefined, "employees")}
+                    onToggle={() => toggleBucket(undefined, "employees")}
+                  >
+                    {t("admin.board.dept.all")}
+                  </DrillCell>
                 </td>
                 <td className="num px-3 py-2 text-right tabular-nums">
-                  {formatNumber(deptGrand.present)}
+                  <DrillCell
+                    value={deptGrand.employees}
+                    open={isOpen(undefined, "employees")}
+                    onToggle={() => toggleBucket(undefined, "employees")}
+                  >
+                    {formatNumber(deptGrand.employees)}
+                  </DrillCell>
                 </td>
                 <td className="num px-3 py-2 text-right tabular-nums">
-                  {formatNumber(deptGrand.late)}
+                  <DrillCell
+                    value={deptGrand.present}
+                    open={isOpen(undefined, "present")}
+                    onToggle={() => toggleBucket(undefined, "present")}
+                  >
+                    {formatNumber(deptGrand.present)}
+                  </DrillCell>
                 </td>
                 <td className="num px-3 py-2 text-right tabular-nums">
-                  {formatNumber(deptGrand.onLeave)}
+                  <DrillCell
+                    value={deptGrand.late}
+                    open={isOpen(undefined, "late")}
+                    onToggle={() => toggleBucket(undefined, "late")}
+                    tone="warning"
+                  >
+                    {formatNumber(deptGrand.late)}
+                  </DrillCell>
                 </td>
                 <td className="num px-3 py-2 text-right tabular-nums">
-                  {formatNumber(deptGrand.absent)}
+                  <DrillCell
+                    value={deptGrand.onLeave}
+                    open={isOpen(undefined, "onLeave")}
+                    onToggle={() => toggleBucket(undefined, "onLeave")}
+                  >
+                    {formatNumber(deptGrand.onLeave)}
+                  </DrillCell>
                 </td>
                 <td className="num px-3 py-2 text-right tabular-nums">
-                  {deptGrand.overtimeMinutes > 0 ? fmtDurationHm(deptGrand.overtimeMinutes) : "—"}
+                  <DrillCell
+                    value={deptGrand.absent}
+                    open={isOpen(undefined, "absent")}
+                    onToggle={() => toggleBucket(undefined, "absent")}
+                    tone="destructive"
+                  >
+                    {formatNumber(deptGrand.absent)}
+                  </DrillCell>
+                </td>
+                <td className="num px-3 py-2 text-right tabular-nums">
+                  <DrillCell
+                    value={deptGrand.overtimeMinutes}
+                    open={isOpen(undefined, "overtime")}
+                    onToggle={() => toggleBucket(undefined, "overtime")}
+                  >
+                    {deptGrand.overtimeMinutes > 0 ? fmtDurationHm(deptGrand.overtimeMinutes) : "—"}
+                  </DrillCell>
                 </td>
               </tr>
+              {openBucket !== null && openBucket.dept === undefined ? (
+                <BucketDrillDown
+                  rows={rows}
+                  metric={openBucket.metric}
+                  istDate={drillDate}
+                  columnCount={DEPT_COLUMNS}
+                />
+              ) : null}
             </tfoot>
           </table>
         </section>

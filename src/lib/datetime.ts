@@ -552,3 +552,20 @@ export function fmtTimeWithDayOffset(
   if (offset === 0) return time;
   return `${time} (${offset > 0 ? "+" : "-"}${Math.abs(offset)}d)`;
 }
+
+/**
+ * The current instant in epoch milliseconds.
+ *
+ * Added for the attendance board's on-site clock, which ticks every second and needs to subtract
+ * a punch timestamp from "now". Every other reader here wants an IST CIVIL date or a formatted
+ * string; this one wants a duration, and a duration is timezone-free — the punch is stored with
+ * its offset and the arithmetic is in absolute time.
+ *
+ * It exists so callers do not reach for `new Date()`, which the lint rule bans precisely because
+ * it is almost always the wrong tool for a business date. Reading the clock for an elapsed span
+ * is the narrow case where it is right, and naming it makes that intent explicit at the call
+ * site instead of looking like the mistake the rule is guarding against.
+ */
+export function nowEpochMs(): number {
+  return new Date().getTime();
+}

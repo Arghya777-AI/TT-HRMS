@@ -7,7 +7,12 @@
  * look plausible).
  */
 import { describe, expect, it } from "vitest";
-import { departmentTotals, grandTotal } from "./departmentTotals";
+import {
+  bucketMembers,
+  departmentTotals,
+  grandTotal,
+  sortMembers,
+} from "./departmentTotals";
 import type { BoardRow } from "./attendanceBoard";
 
 function row(over: Partial<BoardRow>): BoardRow {
@@ -22,6 +27,8 @@ function row(over: Partial<BoardRow>): BoardRow {
     expectedBy: null,
     firstInHm: "09:30",
     lastOutHm: "18:30",
+    firstInAt: "2026-08-01T09:30:00+05:30",
+    lastOutAt: "2026-08-01T18:30:00+05:30",
     punchCount: 2,
     workedMinutes: 480,
     isLate: false,
@@ -172,5 +179,82 @@ describe("grandTotal", () => {
       overtimeMinutes: 0,
       workedMinutes: 0,
     });
+  });
+});
+
+describe("bucketMembers — the list behind a number", () => {
+  /*
+    THE CONSISTENCY GUARANTEE. For every department and every metric, the number of members
+    returned must equal the number the subtotals table printed. A drill-down that disagrees with
+    the cell it was opened from is worse than no drill-down: the reader cannot tell which is
+    lying. This asserts the two can never drift apart.
+  */
+  const rows: BoardRow[] = [
+    row({ employeeId: "e1", displayName: "Anita", departmentName: "Ground", status: "present", firstInHm: "09:12", isLate: false }),
+    row({ employeeId: "e2", displayName: "Bala", departmentName: "Ground", status: "present", firstInHm: "10:40", isLate: true, lateMinutes: 70 }),
+    row({ employeeId: "e3", displayName: "Chandra", departmentName: "Ground", status: "absent" }),
+    row({ employeeId: "e4", displayName: "Deepa", departmentName: "Management", status: "on_leave" }),
+    row({ employeeId: "e5", displayName: "Esha", departmentName: "Management", status: "present", overtimeMinutes: 45, firstInHm: "08:55" }),
+    row({ employeeId: "e6", displayName: "Farid", departmentName: null, status: "work_from_home", firstInHm: "09:30" }),
+  ];
+
+  it("every metric's member count equals the counted total, per department", () => {
+    for (const total of departmentTotals(rows)) {
+      const d = total.departmentName;
+      expect(bucketMembers(rows, "employees", d).length, `employees in ${d}`).toBe(total.employees);
+      expect(bucketMembers(rows, "present", d).length, `present in ${d}`).toBe(total.present);
+      expect(bucketMembers(rows, "late", d).length, `late in ${d}`).toBe(total.late);
+      expect(bucketMembers(rows, "onLeave", d).length, `onLeave in ${d}`).toBe(total.onLeave);
+      expect(bucketMembers(rows, "absent", d).length, `absent in ${d}`).toBe(total.absent);
+    }
+  });
+
+  it("the all-departments row opens every department at once", () => {
+    const all = grandTotal(departmentTotals(rows));
+    expect(bucketMembers(rows, "employees").length).toBe(all.employees);
+    expect(bucketMembers(rows, "present").length).toBe(all.present);
+    expect(bucketMembers(rows, "late").length).toBe(all.late);
+    expect(bucketMembers(rows, "onLeave").length).toBe(all.onLeave);
+    expect(bucketMembers(rows, "absent").length).toBe(all.absent);
+  });
+
+  it("de-duplicates people for the employees metric, and only that one", () => {
+    // One person over three days of a month scope: three rows, one person, three late days.
+    const month: BoardRow[] = [
+      row({ employeeId: "e1", displayName: "Anita", departmentName: "Ground", status: "present", isLate: true, lateMinutes: 5 }),
+      row({ employeeId: "e1", displayName: "Anita", departmentName: "Ground", status: "present", isLate: true, lateMinutes: 9 }),
+      row({ employeeId: "e1", displayName: "Anita", departmentName: "Ground", status: "present", isLate: true, lateMinutes: 2 }),
+    ];
+    expect(bucketMembers(month, "employees", "Ground")).toHaveLength(1);
+    expect(bucketMembers(month, "late", "Ground")).toHaveLength(3);
+  });
+
+  it("selects the unassigned bucket with null, not with a name", () => {
+    expect(bucketMembers(rows, "employees", null).map((r) => r.displayName)).toEqual(["Farid"]);
+  });
+
+  it("overtime lists only rows that actually earned some", () => {
+    expect(bucketMembers(rows, "overtime").map((r) => r.displayName)).toEqual(["Esha"]);
+  });
+});
+
+describe("sortMembers", () => {
+  const a = row({ employeeId: "a", displayName: "Zara", status: "present", firstInHm: "08:00", lateMinutes: 3, overtimeMinutes: 10 });
+  const b = row({ employeeId: "b", displayName: "Amit", status: "present", firstInHm: "11:00", lateMinutes: 90, overtimeMinutes: 90 });
+
+  it("puts the longest lateness first", () => {
+    expect(sortMembers([a, b], "late").map((r) => r.displayName)).toEqual(["Amit", "Zara"]);
+  });
+
+  it("puts the most overtime first", () => {
+    expect(sortMembers([a, b], "overtime").map((r) => r.displayName)).toEqual(["Amit", "Zara"]);
+  });
+
+  it("orders the present by when they actually arrived", () => {
+    expect(sortMembers([b, a], "present").map((r) => r.displayName)).toEqual(["Zara", "Amit"]);
+  });
+
+  it("falls back to name order", () => {
+    expect(sortMembers([a, b], "absent").map((r) => r.displayName)).toEqual(["Amit", "Zara"]);
   });
 });

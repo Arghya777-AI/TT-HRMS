@@ -34,6 +34,7 @@ import {
   keysMobileNav,
 } from "./keys/leave-application";
 import { keysPwa } from "./keys/pwa";
+import { keysBoardDrilldown } from "./keys/board-drilldown";
 import {
   keysOvertimeRules,
   keysAssignShift,
@@ -95,6 +96,7 @@ export const en = {
   ...keysLeaveRange,
   ...keysMobileNav,
   ...keysPwa,
+  ...keysBoardDrilldown,
   ...keysOvertimeRules,
   ...keysAssignShift,
   ...keysGrace,

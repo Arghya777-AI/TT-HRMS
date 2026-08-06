@@ -707,6 +707,67 @@ async function findCandidates(
 }
 
 /**
+ * The claimed employee's OWN nearest sample, scored directly.
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+ * Sign-in already knows who is being claimed — the person typed their email or employee code —
+ * and yet the decision was "did the claimed employee WIN a search of all enrolled faces". That
+ * is not a 1:1 confirmation, whatever the comment above it said: it hands every other enrolled
+ * person a veto over somebody else's login.
+ *
+ * It happened, to a real account. TT0013 was refused three times running with
+ * `identity_mismatch`, and the logged candidate scores show why: another employee sat at
+ * 0.232-0.270 while TT0013's own template sat at 0.290-0.312. A colleague was nearer to his
+ * live face than his own two-week-old enrolment, so he could not log in to his own account.
+ *
+ * So the claimed employee is now scored on their own, and the ballot is kept only as an
+ * anti-lookalike check with a real lead requirement — see the decision block.
+ */
+async function distanceToClaimed(
+  client: Sql,
+  employeeId: string,
+  descriptor: readonly number[],
+): Promise<number | null> {
+  const rows = await client`
+    WITH probe AS (SELECT ${toPgRealArray(descriptor)}::real[] AS d),
+    eligible AS (
+      SELECT t.id, t.descriptor
+        FROM secure.face_templates t
+        JOIN secure.biometric_consents c
+          ON c.id = t.consent_id AND c.granted AND c.withdrawn_at IS NULL
+       WHERE t.employee_id = ${employeeId}::uuid
+         AND t.purged_at IS NULL
+         AND t.descriptor_dim = ${DESCRIPTOR_DIM}
+         AND EXISTS (
+           SELECT 1 FROM secure.face_templates a
+            WHERE a.employee_id = t.employee_id AND a.version = t.version
+              AND a.is_active AND a.purged_at IS NULL)
+    )
+    SELECT sqrt(sum(power(x.a::double precision - x.b::double precision, 2)))::numeric(8,5) AS distance
+      FROM probe p
+      CROSS JOIN eligible t
+      CROSS JOIN LATERAL unnest(t.descriptor, p.d) AS x(a, b)
+     GROUP BY t.id
+     ORDER BY distance ASC
+     LIMIT 1
+  `;
+  const row = firstRow(rows as unknown as { distance: string }[]);
+  return row === null ? null : Number(row.distance);
+}
+
+/**
+ * How far ahead another person must be before their presence refuses this login.
+ *
+ * The old rule was "the claimed employee must come first", i.e. a lead of zero — so a colleague
+ * one hundredth of a unit nearer was enough to lock somebody out. This is the honest version of
+ * the same protection: if somebody else is MATERIALLY nearer, the face at the camera probably is
+ * not the person being claimed, and that is worth refusing. 0.10 is wider than the 0.020-0.062
+ * leads that produced the false refusals and far below the 0.35 median distance between two
+ * different people's templates, so a genuine impostor is still caught.
+ */
+const IMPOSTOR_LEAD = 0.10;
+
+/**
  * Thresholds for THIS decision: the employee's own `attendance_policies` row and
  * the login ceiling. The STRICTEST wins — a policy row tuned to keep a queue
  * moving at a badly-lit gate must never loosen a login (the same `Math.max`
@@ -1221,12 +1282,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const best = candidates[0];
     const runnerUp = candidates[1];
 
-    const bestDistance = best?.distance ?? null;
+    /*
+      THE CLAIMED EMPLOYEE'S OWN DISTANCE, scored directly rather than read off the ballot.
+      They may not be in the top three at all, and being second does not make them an impostor.
+    */
+    const claimedDistance = await distanceToClaimed(client, employeeId, body.descriptor);
+
+    const nearestDistance = best?.distance ?? null;
+    // The decision is made on the CLAIMED person's distance. This is the 1:1 confirmation the
+    // endpoint always claimed to be performing.
+    const bestDistance = claimedDistance;
     const bestConfidence = bestDistance === null ? null : confidenceFor(bestDistance);
-    const margin = bestDistance !== null && runnerUp !== undefined
-      ? runnerUp.distance - bestDistance
+
+    /*
+      The anti-lookalike check. `margin` is now how far the claimed employee is BEHIND the
+      nearest other person — negative or zero when they are themselves nearest, which is the
+      ordinary case. It refuses only when somebody else leads by more than IMPOSTOR_LEAD, i.e.
+      when the face at the camera looks materially more like a different employee.
+    */
+    const nearestOther = candidates.find((c) => c.employeeId !== employeeId) ?? null;
+    const othersLead = nearestOther !== null && claimedDistance !== null
+      ? claimedDistance - nearestOther.distance
       : null;
-    const marginOk = margin === null || margin >= thresholds.minMargin;
+    const margin = othersLead;
+    const marginOk = othersLead === null || othersLead <= IMPOSTOR_LEAD;
 
     // Top-3 distances stay SERVER-SIDE (spec-kiosk §4.2: raw distances are never
     // returned). Rounded to the column's scale so the log and the row agree.
@@ -1245,7 +1324,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
      *   · it clears the strictest of policy confidence and the login ceiling;
      *   · nobody else is within the margin, so a lookalike cannot ride in.
      */
-    const identityMatches = best !== undefined && best.employeeId === employeeId;
+    /*
+      A 1:1 CONFIRMATION, at last. The claimed employee must be enrolled and their own face must
+      clear the threshold; no other enrolled person may lead them by more than IMPOSTOR_LEAD.
+
+      What changed: `identityMatches` used to require the claimed employee to WIN a search of
+      every enrolled face, which handed each colleague a veto and refused TT0013 three times
+      running while his own template was comfortably inside the distance ceiling.
+    */
+    const identityMatches = claimedDistance !== null;
     const accepted = identityMatches &&
       bestConfidence !== null &&
       bestConfidence >= thresholds.minConfidence &&
@@ -1256,7 +1343,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const reason = best === undefined
         ? "no_template_in_search_space"
         : !identityMatches
-        ? "identity_mismatch"
+        ? "claimed_employee_not_enrolled"
+        : !marginOk
+        ? "another_employee_is_materially_nearer"
         : !marginOk
         ? "margin_too_small"
         : "below_threshold";

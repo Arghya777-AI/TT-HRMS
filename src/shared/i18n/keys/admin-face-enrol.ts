@@ -234,6 +234,9 @@ export const keysAdminFaceEnrol = {
     on both sides, not a particular order.
   */
   "admin.enrolCap.turnMore": "Turn your head a bit further to the side, and hold it",
+  /* The live reading, so a step that refuses itself is never a mystery. */
+  "admin.enrolCap.liveYaw": "{yaw}°",
+  "admin.enrolCap.liveTurn": "turned {turn}° / {need}°",
   "admin.enrolCap.turnLess": "That is too far around — come back towards the camera a little",
   "admin.enrolCap.turnOtherWay": "Now turn to the OTHER side",
   "admin.enrolCap.poseTooFarYaw": "Turn back towards the camera a little — that is too far to the side.",

@@ -41,6 +41,7 @@ import { t, type MessageKey } from "@/shared/i18n/en";
 import { isStepUpRequired, useStepUp } from "@/shared/auth/StepUpDialog";
 import {
   ENROL_POSES,
+  TURN_MIN_YAW_DELTA,
   poseWindowComplaint,
   type EnrolPose,
 } from "../enrolPoseWindows";
@@ -205,9 +206,10 @@ export function captureComplaint(
     sharpness: number;
     detection_score: number;
   },
-  /** Which pose is being asked for, and which way the first turn went. Omitted = frontal. */
+  /** Which pose is being asked for, which way the first turn went, and this face's own frontal. */
   pose?: EnrolPose,
   firstTurnYaw?: number | null,
+  frontalYaw?: number | null,
 ): CaptureComplaint | null {
   if (quality.detection_score < ENROL_GATES.minDetectionScore) return "lowScore";
   if (quality.face_px < ENROL_GATES.minFacePx) return "tooFar";
@@ -222,7 +224,10 @@ export function captureComplaint(
   // Pose last, and against THIS pose's window: "come closer" is more actionable than
   // "turn a little more" when both are true.
   if (pose === undefined) return poseComplaint(quality);
-  const window = poseWindowComplaint(pose, quality, { firstTurnYaw: firstTurnYaw ?? null });
+  const window = poseWindowComplaint(pose, quality, {
+    firstTurnYaw: firstTurnYaw ?? null,
+    frontalYaw: frontalYaw ?? null,
+  });
   switch (window) {
     case null:
       return null;
@@ -293,6 +298,14 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const [samples, setSamples] = useState<EnrolSampleInput[]>([]);
+  /**
+   * The live pose reading, shown beside the prompt.
+   *
+   * Added because a step that refuses itself silently is undebuggable from the outside: an
+   * operator repeatedly turning a subject's head with no idea what the machine is measuring, and
+   * no way to tell "turn further" from "this can never pass". The number is the whole diagnosis.
+   */
+  const [liveYaw, setLiveYaw] = useState<{ yaw: number; frontal: number | null } | null>(null);
   const [guidance, setGuidance] = useState<string | null>(null);
   const [stepUpPending, setStepUpPending] = useState(false);
 
@@ -392,11 +405,25 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
         const firstTurn = samples.find(
           (sample) => sample.pose_prompt === "left" || sample.pose_prompt === "right",
         );
+        /*
+          The straight-on sample is the baseline every turn is measured against — see
+          enrolPoseWindows. Without it the gate falls back to an absolute floor, which is what
+          stalled an enrolment: a face reading -6 looking dead ahead could not reach an absolute
+          +15 by turning, because this estimator does not travel that far.
+        */
+        const frontalSample = samples.find((sample) => sample.pose_prompt === "straight");
         const complaint = captureComplaint(
           verdict.reading.quality,
           currentPose,
           firstTurn?.metrics.yaw ?? null,
+          frontalSample?.metrics.yaw ?? null,
         );
+        // Always on screen, whether accepting or complaining: an operator watching a step refuse
+        // itself over and over must be able to SEE the number being judged.
+        setLiveYaw({
+          yaw: verdict.reading.quality.yaw,
+          frontal: frontalSample?.metrics.yaw ?? null,
+        });
         if (complaint !== null) {
           stable.current = 0;
           setGuidance(t(CAPTURE_GUIDANCE[complaint]));
@@ -626,7 +653,23 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
                   ) : (
                     <span className="num w-4 text-center text-xs">{i + 1}</span>
                   )}
-                  {poseLabel(pose)}
+                  <span className="min-w-0 flex-1">{poseLabel(pose)}</span>
+                  {/*
+                    The live reading, on the step being judged. `turn` is how far the head has
+                    moved from this person's own straight-on frame, which is the figure the gate
+                    actually compares — showing raw yaw alone would still leave an operator
+                    guessing why a step refuses itself.
+                  */}
+                  {state === "now" && liveYaw !== null ? (
+                    <span className="num shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {liveYaw.frontal === null
+                        ? t("admin.enrolCap.liveYaw", { yaw: liveYaw.yaw.toFixed(1) })
+                        : t("admin.enrolCap.liveTurn", {
+                            turn: Math.abs(liveYaw.yaw - liveYaw.frontal).toFixed(1),
+                            need: String(TURN_MIN_YAW_DELTA),
+                          })}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}

@@ -24,9 +24,29 @@
  * to be on the opposite side of whichever turn was captured first, and the wording asks for
  * "one side" then "the other".
  *
- * ── WHY THE WINDOW HAS A CEILING TOO ─────────────────────────────────────────
- * Past roughly 35° the descriptor net degrades faster than the extra coverage is worth, and the
- * landmarks it aligns on start to occlude. A turn is wanted, a profile shot is not.
+ * ── THE FLOOR IS RELATIVE, AND IT IS SMALL, BECAUSE THE METRIC IS WEAK ───────
+ * This gate first demanded |yaw| >= 15 absolute, and that was wrong enough to stall a live
+ * enrolment: step 2 never validated no matter how far the subject turned.
+ *
+ * The reason is what the number measures. Yaw here is the NOSE TIP drifting off the line
+ * between the outer eye corners, scaled by 120. The nose protrudes about 2 cm from a face box
+ * around 17 cm wide, so a genuine 25-degree head turn moves it 2*sin(25)/17*120 = about 6
+ * degrees on this scale, and even 45 degrees only reaches about 10. The metric saturates far
+ * below the real head angle.
+ *
+ * The stored data agrees: over 380 samples the median |yaw| is 1.84, p90 is 7.54, the largest
+ * ever recorded is 18.4, and only SIX rows reach 15 at all. A 15 floor is therefore not a
+ * standard almost nobody meets — it is a standard almost nobody CAN meet.
+ *
+ * What the data does show is a usable signal: the spread between a person's own most- and
+ * least-turned sample has a median of 6.57. So the gate asks for a CHANGE of
+ * `TURN_MIN_YAW_DELTA` from that person's OWN straight-on reading, which also cancels the
+ * per-face bias the estimator carries (some faces read -6 looking dead ahead, others +12 —
+ * an absolute threshold punishes one and flatters the other).
+ *
+ * ── WHY THERE IS STILL A CEILING ─────────────────────────────────────────────
+ * Past roughly 35° on this scale — which is a very large real turn — the descriptor net degrades
+ * faster than the extra coverage is worth and the landmarks it aligns on start to occlude.
  *
  * PITCH IS STILL NOT CHECKED, for the reason already recorded in `EnrolCapture`: the estimator
  * measures chin-to-eye distance against an assumed neutral ratio, so a subject looking straight
@@ -57,8 +77,19 @@ export function isTurnPose(pose: EnrolPose): boolean {
 /** A frontal pose must be genuinely frontal — this is what the medoid is chosen from. */
 export const FRONTAL_MAX_YAW = 10;
 
-/** A turn must be a real turn. Below this the sample adds nothing the frontal one has not got. */
-export const TURN_MIN_YAW = 15;
+/**
+ * How far a turn must move the yaw reading AWAY FROM THIS PERSON'S OWN frontal sample.
+ *
+ * 6, not 15, and relative rather than absolute — see the header. It is the median within-person
+ * spread already present in the stored data, so it is a turn people demonstrably do make.
+ */
+export const TURN_MIN_YAW_DELTA = 6;
+
+/**
+ * Absolute floor when the person's frontal reading is not known yet (it should always be, since
+ * "straight" is captured first). Deliberately low: the ceiling and the delta do the real work.
+ */
+export const TURN_MIN_YAW = 6;
 
 /** Beyond this the aligned crop degrades faster than the coverage is worth. */
 export const TURN_MAX_YAW = 35;
@@ -76,6 +107,13 @@ export type PoseComplaint =
 export interface PoseContext {
   /** Yaw of the turn already captured, if any — the next turn must oppose it. */
   readonly firstTurnYaw?: number | null;
+  /**
+   * Yaw of this person's OWN straight-on sample, which the turns are measured against.
+   *
+   * Captured first, so it is available for both turns. Absent only if somebody reorders the
+   * poses, in which case the gate falls back to the absolute floor.
+   */
+  readonly frontalYaw?: number | null;
 }
 
 /**
@@ -95,8 +133,17 @@ export function poseWindowComplaint(
 
   if (isTurnPose(pose)) {
     const magnitude = Math.abs(yaw);
-    if (magnitude < TURN_MIN_YAW) return "turn_more";
     if (magnitude > TURN_MAX_YAW) return "turn_less";
+    /*
+      Measured against this person's own frontal reading when it is known. That is what makes the
+      floor meetable: the estimator carries a per-face bias of several degrees, so "turned" only
+      means anything relative to where THIS face sits when looking straight ahead.
+    */
+    const frontal = context.frontalYaw;
+    const moved = frontal === null || frontal === undefined
+      ? magnitude
+      : Math.abs(yaw - frontal);
+    if (moved < TURN_MIN_YAW_DELTA) return "turn_more";
     // The second turn has to be the OTHER side, or the set covers one side twice and the
     // subject has effectively been enrolled at two angles out of a possible three.
     const first = context.firstTurnYaw;
@@ -130,22 +177,18 @@ export function yawCoverage(samples: readonly { readonly yaw: number }[]): numbe
 }
 
 /**
- * The floor a complete capture must clear, derived so that ONLY two real opposing turns can
- * reach it. Its first form was `2 × TURN_MIN − FRONTAL_MAX` = 20°, and a test caught that two
- * FRONTAL frames sitting at opposite edges of their own window (+10 and −10) also span 20° —
- * so the check would have passed the exact failure it exists to catch.
+ * The floor a complete capture must clear, so that "five frontal frames" is still caught.
  *
- * Worked through, the three cases that must be told apart:
+ * Re-derived after the turn floor became a RELATIVE delta of 6. Two opposing turns each moving
+ * 6 from a shared frontal baseline span about 12; five genuinely frontal frames span the median
+ * 6.57 seen in the data and rarely more. 10 sits between them: above ordinary frontal jitter,
+ * below what two real opposing turns produce.
  *
- *   two frontal frames at the edges      +10 … −10   =  20°   must FAIL
- *   one turn and one frontal edge        +15 … −10   =  25°   must FAIL (only one turn happened)
- *   two opposing turns at the minimum    +15 … −15   =  30°   must PASS
- *
- * So the floor has to sit above 25 and at or below 30. `TURN_MIN_YAW + FRONTAL_MAX_YAW + 1`
- * gives 26, which clears the second case by a degree and leaves 4° of estimator slack under the
- * third.
+ * It is a warning threshold, not a refusal — `coverageIsFrontalOnly` is advisory, because
+ * refusing a completed capture outright would throw away five good frames over an estimator
+ * whose weakness is the whole reason this file exists.
  */
-export const MIN_YAW_COVERAGE = TURN_MIN_YAW + FRONTAL_MAX_YAW + 1;
+export const MIN_YAW_COVERAGE = 10;
 
 export function coverageIsFrontalOnly(samples: readonly { readonly yaw: number }[]): boolean {
   return yawCoverage(samples) < MIN_YAW_COVERAGE;

@@ -11,6 +11,7 @@ import {
   MIN_YAW_COVERAGE,
   TURN_MAX_YAW,
   TURN_MIN_YAW,
+  TURN_MIN_YAW_DELTA,
   coverageIsFrontalOnly,
   poseWindowComplaint,
   yawCoverage,
@@ -45,6 +46,24 @@ describe("poseWindowComplaint — the turns", () => {
     expect(poseWindowComplaint("left", { yaw: -20, roll: 0 })).toBeNull();
   });
 
+  it("MEASURES THE TURN AGAINST THIS FACE'S OWN FRONTAL READING", () => {
+    // The bug that stalled a live enrolment: an absolute floor of 15 on a metric whose median
+    // is 1.84 and whose largest value ever recorded is 18.4. Relative to the person's own
+    // straight-on reading, an ordinary turn passes.
+    const theirFrontal = { frontalYaw: -6 };
+    expect(poseWindowComplaint("left", { yaw: 1, roll: 0 }, theirFrontal)).toBeNull();
+    expect(poseWindowComplaint("left", { yaw: -13, roll: 0 }, theirFrontal)).toBeNull();
+    // Barely moved from where they already were, even though |yaw| is not tiny.
+    expect(poseWindowComplaint("left", { yaw: -8, roll: 0 }, theirFrontal)).toBe("turn_more");
+  });
+
+  it("does not punish a face whose frontal reading is already off-centre", () => {
+    // A face reading +12 dead ahead used to pass the old absolute gate on the frontal frame
+    // alone; one reading -6 could never reach +15 at all. Relative removes that unfairness.
+    expect(poseWindowComplaint("left", { yaw: 18, roll: 0 }, { frontalYaw: 12 })).toBeNull();
+    expect(poseWindowComplaint("left", { yaw: 14, roll: 0 }, { frontalYaw: 12 })).toBe("turn_more");
+  });
+
   it("asks for more turn when the head has barely moved", () => {
     expect(poseWindowComplaint("left", { yaw: TURN_MIN_YAW - 1, roll: 0 })).toBe("turn_more");
     expect(poseWindowComplaint("left", { yaw: 0, roll: 0 })).toBe("turn_more");
@@ -58,6 +77,11 @@ describe("poseWindowComplaint — the turns", () => {
   it("accepts either side for the FIRST turn — the sign convention is not assumed", () => {
     expect(poseWindowComplaint("left", { yaw: 25, roll: 0 })).toBeNull();
     expect(poseWindowComplaint("left", { yaw: -25, roll: 0 })).toBeNull();
+  });
+
+  it("refuses a turn beyond the ceiling even when measured relatively", () => {
+    expect(poseWindowComplaint("left", { yaw: TURN_MAX_YAW + 5, roll: 0 }, { frontalYaw: 0 }))
+      .toBe("turn_less");
   });
 
   it("requires the second turn to be the other side", () => {
@@ -106,17 +130,15 @@ describe("yawCoverage", () => {
     expect(coverageIsFrontalOnly(good)).toBe(false);
   });
 
-  it("sets a floor only two opposing turns can clear", () => {
-    // The three cases the constant is derived from. The first form of it (20°) passed the
-    // frontal case, which is the very failure this check exists to catch.
-    const twoFrontalEdges = [{ yaw: FRONTAL_MAX_YAW }, { yaw: -FRONTAL_MAX_YAW }];
-    const oneTurnOneFrontal = [{ yaw: TURN_MIN_YAW }, { yaw: -FRONTAL_MAX_YAW }];
-    const twoOpposingTurns = [{ yaw: TURN_MIN_YAW }, { yaw: -TURN_MIN_YAW }];
+  it("separates ordinary frontal jitter from two real opposing turns", () => {
+    // Calibrated against the stored data: the median within-person spread of five frontal
+    // frames is 6.57, while two opposing turns of 6 either side of a baseline span about 12.
+    const frontalJitter = [{ yaw: -2 }, { yaw: 1.5 }, { yaw: 3 }, { yaw: -3.5 }, { yaw: 0 }];
+    const realTurns = [{ yaw: 0 }, { yaw: 7 }, { yaw: -7 }, { yaw: 1 }, { yaw: -1 }];
 
-    expect(coverageIsFrontalOnly(twoFrontalEdges)).toBe(true);
-    expect(coverageIsFrontalOnly(oneTurnOneFrontal)).toBe(true);
-    expect(coverageIsFrontalOnly(twoOpposingTurns)).toBe(false);
-    expect(MIN_YAW_COVERAGE).toBeGreaterThan(TURN_MIN_YAW + FRONTAL_MAX_YAW);
-    expect(MIN_YAW_COVERAGE).toBeLessThanOrEqual(2 * TURN_MIN_YAW);
+    expect(coverageIsFrontalOnly(frontalJitter)).toBe(true);
+    expect(coverageIsFrontalOnly(realTurns)).toBe(false);
+    expect(MIN_YAW_COVERAGE).toBeGreaterThan(6.57);
+    expect(MIN_YAW_COVERAGE).toBeLessThan(2 * TURN_MIN_YAW_DELTA + 1);
   });
 });

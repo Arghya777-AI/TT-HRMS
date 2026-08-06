@@ -150,7 +150,20 @@ const GATE_DEFAULTS = {
    * worth; 15 is the floor below which a "turn" adds nothing the frontal sample has not got.
    */
   maxTurnYawDeg: 35,
-  minTurnYawDeg: 15,
+  /*
+    6, not 15, and it is measured as a CHANGE from the subject's own straight-on sample.
+
+    An absolute 15 stalled a live enrolment: this yaw is the nose tip drifting off the eye line,
+    scaled by 120, so a genuine 25-degree head turn only moves it about 6 and 45 degrees only
+    reaches about 10. Over 380 stored samples the median |yaw| is 1.84, p90 is 7.54, the largest
+    ever recorded is 18.4, and only six rows reach 15 at all — it was a standard almost nobody
+    could meet, not one almost nobody did.
+
+    6 is the median within-person spread already in the data, so it is a turn people demonstrably
+    make. Relative also cancels the per-face bias: one face reads -6 looking dead ahead, another
+    +12, and an absolute floor punishes the first and flatters the second.
+  */
+  minTurnYawDeltaDeg: 6,
   /**
    * 25, not 10, and the reason is the ESTIMATOR not the head.
    *
@@ -379,7 +392,15 @@ interface RejectedSample {
 }
 
 /** Per-sample gates. A failing sample is DROPPED, not fatal, while ≥5 survive. */
-function gateSample(sample: SampleInput, g: Gates): RejectedSample | null {
+function gateSample(
+  sample: SampleInput,
+  g: Gates,
+  /**
+   * Yaw of the subject's own straight-on sample from THIS submission, or null when the set has
+   * none. The turns are judged as a change from it — see minTurnYawDeltaDeg.
+   */
+  frontalYaw: number | null = null,
+): RejectedSample | null {
   const m = sample.metrics;
   const fail = (gate: string, detail: string): RejectedSample => ({ index: sample.index, gate, detail });
 
@@ -416,15 +437,18 @@ function gateSample(sample: SampleInput, g: Gates): RejectedSample | null {
   */
   const turning = sample.pose_prompt === "left" || sample.pose_prompt === "right";
   const yawCeiling = turning ? g.maxTurnYawDeg : g.maxYawDeg;
-  const yawFloor = turning ? g.minTurnYawDeg : 0;
   if (Math.abs(m.yaw) > yawCeiling) {
     return fail("yaw", `Head turned ${m.yaw.toFixed(1)}°; keep within ±${yawCeiling}°.`);
   }
-  if (turning && Math.abs(m.yaw) < yawFloor) {
-    return fail(
-      "yaw",
-      `This pose needs a real turn: head is at ${m.yaw.toFixed(1)}°, turn to at least ±${yawFloor}°.`,
-    );
+  if (turning && frontalYaw !== null) {
+    const moved = Math.abs(m.yaw - frontalYaw);
+    if (moved < g.minTurnYawDeltaDeg) {
+      return fail(
+        "yaw",
+        `This pose needs a real turn: the head moved ${moved.toFixed(1)}° from straight-on, ` +
+          `and at least ${g.minTurnYawDeltaDeg}° is needed.`,
+      );
+    }
   }
   // PITCH IS NOT A GATE. It is recorded, and it still costs a little quality score
   // (the `pose` term), but it can no longer reject a sample.
@@ -807,11 +831,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
+    /*
+      The subject's own straight-on reading, taken from THIS submission, against which the two
+      turn samples are judged. Derived here rather than passed by the client: the client cannot
+      be trusted to tell the server what "straight ahead" means for a face.
+
+      Null when the set contains no straight sample — then the turn floor simply does not apply,
+      which is the right failure direction: refusing every turn because the frontal frame is
+      missing would block enrolment over a labelling problem.
+    */
+    const frontalYaw = body.samples.find((sample) => sample.pose_prompt === "straight")
+      ?.metrics.yaw ?? null;
+
     // Per-sample quality gates. Failures are dropped; ≥5 must survive.
     const rejected: RejectedSample[] = [];
     const accepted: SampleInput[] = [];
     for (const sample of body.samples) {
-      const failure = gateSample(sample, gates);
+      const failure = gateSample(sample, gates, frontalYaw);
       if (failure === null) accepted.push(sample);
       else rejected.push(failure);
     }

@@ -7,6 +7,26 @@
  * will notice, and a dashboard that shows two different numbers for "how long have they worked"
  * without saying why reads as a bug. So it says why.
  */
+/**
+ * Colour names for chart legends, so a legend never relies on the swatch alone. Named rather
+ * than derived: the token is `--destructive`, and "destructive (red)" is not what a reader
+ * wants to see under a pie chart of attendance.
+ */
+export const keysChartColours = {
+  "chart.colour.green": "green",
+  "chart.colour.red": "red",
+  "chart.colour.amber": "amber",
+  "chart.colour.grey": "grey",
+  "chart.colour.paleGrey": "pale grey",
+  "chart.colour.gold": "gold",
+  "chart.colour.terracotta": "terracotta",
+  "chart.colour.plum": "plum",
+  "chart.colour.iris": "iris",
+  /* Not a hue: this slice is drawn as a 45-degree hatch precisely so it reads as
+     different-in-kind rather than as one more colour. */
+  "chart.colour.hatched": "hatched",
+} as const;
+
 export const keysBoardDrilldown = {
   "admin.board.drill.heading": "{n} {what} · {where}",
   "admin.board.drill.nobody": "Nobody in this group for the dates shown.",

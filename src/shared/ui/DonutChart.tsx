@@ -33,6 +33,16 @@ export interface DonutSlice {
    * legible under CVD, print and forced-colours.
    */
   texture?: boolean;
+  /**
+   * The colour's NAME, shown after the label as "Absent (red)".
+   *
+   * A swatch tells you which row goes with which arc only while you can see the
+   * difference between the arcs. Naming the colour does three things a swatch cannot: it
+   * survives a black-and-white print, it gives somebody a word to say out loud when they
+   * point at the chart in a meeting, and it lets a screen reader convey which slice is
+   * meant. It is redundant on purpose — the swatch, the label and the name all carry it.
+   */
+  colourName?: string;
 }
 
 export interface DonutChartProps {
@@ -152,8 +162,23 @@ export function DonutChart({
   }
 
   return (
-    <div className={cn("flex flex-col gap-5 sm:flex-row sm:items-center", className)}>
-      <figure className="m-0 mx-auto w-full max-w-[280px] shrink-0 sm:mx-0 sm:w-[240px]">
+    /*
+      ── WHY THIS ROW IS ALLOWED TO WRAP ────────────────────────────────────────
+      The donut used to be pinned at `sm:w-[240px] shrink-0` beside a `flex-1` legend, on the
+      reasoning that `sm:` means "wide enough for two columns". It does not: the breakpoint
+      measures the VIEWPORT, and this component is dropped into a `lg:grid-cols-3` cell, so on a
+      desktop it lives in a third of the width. Measured with the real stylesheet at a 1400px
+      container, the card came out 456px, the donut ate 240 of it, and the legend label was left
+      21px wide — every status name truncated to nothing, and the percentage column pressed
+      against the card's edge. Narrower than that and it crosses the border.
+
+      `flex-wrap` plus a real minimum on the legend fixes it at every width without a media
+      query: while the two fit side by side they stay side by side, and the moment they do not
+      the legend drops to its own full-width line instead of crushing itself. The donut also
+      comes down to 200px, which is still legible and buys the labels 40px.
+    */
+    <div className={cn("flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-center", className)}>
+      <figure className="m-0 mx-auto w-full max-w-[240px] shrink-0 sm:mx-0 sm:w-[200px]">
         {heading ? (
           <figcaption className="mb-2 text-sm font-medium text-muted-foreground">{title}</figcaption>
         ) : null}
@@ -217,7 +242,9 @@ export function DonutChart({
         </div>
       </figure>
 
-      <div className="min-w-0 flex-1">
+      {/* `min-w-[15rem]` is what triggers the wrap: below it the flex line cannot hold both,
+          so the legend takes its own row rather than squeezing the labels to nothing. */}
+      <div className="min-w-[15rem] flex-1">
         <ul className="space-y-1">
           {slices.map((slice, index) => {
             const percent = percents[index] ?? 0;
@@ -254,9 +281,14 @@ export function DonutChart({
                         : { backgroundColor: slice.color }
                     }
                   />
-                  <span className="min-w-0 flex-1 truncate">{slice.label}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {slice.label}
+                    {slice.colourName === undefined ? null : (
+                      <span className="ml-1 text-muted-foreground">({slice.colourName})</span>
+                    )}
+                  </span>
                   <span className="num shrink-0 font-medium">{formatCount(slice.value)}</span>
-                  <span className="num w-14 shrink-0 text-right text-muted-foreground">
+                  <span className="num w-[3.25rem] shrink-0 text-right text-muted-foreground">
                     {total > 0 ? `${percent.toFixed(1)}%` : t("common.empty")}
                   </span>
                 </button>

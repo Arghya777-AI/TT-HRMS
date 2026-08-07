@@ -70,7 +70,8 @@ import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
 import { DashboardPanelTabs, useDashboardPanel } from "./DashboardPanelTabs";
 import { liveStatusCopy, type AnalyticsLiveStatus } from "../analyticsLive";
-import type { DepartmentBreakdownRow } from "../analyticsAggregate";
+import type { DayClass, DepartmentBreakdownRow } from "../analyticsAggregate";
+import { DAY_CLASS_SLICES, dayClassValue } from "../analyticsHome";
 
 /**
  * Tone per live status. `unavailable` is a WARNING, not neutral decoration: it means
@@ -96,6 +97,20 @@ function clockOf(minutes: number | null): string {
   const m = wrapped % 60;
   return `${h < 10 ? "0" : ""}${String(h)}:${m < 10 ? "0" : ""}${String(m)}`;
 }
+
+/**
+ * The hue of each day class, named for the legend. Taken from the token comments in
+ * `src/index.css` beside `DAY_CLASS_SLICES`' colour choices, so the words match the pixels.
+ */
+const DAY_CLASS_COLOUR_NAME: Readonly<Record<DayClass, Parameters<typeof t>[0]>> = {
+  present: "chart.colour.green",
+  leave: "chart.colour.plum",
+  weekly_off: "chart.colour.gold",
+  holiday: "chart.colour.terracotta",
+  absent: "chart.colour.red",
+  not_counted: "chart.colour.iris",
+  pending: "chart.colour.hatched",
+};
 
 export function AnalyticsOverview() {
   const navigate = useNavigate();
@@ -148,19 +163,33 @@ export function AnalyticsOverview() {
     [departments.data],
   );
 
+  /*
+    THE RING MUST ACCOUNT FOR EVERY DAY IT PUTS IN ITS CENTRE.
+
+    This built its own five-slice list — present, absent, leave, holiday, weekly off — and that
+    list is not exhaustive over the statuses an attendance day can hold. Live August: 283 day
+    records, of which 134 absent, 6 present, 1 half day and **142 pending**. The centre read 283
+    while the ring added up to 141, so half the month was missing from a chart that looked
+    complete, and nothing said so.
+
+    `DAY_CLASS_SLICES` in analyticsHome.ts already solves this: it is exhaustive over `DayClass`,
+    it carries the hatched "not yet processed" slice, and `dayClassValue` is documented to sum to
+    `daysCounted` exactly — which is precisely what lets the centre state the total without the
+    reader adding anything up. Using it removes the second, wrong definition rather than
+    patching it.
+  */
   const statusSlices = useMemo(() => {
     if (measures === undefined) return [];
-    return [
-      // `key` is stable identity: DonutChart binds colour to it, not to position,
-      // so a slice keeps its colour when another one drops to zero and vanishes.
-      // Colour is bound to the KEY, not the position, so "absent" stays red even
-      // when "leave" drops to zero and its slice disappears.
-      { key: "present", label: t("admin.analytics.overview.present"), value: measures.presentDays, color: "hsl(var(--success))" },
-      { key: "absent", label: t("admin.analytics.overview.absent"), value: measures.absentDays, color: "hsl(var(--destructive))" },
-      { key: "leave", label: t("admin.analytics.overview.leave"), value: Math.round(measures.leaveDays), color: "hsl(var(--warning))" },
-      { key: "holiday", label: t("admin.analytics.overview.holiday"), value: measures.holidayDays, color: "hsl(var(--muted-foreground))" },
-      { key: "weeklyOff", label: t("admin.analytics.overview.weeklyOff"), value: measures.weeklyOffDays, color: "hsl(var(--border))" },
-    ].filter((s) => s.value > 0);
+    return DAY_CLASS_SLICES
+      .map((spec) => ({
+        key: spec.key,
+        label: t(spec.labelKey),
+        value: dayClassValue(measures, spec.key),
+        color: spec.color,
+        colourName: t(DAY_CLASS_COLOUR_NAME[spec.key]),
+        ...(spec.texture === true ? { texture: true as const } : {}),
+      }))
+      .filter((slice) => slice.value > 0);
   }, [measures]);
 
   async function download(format: "pdf" | "csv"): Promise<void> {

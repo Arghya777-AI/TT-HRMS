@@ -32,18 +32,27 @@ interface SliceSpec {
   readonly labelKey: Parameters<typeof t>[0];
   readonly color: string;
   readonly texture?: true;
+  /** Names the hue in the legend, e.g. "Absent (red)". */
+  readonly colourNameKey: Parameters<typeof t>[0];
 }
 
-/** Ring order. Adjacent slices are kept apart in hue as well as in label. */
+/**
+ * Ring order. Adjacent slices are kept apart in hue as well as in label.
+ *
+ * `colourNameKey` names the hue in the legend — "Absent (red)". Taken from the token's own
+ * comment in `src/index.css` rather than guessed, so gold stays gold and terracotta does not
+ * become "orange". A legend that relies on the swatch alone cannot be read aloud, printed in
+ * black and white, or followed by anyone who does not separate those hues.
+ */
 const SLICE_SPECS: readonly SliceSpec[] = [
-  { key: "attended", labelKey: "attendance.slice.attended", color: "hsl(var(--success))" },
-  { key: "half", labelKey: "attendance.slice.half", color: "hsl(var(--warning))" },
-  { key: "weeklyOff", labelKey: "attendance.slice.weeklyOff", color: "hsl(var(--chart-3))" },
-  { key: "holiday", labelKey: "attendance.slice.holiday", color: "hsl(var(--chart-6))" },
-  { key: "leave", labelKey: "attendance.slice.leave", color: "hsl(var(--chart-4))" },
-  { key: "compOff", labelKey: "attendance.slice.compOff", color: "hsl(var(--chart-8))" },
-  { key: "absent", labelKey: "attendance.slice.absent", color: "hsl(var(--destructive))" },
-  { key: "pending", labelKey: "attendance.slice.pending", color: "hsl(var(--muted))", texture: true },
+  { key: "attended", labelKey: "attendance.slice.attended", color: "hsl(var(--success))", colourNameKey: "chart.colour.green" },
+  { key: "half", labelKey: "attendance.slice.half", color: "hsl(var(--warning))", colourNameKey: "chart.colour.amber" },
+  { key: "weeklyOff", labelKey: "attendance.slice.weeklyOff", color: "hsl(var(--chart-3))", colourNameKey: "chart.colour.gold" },
+  { key: "holiday", labelKey: "attendance.slice.holiday", color: "hsl(var(--chart-6))", colourNameKey: "chart.colour.terracotta" },
+  { key: "leave", labelKey: "attendance.slice.leave", color: "hsl(var(--chart-4))", colourNameKey: "chart.colour.plum" },
+  { key: "compOff", labelKey: "attendance.slice.compOff", color: "hsl(var(--chart-8))", colourNameKey: "chart.colour.iris" },
+  { key: "absent", labelKey: "attendance.slice.absent", color: "hsl(var(--destructive))", colourNameKey: "chart.colour.red" },
+  { key: "pending", labelKey: "attendance.slice.pending", color: "hsl(var(--muted))", texture: true, colourNameKey: "chart.colour.hatched" },
 ];
 
 /** Narrow a legend key back to a slice identity without an `as` cast. */
@@ -78,6 +87,7 @@ export function MonthDonut({ month, summary, activeKey, onSelect }: MonthDonutPr
     label: t(spec.labelKey),
     value: sliceValue(spec.key, summary),
     color: spec.color,
+    colourName: t(spec.colourNameKey),
     ...(spec.texture ? { texture: true } : {}),
   }));
 

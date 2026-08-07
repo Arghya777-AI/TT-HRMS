@@ -34,7 +34,7 @@ import {
   keysMobileNav,
 } from "./keys/leave-application";
 import { keysPwa } from "./keys/pwa";
-import { keysBoardDrilldown } from "./keys/board-drilldown";
+import { keysBoardDrilldown, keysChartColours } from "./keys/board-drilldown";
 import {
   keysOvertimeRules,
   keysAssignShift,
@@ -97,6 +97,7 @@ export const en = {
   ...keysMobileNav,
   ...keysPwa,
   ...keysBoardDrilldown,
+  ...keysChartColours,
   ...keysOvertimeRules,
   ...keysAssignShift,
   ...keysGrace,

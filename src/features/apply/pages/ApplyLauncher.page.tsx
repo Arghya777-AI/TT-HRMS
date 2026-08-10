@@ -42,21 +42,21 @@ const CODE_TO_PATH: Readonly<Record<string, string>> = {
   WEB_LOGIN: "/me/apply/web-punch",
   LOCAL_CLAIM: "/me/apply/claim",
   /*
-    TRAVEL_REQUISITION is deliberately absent, so it is counted among the hidden
-    types rather than given a tile.
+    TRAVEL_REQUISITION is back.
 
-    Reported: "when i click to travel requisition then it redirect to local claim
-    so no need of local claim". It is not a redirect — `/me/apply/travel` is a
-    real screen — but everything it can actually offer is a link to this one,
-    because no requisition can be filed: there is no advance table, no
-    estimated-cost cap and no approval chain for the type. Meanwhile `travel` is
-    already one of the nine heads on the claim form, so the trip is claimable
-    today by the route the traveller wants.
+    It was hidden after "when i click to travel requisition then it redirect to
+    local claim so no need of local claim" — not a redirect, but fair: the screen
+    could offer nothing except a link to the claim form, because the type had no
+    detail table and no approval chain, so no requisition could be filed at all.
+    Two tiles where one is a signpost to the other waste a choice.
 
-    Two tiles where one of them is a signpost to the other is a menu that wastes
-    a choice. The ROUTE stays registered, so existing links and the command
-    palette still reach the explanation — only the tile goes.
+    Migrations 041100 (the `travel_requisitions` table) and its AC-TRAVEL chain
+    changed that. The screen now files a real requisition, which is a DIFFERENT
+    act from claiming the money back: one is permission to travel, asked for
+    beforehand; the other is the spend, claimed after. Both belong on the menu
+    now that both work.
   */
+  TRAVEL_REQUISITION: "/me/apply/travel",
   ASSET_REQUEST: "/me/apply/asset",
   RESIGNATION: "/me/apply/resignation",
   IT_DECLARATION: "/me/apply/tax",

@@ -355,6 +355,11 @@ export default function PayrollReimbursementsPage() {
                 </span>
               );
             }
+            /*
+              Nothing to decide. An administrator now gets buttons on every OPEN
+              claim, so reaching here means the claim is already settled —
+              approved, rejected, or withdrawn — and the dash is the truth.
+            */
             return <span className="text-xs text-muted-foreground">{dash(null)}</span>;
           }
           return (
@@ -367,10 +372,18 @@ export default function PayrollReimbursementsPage() {
                 stops mattering.
               */}
               {decidable.isOverride ? (
-                <span className="text-[11px] text-warning">
-                  {t("claim.override.badge", {
-                    on: decidable.slaDueAt === null ? "" : fmtCivilDate(decidable.slaDueAt.slice(0, 10)),
-                  })}
+                <span
+                  className={
+                    decidable.slaDueAt === null
+                      ? "text-[11px] text-muted-foreground"
+                      : "text-[11px] text-warning"
+                  }
+                >
+                  {decidable.slaDueAt === null
+                    ? t("claim.override.badge")
+                    : t("claim.override.overdue", {
+                        on: fmtCivilDate(decidable.slaDueAt.slice(0, 10)),
+                      })}
                 </span>
               ) : null}
               <span className="flex justify-end gap-2">

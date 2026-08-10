@@ -877,14 +877,28 @@ export type OverdueClaimApproval = z.infer<typeof overdueClaimApprovalSchema>;
  * (ar.current_approver_ids)`, so an admin who was not the CURRENT approver had
  * nothing to click.
  *
- * That was a deliberate choice — `ApprovalInbox.page.tsx` says an override is
- * "deliberately NOT offered here", to stop an administrator quietly becoming the
- * approver of everything and the manager's step becoming decorative. This does
- * not undo it; it puts the override behind the deadline the request already
- * carries. `sla_due_at` is set by `create_approval_request` as
- * `now() + request_types.sla_hours`, and LOCAL_CLAIM is seeded at 72 hours — so
- * "72 hours" is not a number invented here, it is the SLA the screen has always
- * shown the employee.
+ * THE DEADLINE APPLIES TO ONE ROLE, WHICH IS WHY IT IS A PARAMETER.
+ *
+ * "72 hours restriction was for admin — if manager has not approved within 72
+ * hours then admin can approve. super-admin has no restriction."
+ *
+ *   super_admin  →  `requireOverdue = false`. Every open claim, immediately.
+ *   admin        →  `requireOverdue = true`. Only once the request has run past
+ *                   `sla_due_at`, i.e. the manager has had their 72 hours.
+ *
+ * `sla_due_at` is set by `create_approval_request` as
+ * `submitted_at + request_types.sla_hours`, and LOCAL_CLAIM is seeded at 72 —
+ * so the 72 hours is the SLA the employee was already shown, not a number
+ * invented here.
+ *
+ * THE CALLER MUST PASS THE ROLE, NOT A CAPABILITY. `capsForRoles` grants
+ * `admin.super` to the `admin` role as well (a deliberate product decision), so
+ * capabilities cannot tell the two apart — only `user_roles` can. Getting that
+ * wrong would silently give every admin the unrestricted power.
+ *
+ * Either way `subject_employee_id <> me`: an admin is exempt from
+ * `act_on_approval`'s self-approval refusal, so nothing else would stop them
+ * approving their own claim.
  *
  * `subject_employee_id <> me` because an admin IS exempt from the self-approval
  * refusal (`act_on_approval` excuses `v_is_admin`), so nothing else would stop
@@ -893,6 +907,7 @@ export type OverdueClaimApproval = z.infer<typeof overdueClaimApprovalSchema>;
  */
 export function fetchOverdueClaimApprovals(
   myEmployeeId: string,
+  requireOverdue: boolean,
   signal?: AbortSignal,
 ): Promise<OverdueClaimApproval[]> {
   return selectMany(APPROVAL_REQUESTS_TABLE_NAME, overdueClaimApprovalSchema, {
@@ -900,7 +915,7 @@ export function fetchOverdueClaimApprovals(
     filters: [
       eq("detail_table", "reimbursement_claims"),
       inList("status", ["pending", "in_progress", "escalated"]),
-      lt("sla_due_at", nowInstantIso()),
+      ...(requireOverdue ? [lt("sla_due_at", nowInstantIso())] : []),
       neq("subject_employee_id", myEmployeeId),
     ],
     order: [{ column: "sla_due_at", ascending: true }],

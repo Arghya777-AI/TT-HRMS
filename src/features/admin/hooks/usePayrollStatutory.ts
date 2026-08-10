@@ -24,6 +24,7 @@
 import { useMemo } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { useAuth } from "@/app/auth/AuthProvider";
 import { useEmployeeId } from "@/shared/api/employee-scope";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
 import {
@@ -201,8 +202,20 @@ export function useClaimDecisionTargets(): UseQueryResult<
   Error
 > {
   const myEmployeeId = useEmployeeId();
+  /*
+    The ROLE, not a capability. `capsForRoles` gives `admin.super` to the `admin`
+    role too, so `can("admin.super")` is true for both and cannot make this
+    distinction — only `user_roles` can.
+  */
+  const { roles } = useAuth();
+  const isSuperAdmin = roles.includes("super_admin");
   return useQuery({
-    queryKey: [...qk.admin.approvalInbox(), REIMBURSEMENT_CLAIMS_TABLE, myEmployeeId ?? "none"],
+    queryKey: [
+      ...qk.admin.approvalInbox(),
+      REIMBURSEMENT_CLAIMS_TABLE,
+      myEmployeeId ?? "none",
+      isSuperAdmin ? "super" : "admin",
+    ],
     queryFn: async ({ signal }) => {
       const inbox = await fetchApprovalInboxByType("LOCAL_CLAIM", signal);
       const ids = inbox.map((row) => row.approval_request_id);
@@ -232,7 +245,7 @@ export function useClaimDecisionTargets(): UseQueryResult<
         an override, and it should not be labelled as one.
       */
       if (myEmployeeId !== null) {
-        const overdue = await fetchOverdueClaimApprovals(myEmployeeId, signal);
+        const overdue = await fetchOverdueClaimApprovals(myEmployeeId, !isSuperAdmin, signal);
         for (const row of overdue) {
           if (targets.has(row.detail_id)) continue;
           targets.set(row.detail_id, {
@@ -240,7 +253,13 @@ export function useClaimDecisionTargets(): UseQueryResult<
             approvalRequestId: row.id,
             requestNumber: row.request_number,
             isOverride: true,
-            slaDueAt: row.sla_due_at,
+            /*
+              Only an `admin`'s rows are known to be overdue — that is the filter
+              they were fetched under. A super_admin's list is unfiltered, so
+              claiming "overdue" for those would be asserting something this code
+              has not checked.
+            */
+            slaDueAt: isSuperAdmin ? null : row.sla_due_at,
           });
         }
       }

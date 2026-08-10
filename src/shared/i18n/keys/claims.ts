@@ -104,7 +104,8 @@ export const keysClaims = {
   "claim.pay.unpaid": "Not yet paid",
 
   // ── Taking over an overdue claim ────────────────────────────────────────────
-  "claim.override.badge": "Overdue since {on} — deciding as administrator",
+  "claim.override.badge": "Deciding as super administrator",
+  "claim.override.overdue": "Manager has not decided since {on} — deciding as administrator",
 
   // ── The org-chart gap this feature depends on ───────────────────────────────
   "claim.noManager.title": "{n} employees have no reporting manager",

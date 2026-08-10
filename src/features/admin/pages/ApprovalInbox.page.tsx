@@ -40,6 +40,7 @@
  * @route /admin/workflow/inbox
  */
 import { useMemo, useState } from "react";
+import { useAuth } from "@/app/auth/AuthProvider";
 import { useSearchParams } from "react-router-dom";
 import { Inbox, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -200,8 +201,57 @@ export default function ApprovalInboxPage() {
   const openRow = rows.find((r) => r.id === openId) ?? null;
 
   /** Is this admin actually one of the row's current approvers? */
-  const canDecide = (row: ApprovalRequestRow): boolean =>
+  /*
+    ── WHO MAY DECIDE HERE ───────────────────────────────────────────────────────
+
+    REPORTED, repeatedly: "Suraj is super-admin but still can't see button to
+    approve". He could not, and this was the screen he was on. The header above
+    said an administrative override "is deliberately NOT offered here" and
+    pointed at a screen built to justify it — but no such screen offers it for a
+    request whose named approver has simply not looked yet, so the capability was
+    unreachable from anywhere. A rule nobody can satisfy is not a control.
+
+    THE RULE, as specified: "72 hours restriction was for admin — if manager has
+    not approved within 72 hours then admin can approve. super-admin has no
+    restriction."
+
+      the named approver  →  always, at their own level
+      super_admin         →  any open request, immediately
+      admin               →  only once the SLA has been breached
+
+    THE ROLE, NOT A CAPABILITY. `capsForRoles` grants `admin.super` to the plain
+    `admin` role too, so `can("admin.super")` is true for both and cannot tell
+    them apart. Only `user_roles` can, and reading the capability instead would
+    silently hand every admin the unrestricted power.
+
+    THE CLOCK IS STILL NEVER THE BROWSER'S — the point the header makes at length.
+    "Breached" is `sla_breaches`, rows `sla_sweep()` writes on the server's clock,
+    already loaded on this page for the breach tile. No `sla_due_at` is compared
+    to the browser's idea of now.
+
+    NOT YOUR OWN REQUEST, either way: `act_on_approval` exempts an admin from its
+    self-approval refusal, so this is the only thing standing between an
+    administrator and approving their own claim.
+  */
+  const { roles } = useAuth();
+  const isSuperAdmin = roles.includes("super_admin");
+  const breachedIds = useMemo(
+    () => new Set<string>(breachIds.data ?? []),
+    [breachIds.data],
+  );
+
+  const isNamedApprover = (row: ApprovalRequestRow): boolean =>
     myEmployeeId !== null && row.current_approver_ids.includes(myEmployeeId);
+
+  /** True when acting would reach past the named approver. */
+  const isOverride = (row: ApprovalRequestRow): boolean => {
+    if (isNamedApprover(row)) return false;
+    if (myEmployeeId !== null && row.subject_employee_id === myEmployeeId) return false;
+    return isSuperAdmin || breachedIds.has(row.id);
+  };
+
+  const canDecide = (row: ApprovalRequestRow): boolean =>
+    isNamedApprover(row) || isOverride(row);
 
   const columns: DataGridColumn<ApprovalRequestRow>[] = [
     {
@@ -490,6 +540,7 @@ export default function ApprovalInboxPage() {
           row={openRow}
           typeName={typeMap.get(openRow.request_type_id)?.name ?? null}
           canDecide={canDecide(openRow)}
+          isOverride={isOverride(openRow)}
           onClose={() => setOpenId(null)}
           onDecide={(decision) => {
             decide.reset();
@@ -648,12 +699,15 @@ function RequestDetail({
   row,
   typeName,
   canDecide,
+  isOverride,
   onClose,
   onDecide,
 }: {
   row: ApprovalRequestRow;
   typeName: string | null;
   canDecide: boolean;
+  /** Acting reaches past the named approver — the panel must say so. */
+  isOverride: boolean;
   onClose: () => void;
   onDecide: (decision: ApprovalDecision) => void;
 }) {
@@ -696,6 +750,16 @@ function RequestDetail({
       {!canDecide ? (
         <div className="mt-3">
           <Notice tone="info">{t("admin.wf.inbox.detail.readOnly")}</Notice>
+        </div>
+      ) : isOverride ? (
+        <div className="mt-3">
+          {/*
+            Never silent. Reaching past a named approver is recorded by
+            `act_on_approval` as `acted_as = 'admin_override'` and read back in
+            the Override Log; the person doing it should know that before they
+            click, not afterwards.
+          */}
+          <Notice tone="warning">{t("admin.wf.inbox.detail.override")}</Notice>
         </div>
       ) : null}
 

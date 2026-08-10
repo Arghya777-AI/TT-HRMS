@@ -8404,6 +8404,8 @@ export const en = {
   "admin.wf.inbox.detail.unknownType": "Unnamed type",
   "admin.wf.inbox.detail.close": "Close",
   "admin.wf.inbox.detail.readOnly": "You are not one of this request's current approvers, so this view is read-only. Deciding it would be an administrative override, which belongs on a screen built to justify that act — the Override Log records every one that happens.",
+  "admin.wf.inbox.detail.override":
+    "You are not one of this request's named approvers. Deciding it now is an administrative override — it is recorded as one, with your name, and read back in the Override Log.",
   "admin.wf.inbox.detail.dates": "Dates requested",
   "admin.wf.inbox.detail.dateRange": "{from} to {to}",
   "admin.wf.inbox.detail.days": "Days",

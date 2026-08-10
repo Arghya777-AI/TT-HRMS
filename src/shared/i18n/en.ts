@@ -55,6 +55,7 @@ import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
+import { keysClaims } from "./keys/claims";
 import { keysDocumentOpen } from "./keys/document-open";
 import { keysPunchLocation } from "./keys/punch-location";
 import { keysSectionNav } from "./keys/section-nav";
@@ -116,6 +117,7 @@ export const en = {
   ...keysAnalytics,
   ...keysAnalyticsPlanned,
   ...keysAnalyticsOverview,
+  ...keysClaims,
   ...keysDocumentOpen,
   ...keysPunchLocation,
   ...keysSectionNav,

@@ -43,9 +43,13 @@ import {
   isNotNull,
   isNull,
   isTrue,
+  lt,
+  neq,
+  rpcAudited,
   selectCount,
   selectMany,
   selectOne,
+  SENSITIVE_REASON_LENGTH,
   type Filter,
 } from "@/shared/api/query";
 import {
@@ -60,6 +64,8 @@ import {
   approvalInboxSchema,
   type ApprovalInboxRow,
 } from "@/features/approvals/api/approvals.api";
+import { V_ADMIN_EMPLOYEE } from "./employees.api";
+import { nowInstantIso } from "@/lib/datetime";
 
 export const V_ATTENDANCE_MONTHLY_SUMMARY = "v_attendance_monthly_summary";
 export const REIMBURSEMENT_CLAIMS_TABLE = "reimbursement_claims";
@@ -757,6 +763,148 @@ export function countReversedPayslips(
   signal?: AbortSignal,
 ): Promise<number> {
   return selectCount(PAYSLIPS_TABLE, reversedPayslipFilters(runId), {
+    ...(signal ? { signal } : {}),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Recording that a claim was paid (migration 040700)
+// -----------------------------------------------------------------------------
+
+export const RECORD_CLAIM_PAYMENT_FN = "record_claim_payment";
+
+/** `public.payment_mode`, the enum the RPC takes. */
+export const claimPaymentModeValues = ["bank_transfer", "cash", "cheque", "upi"] as const;
+export type ClaimPaymentMode = (typeof claimPaymentModeValues)[number];
+
+const claimPaymentResultSchema = z.object({
+  id: dbUuid,
+  claim_number: z.string(),
+  payment_mode: z.string(),
+  paid_on: z.string(),
+  payment_reference: z.string().nullable(),
+});
+export type ClaimPaymentResult = z.infer<typeof claimPaymentResultSchema>;
+
+export interface RecordClaimPaymentInput {
+  readonly claimId: string;
+  readonly mode: ClaimPaymentMode;
+  /** Civil date, 'YYYY-MM-DD'. The RPC refuses a future one. */
+  readonly paidOn: string;
+  /** Required for everything but cash — the RPC refuses a non-cash payment without it. */
+  readonly reference: string | null;
+}
+
+/**
+ * Record how and when an approved claim was paid.
+ *
+ * Through the definer RPC rather than an UPDATE, because the rules are about the
+ * row's CURRENT STATE — approved, not already paid, not future-dated, and
+ * traceable if it was not cash — and RLS can express who may write, not which
+ * transitions are legal.
+ *
+ * `rpcAudited`, so the operator's own sentence rides the `x-reason` header into
+ * `app.reason` and the audit row for a payment says why it was made.
+ */
+export async function recordClaimPayment(
+  input: RecordClaimPaymentInput,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<ClaimPaymentResult | null> {
+  const rows = await rpcAudited(
+    RECORD_CLAIM_PAYMENT_FN,
+    {
+      p_claim_id: input.claimId,
+      p_mode: input.mode,
+      p_paid_on: input.paidOn,
+      p_reference: input.reference,
+    },
+    claimPaymentResultSchema,
+    { reason, minReasonLength: SENSITIVE_REASON_LENGTH, ...(signal ? { signal } : {}) },
+  );
+  return rows[0] ?? null;
+}
+
+// -----------------------------------------------------------------------------
+// Who has no reporting manager
+// -----------------------------------------------------------------------------
+
+/**
+ * Employees with no `reporting_manager_id`.
+ *
+ * Not a curiosity: level 1 of the claim chain is `reporting_manager`, and
+ * `resolve_approvers` falls back to hr_admin when it cannot resolve one. So
+ * every person in this list has their claims land on an administrator instead of
+ * on the person who knows whether the expense was justified. The count belongs
+ * on the screen that receives those claims, because that is who feels it.
+ */
+export function countEmployeesWithoutManager(signal?: AbortSignal): Promise<number> {
+  return selectCount(V_ADMIN_EMPLOYEE, [
+    isNull("reporting_manager_id"),
+    isNull("deleted_at"),
+    inList("employment_status", ["active", "probation", "notice", "pre_joining"]),
+  ], { ...(signal ? { signal } : {}) });
+}
+
+// -----------------------------------------------------------------------------
+// Overdue claims an administrator may take over
+// -----------------------------------------------------------------------------
+
+export const APPROVAL_REQUESTS_TABLE_NAME = "approval_requests";
+
+export const overdueClaimApprovalSchema = z.object({
+  id: dbUuid,
+  request_number: z.string(),
+  detail_id: dbUuid,
+  subject_employee_id: dbUuid,
+  sla_due_at: dbTimestamp,
+  current_level: dbInt,
+});
+export type OverdueClaimApproval = z.infer<typeof overdueClaimApprovalSchema>;
+
+/**
+ * Claim approvals whose SLA has run out, for an administrator to take over.
+ *
+ * REPORTED: "even super-admin is not able to approve until manager has not
+ * approved… if manager has not approved within 72 hours then admin can also
+ * approve it."
+ *
+ * THE SERVER ALWAYS ALLOWED IT. `act_on_approval` checks
+ * `IF NOT (v_is_approver OR v_is_admin)` — an administrator has been able to act
+ * at any level since the engine was written, and `ar__admin_read` lets them see
+ * every request. What refused was the SCREEN: its buttons come from
+ * `v_approval_inbox`, which ends `app.current_employee_id() = ANY
+ * (ar.current_approver_ids)`, so an admin who was not the CURRENT approver had
+ * nothing to click.
+ *
+ * That was a deliberate choice — `ApprovalInbox.page.tsx` says an override is
+ * "deliberately NOT offered here", to stop an administrator quietly becoming the
+ * approver of everything and the manager's step becoming decorative. This does
+ * not undo it; it puts the override behind the deadline the request already
+ * carries. `sla_due_at` is set by `create_approval_request` as
+ * `now() + request_types.sla_hours`, and LOCAL_CLAIM is seeded at 72 hours — so
+ * "72 hours" is not a number invented here, it is the SLA the screen has always
+ * shown the employee.
+ *
+ * `subject_employee_id <> me` because an admin IS exempt from the self-approval
+ * refusal (`act_on_approval` excuses `v_is_admin`), so nothing else would stop
+ * an administrator approving their own overdue claim. A deadline should hand the
+ * decision to someone else, never to the claimant.
+ */
+export function fetchOverdueClaimApprovals(
+  myEmployeeId: string,
+  signal?: AbortSignal,
+): Promise<OverdueClaimApproval[]> {
+  return selectMany(APPROVAL_REQUESTS_TABLE_NAME, overdueClaimApprovalSchema, {
+    columns: "id, request_number, detail_id, subject_employee_id, sla_due_at, current_level",
+    filters: [
+      eq("detail_table", "reimbursement_claims"),
+      inList("status", ["pending", "in_progress", "escalated"]),
+      lt("sla_due_at", nowInstantIso()),
+      neq("subject_employee_id", myEmployeeId),
+    ],
+    order: [{ column: "sla_due_at", ascending: true }],
+    limit: REGISTER_ROW_CAP,
     ...(signal ? { signal } : {}),
   });
 }

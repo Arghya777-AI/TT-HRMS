@@ -41,7 +41,22 @@ const CODE_TO_PATH: Readonly<Record<string, string>> = {
   COMP_OFF: "/me/comp-off",
   WEB_LOGIN: "/me/apply/web-punch",
   LOCAL_CLAIM: "/me/apply/claim",
-  TRAVEL_REQUISITION: "/me/apply/travel",
+  /*
+    TRAVEL_REQUISITION is deliberately absent, so it is counted among the hidden
+    types rather than given a tile.
+
+    Reported: "when i click to travel requisition then it redirect to local claim
+    so no need of local claim". It is not a redirect — `/me/apply/travel` is a
+    real screen — but everything it can actually offer is a link to this one,
+    because no requisition can be filed: there is no advance table, no
+    estimated-cost cap and no approval chain for the type. Meanwhile `travel` is
+    already one of the nine heads on the claim form, so the trip is claimable
+    today by the route the traveller wants.
+
+    Two tiles where one of them is a signpost to the other is a menu that wastes
+    a choice. The ROUTE stays registered, so existing links and the command
+    palette still reach the explanation — only the tile goes.
+  */
   ASSET_REQUEST: "/me/apply/asset",
   RESIGNATION: "/me/apply/resignation",
   IT_DECLARATION: "/me/apply/tax",

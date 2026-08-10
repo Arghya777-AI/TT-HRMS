@@ -32,6 +32,7 @@
  * @route /admin/payroll/reimbursements
  */
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Banknote, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,9 +43,14 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { Money } from "@/shared/ui/Money";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { ReasonDialog } from "@/shared/ui/ReasonDialog";
-import { fmtCivilDate } from "@/lib/datetime";
+import { fmtCivilDate, nowIstDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
-import { t } from "@/shared/i18n/en";
+import { type MessageKey, t } from "@/shared/i18n/en";
+import { qk } from "@/shared/api/keys";
+import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
+import { useAuditedMutation } from "@/shared/hooks/useAuditedMutation";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -57,6 +63,12 @@ import {
   useReimbursementClaims,
 } from "../hooks/usePayrollStatutory";
 import {
+  claimPaymentModeValues,
+  countEmployeesWithoutManager,
+  recordClaimPayment,
+  type ClaimPaymentMode,
+  type ClaimPaymentResult,
+  type RecordClaimPaymentInput,
   CLAIM_TYPES,
   REGISTER_ROW_CAP,
   isClaimSlice,
@@ -142,6 +154,30 @@ export default function PayrollReimbursementsPage() {
   const labels = useEmployeeLabels();
   const targets = useClaimDecisionTargets();
   const [target, setTarget] = useState<DecisionTarget | null>(null);
+  const [payTarget, setPayTarget] = useState<ReimbursementClaim | null>(null);
+  const [payMode, setPayMode] = useState<ClaimPaymentMode>("bank_transfer");
+  const [payDate, setPayDate] = useState<string>(nowIstDate());
+  const [payReference, setPayReference] = useState("");
+  const [payDone, setPayDone] = useState<string | null>(null);
+  const [payConfirm, setPayConfirm] = useState(false);
+
+  /*
+    Level 1 of the claim chain is `reporting_manager`. When an employee has none,
+    `resolve_approvers` falls back to hr_admin — so the claim lands here, on this
+    screen, instead of with the person who knows whether the trip happened. The
+    count belongs where the consequence is felt.
+  */
+  const noManager = useQuery({
+    queryKey: qk.admin.employees({ scope: "without-manager" }),
+    retry: shouldRetryQuery,
+    queryFn: ({ signal }) => countEmployeesWithoutManager(signal),
+  });
+
+  const pay = useAuditedMutation<ClaimPaymentResult | null, RecordClaimPaymentInput>({
+    mutationFn: (input, reason) => recordClaimPayment(input, reason),
+    invalidate: [qk.admin.payrollAll(), qk.admin.employeesAll()],
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+  });
   const [dismissed, setDismissed] = useState(false);
   const decide = useDecideClaim(() => setDismissed(false));
 
@@ -302,11 +338,42 @@ export default function PayrollReimbursementsPage() {
         align: "right",
         render: (row) => {
           const decidable = targetMap?.get(row.id);
+          /*
+            An approved claim that has not been paid is the one case where the
+            action is NOT an approval. It appears here rather than in its own
+            column because a row is only ever in one of the two states — waiting
+            for a decision, or waiting for the money — and two columns would
+            leave one of them permanently empty.
+          */
           if (decidable === undefined) {
+            if (row.status === "approved" && row.paid_on === null) {
+              return (
+                <span className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={() => setPayTarget(row)}>
+                    {t("claim.pay.action")}
+                  </Button>
+                </span>
+              );
+            }
             return <span className="text-xs text-muted-foreground">{dash(null)}</span>;
           }
           return (
-            <span className="flex justify-end gap-2">
+            <span className="flex flex-col items-end gap-1">
+              {/*
+                An override is labelled, never silent. This administrator is not
+                the current approver — they can act only because the request ran
+                past the SLA the employee was shown when they filed it. Making it
+                look like an ordinary approval is how a manager's step quietly
+                stops mattering.
+              */}
+              {decidable.isOverride ? (
+                <span className="text-[11px] text-warning">
+                  {t("claim.override.badge", {
+                    on: decidable.slaDueAt === null ? "" : fmtCivilDate(decidable.slaDueAt.slice(0, 10)),
+                  })}
+                </span>
+              ) : null}
+              <span className="flex justify-end gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -322,6 +389,7 @@ export default function PayrollReimbursementsPage() {
               >
                 {t("admin.reimb.approve")}
               </Button>
+              </span>
             </span>
           );
         },
@@ -390,7 +458,7 @@ export default function PayrollReimbursementsPage() {
               </Button>
             }
           >
-            {outcome} {t("admin.reimb.outcome.claimUnchanged")}
+            {outcome}
           </Notice>
         </div>
       ) : null}
@@ -432,6 +500,122 @@ export default function PayrollReimbursementsPage() {
           ) : null}
         </StateBoundary>
       </div>
+
+      {/*
+        The org-chart gap, on the screen that receives its consequences. Every
+        one of these people has claims routed to an administrator because
+        `resolve_approvers` could not find them a manager — not a silent
+        fallback, a visible one, so it gets fixed rather than absorbed.
+      */}
+      {noManager.isSuccess && noManager.data > 0 ? (
+        <div className="mb-4">
+          <Notice tone="warning">
+            <p className="font-medium">
+              {t("claim.noManager.title", { n: formatNumber(noManager.data) })}
+            </p>
+            <p className="mt-1">{t("claim.noManager.hint")}</p>
+          </Notice>
+        </div>
+      ) : null}
+
+      {payDone !== null ? (
+        <div className="mb-4">
+          <Notice tone="success">{t("claim.pay.done", { ref: payDone })}</Notice>
+        </div>
+      ) : null}
+
+      {/*
+        The payment's own fields sit in a panel, not in the dialog: `ReasonDialog`
+        collects a sentence and nothing else, by design — it is the one place an
+        audited write asks "why", and giving it a form would make it two things.
+        So the admin fills these in, then confirms with a reason.
+      */}
+      {payTarget !== null ? (
+        <div className="mb-4 rounded-lg border bg-card p-4">
+          <p className="font-medium">
+            {t("claim.pay.title", { ref: payTarget.claim_number })}
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div>
+              <Label htmlFor="pay-mode">{t("claim.pay.mode")}</Label>
+              <select
+                id="pay-mode"
+                value={payMode}
+                onChange={(e) => setPayMode(e.target.value as ClaimPaymentMode)}
+                className="mt-1.5 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {claimPaymentModeValues.map((value) => (
+                  <option key={value} value={value}>
+                    {t(`claim.pay.mode.${value}` as MessageKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="pay-date">{t("claim.pay.date")}</Label>
+              <Input
+                id="pay-date"
+                type="date"
+                max={nowIstDate()}
+                className="mt-1.5 h-10"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="pay-ref">{t("claim.pay.reference")}</Label>
+              <Input
+                id="pay-ref"
+                className="mt-1.5 h-10"
+                value={payReference}
+                onChange={(e) => setPayReference(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">{t("claim.pay.referenceHint")}</p>
+          <div className="mt-3 flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPayTarget(null)}>
+              {t("admin.master.cancel")}
+            </Button>
+            <Button size="sm" onClick={() => setPayConfirm(true)}>
+              {t("claim.pay.action")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/*
+        `record_claim_payment` refuses a claim that is not approved, one already
+        paid, a future date, and a non-cash payment with no reference — each with
+        its own sentence, surfaced here unchanged.
+      */}
+      <ReasonDialog
+        open={payConfirm && payTarget !== null}
+        title={t("claim.pay.title", { ref: payTarget?.claim_number ?? "" })}
+        confirmLabel={t("claim.pay.action")}
+        minLength={pay.minReasonLength}
+        pending={pay.isPending}
+        errorMessage={pay.userMessage}
+        onCancel={() => setPayConfirm(false)}
+        onConfirm={(reason) => {
+          const row = payTarget;
+          if (row === null) return;
+          pay.save(
+            {
+              claimId: row.id,
+              mode: payMode,
+              paidOn: payDate,
+              reference: payReference.trim() === "" ? null : payReference.trim(),
+            },
+            reason,
+          );
+          setPayConfirm(false);
+          setPayDone(row.claim_number);
+          setPayTarget(null);
+          setPayReference("");
+        }}
+      />
+
 
       <ReasonDialog
         open={target !== null}

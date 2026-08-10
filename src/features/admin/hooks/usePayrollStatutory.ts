@@ -24,6 +24,7 @@
 import { useMemo } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { useEmployeeId } from "@/shared/api/employee-scope";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
 import {
   useAuditedMutation,
@@ -57,6 +58,7 @@ import {
   fetchOvertimeRegister,
   fetchPayslipPayments,
   fetchPremiumLines,
+  fetchOverdueClaimApprovals,
   fetchReimbursementClaims,
   fetchReversedPayslips,
   fetchStatutoryLines,
@@ -172,6 +174,15 @@ export interface ClaimDecisionTarget {
   readonly claimId: string;
   readonly approvalRequestId: string;
   readonly requestNumber: string;
+  /**
+   * True when this administrator is NOT the current approver and is only able to
+   * act because the request has run past its SLA. The screen must say so — an
+   * override that looks identical to an ordinary approval is how a manager's
+   * step quietly stops mattering.
+   */
+  readonly isOverride: boolean;
+  /** When the deadline passed, for the sentence that explains the override. */
+  readonly slaDueAt: string | null;
 }
 
 /**
@@ -189,8 +200,9 @@ export function useClaimDecisionTargets(): UseQueryResult<
   ReadonlyMap<string, ClaimDecisionTarget>,
   Error
 > {
+  const myEmployeeId = useEmployeeId();
   return useQuery({
-    queryKey: [...qk.admin.approvalInbox(), REIMBURSEMENT_CLAIMS_TABLE],
+    queryKey: [...qk.admin.approvalInbox(), REIMBURSEMENT_CLAIMS_TABLE, myEmployeeId ?? "none"],
     queryFn: async ({ signal }) => {
       const inbox = await fetchApprovalInboxByType("LOCAL_CLAIM", signal);
       const ids = inbox.map((row) => row.approval_request_id);
@@ -205,8 +217,34 @@ export function useClaimDecisionTargets(): UseQueryResult<
           claimId: ref.detail_id,
           approvalRequestId: ref.id,
           requestNumber: row.request_number,
+          isOverride: false,
+          slaDueAt: null,
         });
       }
+      /*
+        Then the overdue ones. An administrator may act at any level — the RPC has
+        always allowed it — but the screen only ever showed them requests where
+        they were the CURRENT approver, so a claim sitting on a manager who had
+        not looked at it was unreachable by anyone.
+
+        These are merged in SECOND and do not overwrite an existing entry: if the
+        admin is genuinely the current approver, that is an ordinary decision, not
+        an override, and it should not be labelled as one.
+      */
+      if (myEmployeeId !== null) {
+        const overdue = await fetchOverdueClaimApprovals(myEmployeeId, signal);
+        for (const row of overdue) {
+          if (targets.has(row.detail_id)) continue;
+          targets.set(row.detail_id, {
+            claimId: row.detail_id,
+            approvalRequestId: row.id,
+            requestNumber: row.request_number,
+            isOverride: true,
+            slaDueAt: row.sla_due_at,
+          });
+        }
+      }
+
       return targets as ReadonlyMap<string, ClaimDecisionTarget>;
     },
     retry: shouldRetryQuery,

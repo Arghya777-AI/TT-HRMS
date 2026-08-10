@@ -775,6 +775,13 @@ export interface ApprovalDecisionInput {
   readonly decidedByProfileId: string | null;
 }
 
+/**
+ * Detail tables a database trigger settles, so this function has nothing to do
+ * but report success. Adding a table here without the trigger would be a lie the
+ * screens then repeat.
+ */
+const SERVER_APPLIED_DETAIL_TABLES: readonly string[] = ["reimbursement_claims"];
+
 export interface ApprovalDecisionResult {
   readonly approval: ActOnApprovalResult;
   /** True when the leave request itself was moved to approved/rejected. */
@@ -871,6 +878,27 @@ export async function decideApproval(
       notAppliedReason: "chain_continues",
       applyError: null,
     };
+  }
+
+  /*
+    SOME DETAIL TABLES ARE APPLIED BY THE SERVER, NOT FROM HERE.
+
+    `reimbursement_claims` used to fall through to `no_apply_path` — correctly,
+    because nothing anywhere projected a settled approval onto the claim, and the
+    three screens said so rather than implying the money was moving.
+
+    Migration 040500 added `trg_ar__apply_claim`: the moment `act_on_approval`
+    settles a request whose `detail_table` is `reimbursement_claims`, the claim's
+    own status, `total_approved_paise` and `decided_*` columns are written inside
+    the same transaction. By the time the RPC above returns, it is already done.
+
+    A trigger rather than a call from here on purpose — a decision can be taken
+    from three inboxes, an admin override, an SLA escalation or `advance_approval`
+    finishing a chain on its own, and a client-side apply step would silently not
+    run for most of them. So the honest answer here is "applied", not "no path".
+  */
+  if (input.detailTable !== null && SERVER_APPLIED_DETAIL_TABLES.includes(input.detailTable)) {
+    return { approval, appliedToDetail: true, notAppliedReason: null, applyError: null };
   }
 
   if (

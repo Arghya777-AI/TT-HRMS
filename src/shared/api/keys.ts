@@ -199,6 +199,16 @@ export const qk = {
   apply: {
     ...domainKeys("apply"),
     openRequests: () => ["apply", "open-requests"] as const,
+    /** The receipt document type — one row, shared by every claim form. */
+    claimReceiptType: () => ["apply", "claim-receipt-type"] as const,
+    /**
+     * One key per status tile. `slice` is part of the key because each tile is
+     * its own query: one failing tile must not blank the other four.
+     */
+    claimSlice: (employeeId: string, slice: string) =>
+      ["apply", "claim-slice", employeeId, slice] as const,
+    claimRegister: (employeeId: string, slice: string) =>
+      ["apply", "claim-register", employeeId, slice] as const,
   },
   assets: domainKeys("assets"),
   approvals: {

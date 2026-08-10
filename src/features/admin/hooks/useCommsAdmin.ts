@@ -432,10 +432,14 @@ export function useAckDocumentTypes(): UseQueryResult<AckDocumentType[], Error> 
 // -----------------------------------------------------------------------------
 
 /**
- * The `help_desk` feature-flag row. `helpdesk_tickets` does not exist on this
- * project (404 / PGRST205) and no migration creates it, so the screen reads the
- * flag — which is real — and reports the gap instead of querying a table that
- * cannot answer.
+ * The `help_desk` feature-flag row.
+ *
+ * The Help Desk screen used to read this INSTEAD of a queue, because
+ * `helpdesk_tickets` did not exist (404 / PGRST205) and the flag was the only
+ * real thing to show. Migration 041500 created the tables and flipped the flag,
+ * and the screen now reads the queue itself — so nothing calls this today. It is
+ * kept because the flag row is still the register's answer to "is the ticketing
+ * module on", and the feature-flag screen is the natural next caller.
  */
 export function useHelpdeskFlag(): UseQueryResult<FeatureFlag | null, Error> {
   return useQuery({

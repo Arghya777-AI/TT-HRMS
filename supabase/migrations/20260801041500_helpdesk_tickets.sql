@@ -610,4 +610,134 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- -----------------------------------------------------------------------------
+-- 9. The desk's side, as one RPC
+-- -----------------------------------------------------------------------------
+--
+-- WHY AN RPC AND NOT SIX COLUMN WRITES FROM THE BROWSER.
+--
+-- Every desk action moves a status AND a timestamp together, and
+-- `ck_hdt__resolved_status` / `ck_hdt__closed_status` make the pair mandatory.
+-- A browser that sets `status = 'resolved'` must therefore also send a
+-- `resolved_at` — which means the browser's clock decides when the promise was
+-- met. That is the number every SLA report is judged on, so it is not the
+-- browser's to supply. Here `now()` is the server's.
+--
+-- It also keeps the legal moves in ONE place. The transitions below are the
+-- desk's whole vocabulary; anything else is refused by name rather than by
+-- landing as a status the reports do not recognise.
+--
+-- SECURITY DEFINER, granted to `authenticated`, and it re-checks the caller
+-- itself: `app.is_admin()` OR the assignee. A definer function that trusts its
+-- caller is a hole with a nice name.
+
+CREATE OR REPLACE FUNCTION public.helpdesk_desk_action(
+  p_ticket_id uuid,
+  p_action    text,
+  p_note      text DEFAULT NULL
+)
+RETURNS public.helpdesk_tickets
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_actor  uuid := app.ctx_actor_id();
+  v_ticket public.helpdesk_tickets;
+BEGIN
+  IF v_actor IS NULL THEN
+    RAISE EXCEPTION 'Not signed in.' USING errcode = '42501';
+  END IF;
+
+  SELECT * INTO v_ticket FROM public.helpdesk_tickets WHERE id = p_ticket_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No such ticket.' USING errcode = 'P0002';
+  END IF;
+
+  IF NOT (app.is_admin() AND app.admin_scope_covers(v_ticket.employee_id))
+     AND v_ticket.assigned_to IS DISTINCT FROM v_actor THEN
+    RAISE EXCEPTION
+      'Only the help desk can do that. You are neither an administrator for this employee nor the person this ticket is assigned to.'
+      USING errcode = '42501';
+  END IF;
+
+  IF p_action = 'claim' THEN
+    UPDATE public.helpdesk_tickets
+       SET assigned_to = v_actor,
+           status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END
+     WHERE id = p_ticket_id
+     RETURNING * INTO v_ticket;
+
+  ELSIF p_action = 'start' THEN
+    UPDATE public.helpdesk_tickets SET status = 'in_progress'
+     WHERE id = p_ticket_id RETURNING * INTO v_ticket;
+
+  ELSIF p_action = 'wait' THEN
+    UPDATE public.helpdesk_tickets SET status = 'waiting_on_requester'
+     WHERE id = p_ticket_id RETURNING * INTO v_ticket;
+
+  ELSIF p_action = 'resolve' THEN
+    -- A resolution with no note is a ticket the requester has to ask about
+    -- again, which is the phone call the queue exists to prevent.
+    IF p_note IS NULL OR length(btrim(p_note)) < 5 THEN
+      RAISE EXCEPTION 'Say what was done before resolving this.' USING errcode = '23514';
+    END IF;
+    UPDATE public.helpdesk_tickets
+       SET status          = 'resolved',
+           resolved_at     = now(),
+           resolved_by     = v_actor,
+           resolution_note = btrim(p_note)
+     WHERE id = p_ticket_id RETURNING * INTO v_ticket;
+
+  ELSIF p_action = 'close' THEN
+    -- Closing a ticket nobody resolved would leave `resolved_at` NULL against a
+    -- terminal status and fail ck_hdt__resolved_status, so closing an unresolved
+    -- ticket resolves it in the same statement rather than erroring on a
+    -- constraint the caller cannot see.
+    UPDATE public.helpdesk_tickets
+       SET status      = 'closed',
+           resolved_at = COALESCE(resolved_at, now()),
+           resolved_by = COALESCE(resolved_by, v_actor),
+           resolution_note = COALESCE(resolution_note, NULLIF(btrim(COALESCE(p_note,'')), '')),
+           closed_at   = now()
+     WHERE id = p_ticket_id RETURNING * INTO v_ticket;
+
+  ELSIF p_action = 'reopen' THEN
+    -- trg_hdt__guard does the counting and clears the resolution; this only
+    -- names the target status.
+    UPDATE public.helpdesk_tickets SET status = 'open'
+     WHERE id = p_ticket_id RETURNING * INTO v_ticket;
+
+  ELSE
+    RAISE EXCEPTION
+      'Unknown action %. Use claim, start, wait, resolve, close or reopen.', p_action
+      USING errcode = '22023';
+  END IF;
+
+  RETURN v_ticket;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.helpdesk_desk_action(uuid, text, text) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.helpdesk_desk_action(uuid, text, text) TO authenticated;
+
+COMMENT ON FUNCTION public.helpdesk_desk_action(uuid, text, text) IS
+  'The desk''s whole vocabulary on a ticket: claim, start, wait, resolve, close, reopen. Definer so the SERVER stamps resolved_at/closed_at — the timestamps every SLA report is judged on are not the browser''s to supply.';
+
+-- -----------------------------------------------------------------------------
+-- 10. The feature flag now tells the truth
+-- -----------------------------------------------------------------------------
+--
+-- 004600 seeded `help_desk` disabled with a planned date of 2027-04-01, and
+-- /admin/comms/helpdesk reads that row to explain why it had nothing to show. It
+-- has something to show now. The flag gates nothing in code — no policy and no
+-- route tests it — so leaving it off would not disable the module, it would only
+-- make the register lie about it.
+
+UPDATE public.feature_flags
+   SET is_enabled  = true,
+       expires_at  = NULL,
+       description = 'HR ticketing module. Shipped in migration 041500: helpdesk_tickets, helpdesk_messages, two SLA clocks.'
+ WHERE key = 'help_desk'
+   AND deleted_at IS NULL
+   AND is_enabled IS DISTINCT FROM true;
+
 COMMIT;

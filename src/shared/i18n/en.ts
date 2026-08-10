@@ -9239,36 +9239,13 @@ export const en = catalogue({
   "admin.comms.pol.gapNotice":
     "Not built here, on purpose: uploading a file writes to a private Storage bucket and belongs to the document surface, and a policy-mode send needs a document id — with the vault empty there is nothing to circulate. Both are reported as gaps rather than stubbed.",
   "admin.comms.pol.footnote": "Every figure on this screen is a server count or a server column.",
-  // §14 Help desk — /admin/comms/helpdesk (no backend; the screen says so)
+  // §14 Help desk — /admin/comms/helpdesk (the desk's queue; migration 041500)
   "admin.comms.hd.title": "Help Desk",
   "admin.comms.hd.subtitle": "Tickets across every queue, with service levels.",
-  "admin.comms.hd.gapNotice":
-    "There is no help-desk backend on this project: {table} does not exist — the API answers 404 — and no migration creates it. Nothing on this screen is a ticket list, because an empty queue would read as “nobody has asked for anything”.",
-  "admin.comms.hd.empty.title": "The ticketing module is not deployed",
-  "admin.comms.hd.empty.hint":
-    "This screen needs {table} plus its queues, its messages and its service-level clock. Until those exist there is nothing to show and nothing worth faking.",
-  "admin.comms.hd.flagTitle": "What the project records about it",
-  "admin.comms.hd.flagHint": "Read live from the feature-flag register.",
-  "admin.comms.hd.field.name": "Module",
-  "admin.comms.hd.field.state": "State",
-  "admin.comms.hd.field.planned": "Planned from",
-  "admin.comms.hd.field.owner": "Owner",
-  "admin.comms.hd.field.description": "Description",
-  "admin.comms.hd.flag.on": "Enabled",
-  "admin.comms.hd.flag.off": "Not switched on",
-  "admin.comms.hd.flagNote":
-    "Enabling this flag would not create the tables: a flag governs what the shell shows, never the schema.",
-  "admin.comms.hd.empty.flag.title": "No flag row either",
-  "admin.comms.hd.empty.flag.hint":
-    "No feature-flag row with the key {key} is readable, so even the plan is not recorded on this project.",
   "admin.comms.hd.insteadTitle": "What does exist",
-  "admin.comms.hd.insteadHint":
-    "Two service-level surfaces are live under Approvals & workflow, and the noticeboard carries venue-wide messages.",
   "admin.comms.hd.link.inbox": "Approval Inbox",
   "admin.comms.hd.link.sla": "SLA & Escalations",
   "admin.comms.hd.link.announcements": "Announcements",
-  "admin.comms.hd.buildNote":
-    "Reported as a gap: the tickets table, its queues and its SLA clock are absent from the schema. Nothing was invented to fill this screen.",
   // §2 Lifecycle Board — /admin/people/lifecycle
   "admin.lifecycle.title": "Lifecycle Board",
   "admin.lifecycle.subtitle.count": "{n} employees across every stage.",

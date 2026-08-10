@@ -42,6 +42,20 @@ export interface DataGridProps<T> {
   onRowClick?: (row: T) => void;
   /** Rendered in the header block above the table (search, filters, export…). */
   toolbar?: ReactNode;
+  /**
+   * Detail for ONE row, rendered immediately beneath it rather than after the
+   * grid. Return null for every row you do not want expanded.
+   *
+   * REPORTED on the approval inbox: "when i click then it's details should just
+   * that below not after list, because if there will more row then we have to
+   * scroll down too much". Exactly right — a panel under a 25-row page puts the
+   * thing you just clicked a screen and a half above the answer, and the reader
+   * loses their place on the way back.
+   *
+   * Optional and additive: a grid that does not pass it renders precisely as
+   * before, which is why this did not need touching in the other screens.
+   */
+  renderRowDetail?: (row: T) => ReactNode;
 }
 
 const PAGE_SIZES = [10, 25, 50, 100, 200] as const;
@@ -82,6 +96,7 @@ export function DataGrid<T>({
   emptyState,
   pageSize: initialPageSize = 25,
   onRowClick,
+  renderRowDetail,
   toolbar,
 }: DataGridProps<T>) {
   const [sort, setSort] = useState<SortState>(null);
@@ -190,26 +205,45 @@ export function DataGrid<T>({
                     ))}
                   </TableRow>
                 ))
-              : pageRows.map((row) => (
-                  <TableRow
-                    key={rowKey(row)}
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    className={onRowClick ? "cursor-pointer" : undefined}
-                  >
-                    {columns.map((col) => (
-                      <TableCell
-                        key={col.key}
-                        className={cn(
-                          col.hideBelow && HIDE_CLASS[col.hideBelow],
-                          col.align === "right" && "num text-right",
-                          col.align === "center" && "text-center",
-                        )}
-                      >
-                        {cellContent(row, col)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
+              : pageRows.flatMap((row) => {
+                  const detail = renderRowDetail?.(row) ?? null;
+                  const rows = [
+                    <TableRow
+                      key={rowKey(row)}
+                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      className={cn(
+                        onRowClick && "cursor-pointer",
+                        // The expanded row and its detail read as one block.
+                        detail !== null && "bg-muted/40",
+                      )}
+                    >
+                      {columns.map((col) => (
+                        <TableCell
+                          key={col.key}
+                          className={cn(
+                            col.hideBelow && HIDE_CLASS[col.hideBelow],
+                            col.align === "right" && "num text-right",
+                            col.align === "center" && "text-center",
+                          )}
+                        >
+                          {cellContent(row, col)}
+                        </TableCell>
+                      ))}
+                    </TableRow>,
+                  ];
+                  if (detail !== null) {
+                    rows.push(
+                      // `hover:bg-transparent` so the detail does not light up as
+                      // if it were another clickable row.
+                      <TableRow key={`${rowKey(row)}--detail`} className="hover:bg-transparent">
+                        <TableCell colSpan={columns.length} className="p-0">
+                          {detail}
+                        </TableCell>
+                      </TableRow>,
+                    );
+                  }
+                  return rows;
+                })}
             {empty ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="p-6">
@@ -276,6 +310,7 @@ export function DataGrid<T>({
                       ))}
                   </dl>
                 </div>
+                {renderRowDetail?.(row) ?? null}
               </li>
             ))}
           </ul>

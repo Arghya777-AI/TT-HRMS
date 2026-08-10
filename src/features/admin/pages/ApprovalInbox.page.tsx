@@ -198,7 +198,6 @@ export default function ApprovalInboxPage() {
     setParams(next, { replace: true });
   };
 
-  const openRow = rows.find((r) => r.id === openId) ?? null;
 
   /** Is this admin actually one of the row's current approvers? */
   /*
@@ -517,6 +516,33 @@ export default function ApprovalInboxPage() {
             rowKey={(row) => row.id}
             pageSize={25}
             onRowClick={(row) => setOpenId(row.id === openId ? null : row.id)}
+            /*
+              The detail belongs UNDER THE ROW, not under the grid.
+
+              Reported: "when i click then it's details should just that below not
+              after list, because if there will more row then we have to scroll
+              down too much". On a 25-row page the old placement put the panel a
+              screen and a half below the row that opened it — so you clicked,
+              scrolled to read, and then had to find your place again to click the
+              next one.
+            */
+            renderRowDetail={(row) =>
+              row.id === openId ? (
+                <div className="border-t bg-background">
+                  <RequestDetail
+                    row={row}
+                    typeName={typeMap.get(row.request_type_id)?.name ?? null}
+                    canDecide={canDecide(row)}
+                    isOverride={isOverride(row)}
+                    onClose={() => setOpenId(null)}
+                    onDecide={(decision) => {
+                      decide.reset();
+                      prompt.ask({ row, decision });
+                    }}
+                  />
+                </div>
+              ) : null
+            }
           />
 
           {list.hasNextPage ? (
@@ -534,20 +560,6 @@ export default function ApprovalInboxPage() {
           ) : null}
         </StateBoundary>
       </div>
-
-      {openRow !== null ? (
-        <RequestDetail
-          row={openRow}
-          typeName={typeMap.get(openRow.request_type_id)?.name ?? null}
-          canDecide={canDecide(openRow)}
-          isOverride={isOverride(openRow)}
-          onClose={() => setOpenId(null)}
-          onDecide={(decision) => {
-            decide.reset();
-            prompt.ask({ row: openRow, decision });
-          }}
-        />
-      ) : null}
 
       <div className="mt-4">
         <Notice tone="info">{t("admin.wf.inbox.footnote")}</Notice>
@@ -717,7 +729,13 @@ function RequestDetail({
 
   return (
     <section
-      className="mt-4 rounded-lg border bg-card p-4"
+      /*
+        No `mt-4`, no border, no rounding: this now renders INSIDE the row it
+        belongs to, and the grid already draws the separator above it. Keeping the
+        standalone card styling here produced a card floating inside a table cell
+        with a double border and a gap that broke the connection to its own row.
+      */
+      className="bg-background p-4"
       aria-label={t("admin.wf.inbox.detail.title")}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">

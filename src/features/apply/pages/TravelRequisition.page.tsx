@@ -1,37 +1,38 @@
 /**
- * E-10.5 · /me/apply/travel — "Trip request with advance and estimated cost."
+ * E-10.5 · /me/apply/travel — trip request with an estimated cost and an advance.
  *
- * The brief was to raise this through `public.create_approval_request` with the
- * `TRAVEL_REQUISITION` type. That call cannot succeed against the deployed
- * schema, for two reasons that are facts rather than opinions — and the screen
- * establishes the second by READING rather than asserting:
+ * ── WHAT THIS PAGE USED TO SAY, AND WHY IT NO LONGER SAYS IT ─────────────────
  *
- *  1. NO DETAIL ROW TO POINT AT. The type's `detail_table` is
- *     `travel_requisitions`, and no migration creates it. The name appears twice
- *     as a STRING only — in `ck_request_types__detail_table` (029 §1) and in the
- *     045 §2 seed row — and migration 024's own header says it outright: "No FK
- *     on reimbursement_claims.travel_requisition_id: no travel_requisitions
- *     table exists anywhere in the §13 plan." `approval_requests.detail_id` is
- *     NOT NULL, so the request needs a row that has nowhere to live.
- *  2. NO APPROVAL CHAIN. 045 §3 seeds chains for eleven of the eighteen request
- *     types; `TRAVEL_REQUISITION` is not one, and its
- *     `default_approval_chain_id` stays NULL, so `create_approval_request` raises
- *     `no approval chain matches request type TRAVEL_REQUISITION`. The routing
- *     card below reads `approval_chains` for this type and shows the empty
- *     result — that is the proof.
+ * For most of its life this screen refused to offer a form, and it was right to.
+ * `request_types.TRAVEL_REQUISITION` named a detail table `travel_requisitions`
+ * that no migration created — the name existed twice as a STRING, in
+ * `ck_request_types__detail_table` and in the 045 seed row, and nowhere as a
+ * table — and `approval_requests.detail_id` is NOT NULL, so the request needed a
+ * row with nowhere to live. It also had no approval chain: 045 seeded chains for
+ * eleven of eighteen types and this was not one, so `create_approval_request`
+ * raised `no approval chain matches request type TRAVEL_REQUISITION`.
  *
- * THREE THINGS THIS SCREEN ALSO REFUSES TO INVENT, all named in
- * spec-employee §5: `travel_policies.max_advance` (no such table), the per-grade
- * estimated-cost cap (no table in the schema holds one), and the L2-above-₹10,000
- * escalation (an approval-chain band, and this type has no chain to band).
+ * Migration 041100 created the table and seeded `AC-TRAVEL`, so both facts have
+ * changed and the form below is real. The routing card still READS
+ * `approval_chains` for this type rather than describing the route in prose —
+ * that is what proves the chain is there, and it is also what will show it
+ * disappearing if anyone deactivates it.
  *
- * What it shows instead is real, self-scoped and the thing an employee actually
- * needs: the route travel MONEY takes today. `ck_rc__claim_type` has a `travel`
- * head, `reimbursement_claims` accepts a self-insert, and `/me/apply/claim` is
- * live — so the trip is reimbursed even though the requisition cannot be filed.
- * The claim ledger below also renders `travel_requisition_id`, which is always
- * empty, and `claim_kind` — whose `'travel_requisition_settlement'` value is
- * unreachable because `ck_rc__settlement_link` demands a requisition id.
+ * ── STILL NOT INVENTED ───────────────────────────────────────────────────────
+ *
+ * `travel_policies.max_advance` (no such table), the per-grade estimated-cost cap
+ * (no table in the schema holds one), and the L2-above-₹10,000 escalation (an
+ * approval-chain band, and AC-TRAVEL is deliberately unbanded). A limit shown
+ * here that no table enforces is a limit that is not a limit.
+ *
+ * ── THE MONEY IS STILL A SEPARATE STEP ───────────────────────────────────────
+ *
+ * An approved requisition is permission to travel, not a payment. The spend is
+ * claimed afterwards through /me/apply/claim, and now that
+ * `reimbursement_claims.travel_requisition_id` finally has a row to point at,
+ * `claim_kind = 'travel_requisition_settlement'` — which
+ * `ck_rc__settlement_link` made unreachable while the table was missing — is
+ * reachable. The ledger below shows both columns.
  *
  * @route /me/apply/travel
  */
@@ -46,7 +47,14 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Money } from "@/shared/ui/Money";
 import { Notice } from "@/features/admin/components/Notice";
+import { useState } from "react";
 import { t } from "@/shared/i18n/en";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { mutationUserMessage } from "@/shared/api/query";
+import { nowIstDate } from "@/lib/datetime";
+import { rupeesToPaise } from "../api/claim-submit.api";
+import { useSubmitTravelRequisition } from "../hooks/useApply";
 import { dash } from "@/lib/format";
 import { fmtCivilDate } from "@/lib/datetime";
 import { REQUEST_CODE_TRAVEL, type TravelClaim } from "../api/apply-forms.api";
@@ -140,6 +148,24 @@ export default function TravelRequisitionPage() {
     },
   ];
 
+  const trToday = nowIstDate();
+  const [fromLoc, setFromLoc] = useState("");
+  const [toLoc, setToLoc] = useState("");
+  const [fromDate, setFromDate] = useState<string>(trToday);
+  const [toDate, setToDate] = useState<string>(trToday);
+  const [purpose, setPurpose] = useState("");
+  const [cost, setCost] = useState("");
+  const [advance, setAdvance] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
+  const sendTr = useSubmitTravelRequisition();
+
+  const trBlockers: string[] = [];
+  if (fromLoc.trim() === "" || toLoc.trim() === "") trBlockers.push(t("apply.travel.blocked.where"));
+  if (toDate < fromDate) trBlockers.push(t("apply.travel.blocked.range"));
+  if (purpose.trim().length < 10) trBlockers.push(t("apply.travel.blocked.purpose"));
+  if (cost.trim() !== "" && rupeesToPaise(cost) === null) trBlockers.push(t("apply.travel.blocked.cost"));
+  if (advance.trim() !== "" && rupeesToPaise(advance) === null) trBlockers.push(t("apply.travel.blocked.cost"));
+
   return (
     <div>
       <PageHeader
@@ -155,13 +181,87 @@ export default function TravelRequisitionPage() {
 
       <div className="space-y-6">
         {/* ── The blocking facts, named ───────────────────────────────────── */}
-        <Notice tone="error">
-          <p className="font-medium">{t("apply.travel.gap.title")}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            <li>{t("apply.travel.gap.table")}</li>
-            <li>{t("apply.travel.gap.chain")}</li>
-          </ul>
-        </Notice>
+        {/*
+          The gap notice here said the requisition table did not exist and no
+          chain was configured. Migration 041100 created `travel_requisitions`
+          and seeded AC-TRAVEL — and gave `reimbursement_claims
+          .travel_requisition_id` something to point at, so a settlement claim
+          against a trip is finally possible.
+        */}
+        {sent !== null ? <Notice tone="success">{t("apply.travel.done")}</Notice> : null}
+
+        <section className="rounded-lg border bg-card p-4" aria-labelledby="tr-form">
+          <h2 id="tr-form" className="font-display text-lg font-semibold">
+            {t("apply.travel.form.title")}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t("apply.travel.form.hint")}</p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="tr-from">{t("apply.travel.field.from")}</Label>
+              <Input id="tr-from" className="mt-1.5 h-11" value={fromLoc}
+                onChange={(e) => setFromLoc(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="tr-to">{t("apply.travel.field.to")}</Label>
+              <Input id="tr-to" className="mt-1.5 h-11" value={toLoc}
+                onChange={(e) => setToLoc(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="tr-fd">{t("apply.travel.field.fromDate")}</Label>
+              <Input id="tr-fd" type="date" className="mt-1.5 h-11" value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="tr-td">{t("apply.travel.field.toDate")}</Label>
+              <Input id="tr-td" type="date" min={fromDate} className="mt-1.5 h-11" value={toDate}
+                onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="tr-cost">{t("apply.travel.field.cost")}</Label>
+              <Input id="tr-cost" inputMode="decimal" className="mt-1.5 h-11" value={cost}
+                onChange={(e) => setCost(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="tr-adv">{t("apply.travel.field.advance")}</Label>
+              <Input id="tr-adv" inputMode="decimal" className="mt-1.5 h-11" value={advance}
+                onChange={(e) => setAdvance(e.target.value)} />
+              <p className="mt-1 text-xs text-muted-foreground">{t("apply.travel.field.advance.hint")}</p>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Label htmlFor="tr-purpose">{t("apply.travel.field.purpose")}</Label>
+            <textarea id="tr-purpose" rows={3} maxLength={500} value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+              className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+          </div>
+
+          {sendTr.isError ? (
+            <div className="mt-3"><Notice tone="error">{mutationUserMessage(sendTr.error)}</Notice></div>
+          ) : null}
+          {trBlockers.length > 0 ? (
+            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <p className="font-medium">{t("apply.travel.blocked.title")}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {trBlockers.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          <Button className="mt-4 w-full" disabled={trBlockers.length > 0 || sendTr.isPending}
+            onClick={() => {
+              if (trBlockers.length > 0) return;
+              sendTr.mutate(
+                { fromLocation: fromLoc, toLocation: toLoc, fromDate, toDate, purpose,
+                  estimatedCostRupees: cost, advanceRupees: advance },
+                { onSuccess: (r) => { setSent(r.requestId); setPurpose(""); } },
+              );
+            }}
+          >
+            {sendTr.isPending ? t("apply.travel.sending") : t("apply.travel.send")}
+          </Button>
+        </section>
 
         {/* ── The route travel money DOES take today ──────────────────────── */}
         <EmptyState

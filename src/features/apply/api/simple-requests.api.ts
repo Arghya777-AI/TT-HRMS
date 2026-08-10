@@ -334,3 +334,81 @@ export function submitDocumentRequest(
     signal,
   });
 }
+
+// -----------------------------------------------------------------------------
+// Asset request
+// -----------------------------------------------------------------------------
+
+/**
+ * `asset_requests` — NOT `asset_allocations`.
+ *
+ * `request_types.ASSET_REQUEST` pointed at the allocation register until
+ * migration 041400 repointed it. That register is the record of who holds which
+ * physical unit: `asset_id` is NOT NULL and `allocation_number` is NOT NULL and
+ * UNIQUE with no minting trigger, so a REQUEST — which names no unit and has no
+ * number — could not be written to it without inventing both. The new table
+ * names a CATEGORY, which is the thing an employee can actually read.
+ */
+export const ASSET_REQUESTS_TABLE = "asset_requests";
+export const REQUEST_CODE_ASSET_REQUEST = "ASSET_REQUEST";
+
+/** `ck_asr__quantity` — restated so the stepper cannot offer a rejected number. */
+export const ASSET_REQUEST_MAX_QUANTITY = 20;
+
+export interface SubmitAssetRequestInput {
+  readonly employeeId: string;
+  readonly assetCategoryId: string;
+  /** For the title only — the id is what is stored. */
+  readonly assetCategoryName: string;
+  readonly quantity: number;
+  readonly reason: string;
+  readonly neededBy: string | null;
+  readonly isReplacement: boolean;
+  /**
+   * The unit being replaced. `trg_asr__check` verifies it is actually allocated
+   * to this employee, so a stale picker cannot smuggle in someone else's laptop.
+   */
+  readonly replacesAssetId: string | null;
+}
+
+export function submitAssetRequest(
+  input: SubmitAssetRequestInput,
+  signal?: AbortSignal,
+): Promise<{ detailId: string; requestId: string }> {
+  return raiseRequest({
+    table: ASSET_REQUESTS_TABLE,
+    row: {
+      employee_id: input.employeeId,
+      asset_category_id: input.assetCategoryId,
+      quantity: input.quantity,
+      reason: input.reason.trim(),
+      needed_by: input.neededBy,
+      is_replacement: input.isReplacement,
+      /*
+        `ck_asr__replacement_pair` permits a unit id only on a replacement. The
+        checkbox is what the employee sees, so it is the checkbox that decides —
+        clearing the box drops the id rather than leaving a stale one behind to
+        fail the insert.
+      */
+      replaces_asset_id: input.isReplacement ? input.replacesAssetId : null,
+      status: "pending",
+    },
+    requestCode: REQUEST_CODE_ASSET_REQUEST,
+    employeeId: input.employeeId,
+    title: `Asset · ${input.assetCategoryName}${input.quantity > 1 ? ` × ${String(input.quantity)}` : ""}`,
+    summary: {
+      summary: input.reason.trim(),
+      category: input.assetCategoryName,
+      quantity: input.quantity,
+      needed_by: input.neededBy,
+      is_replacement: input.isReplacement,
+    },
+    /*
+      No amount. `assets.purchase_cost_paise` is a property of the UNIT, and no
+      unit is named yet — AC-ASSET is unbanded for exactly this reason (041300),
+      so a figure here would be a number nothing reads.
+    */
+    amountRupees: null,
+    signal,
+  });
+}

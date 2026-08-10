@@ -1,36 +1,43 @@
 /**
- * E-10.4 · /me/apply/asset — "Ask Stores for equipment or a uniform item."
+ * E-10.4 · /me/apply/asset — ask Stores for equipment or a uniform item.
  *
- * The brief for this screen was to raise the request through
- * `public.create_approval_request` with the `ASSET_REQUEST` type. The recon says
- * that call cannot succeed today, for THREE independent reasons, each of which is
- * a fact about the deployed schema rather than an opinion:
+ * ── THREE REASONS THIS SCREEN USED TO REFUSE, AND WHAT BECAME OF THEM ────────
  *
- *  1. NO APPROVAL CHAIN. 046 §3 seeds chains for 11 of the 18 request types and
- *     `ASSET_REQUEST` is not one of them, so `request_types
- *     .default_approval_chain_id` stays NULL and `create_approval_request`
- *     RAISES `no approval chain matches request type ASSET_REQUEST`. The routing
- *     card below reads `approval_chains` for this type and shows the empty
- *     result — that is the proof, not a claim.
- *  2. NO DETAIL ROW TO POINT AT. The type's `detail_table` is
- *     `asset_allocations`, whose `asset_id` is NOT NULL — a request must name a
- *     specific asset UNIT. `assets__self__select` (028 §3b) lets an employee read
- *     an asset only when an allocation already ties it to them, so there is no
- *     catalogue to pick from and no honest way to fill that column.
+ * For most of its life this page offered no form and listed why. All three
+ * reasons were facts about the deployed schema, and all three have now been
+ * answered — by migrations, not by lowering the standard:
+ *
+ *  1. NO APPROVAL CHAIN. ASSET_REQUEST was not among the eleven types 046 seeded
+ *     chains for, so `create_approval_request` raised `no approval chain matches
+ *     request type ASSET_REQUEST`. Migration 041300 seeded `AC-ASSET`:
+ *     reporting manager, then hr_admin. The routing card below still READS
+ *     `approval_chains` rather than describing the route in prose — that is what
+ *     proves it is there, and what will show it gone if anyone deactivates it.
+ *  2. NO DETAIL ROW TO POINT AT. `detail_table` was `asset_allocations`, whose
+ *     `asset_id` is NOT NULL — a request had to name a specific UNIT, and
+ *     `assets__self__select` only lets an employee read units already allocated
+ *     to them. Migration 041400 created `asset_requests`, which names a
+ *     CATEGORY, and repointed the type at it. `asset_categories` is readable by
+ *     every employee (002800 P7), so the picker below is the real register's own
+ *     vocabulary rather than a list invented here.
  *  3. NO SERVER-MINTED REFERENCE. `asset_allocations.allocation_number` is NOT
- *     NULL and UNIQUE with no generating trigger anywhere in the migrations
- *     (contrast `reimbursement_claims`, which has `generate_claim_number()`).
- *     Minting one in the browser is exactly the thing this codebase forbids, so
- *     this screen does not offer an insert at all.
+ *     NULL/UNIQUE with no generating trigger, and minting one in the browser is
+ *     what this codebase forbids. Moot now: `asset_requests` has no number
+ *     column at all — the reference is the approval request number, which
+ *     `create_approval_request` mints server-side.
  *
- * What it shows instead is real and self-scoped: the categories Stores actually
- * stocks (`asset_categories`, readable by every employee), and every allocation
- * already raised for me that has not been handed over yet.
+ * ── WHAT A REQUEST STILL IS NOT ──────────────────────────────────────────────
+ *
+ * An approved request is not an allocation. Stores answers it by handing over a
+ * unit and recording an `asset_allocations` row, and only then does the item
+ * appear under /me/assets. The pipeline grid below reads that register, so an
+ * approved request with nothing in the grid is exactly the honest state: agreed,
+ * not yet issued.
  *
  * @route /me/apply/asset
  */
 import { Link } from "react-router-dom";
-import { LifeBuoy, Package, PackageSearch } from "lucide-react";
+import { Package, PackageSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
@@ -39,7 +46,13 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Notice } from "@/features/admin/components/Notice";
+import { useState } from "react";
 import { t } from "@/shared/i18n/en";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { mutationUserMessage } from "@/shared/api/query";
+import { nowIstDate } from "@/lib/datetime";
+import { ASSET_REQUEST_MAX_QUANTITY } from "../api/simple-requests.api";
 import { dash, formatNumber } from "@/lib/format";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { REQUEST_CODE_ASSET } from "../api/apply-requests.api";
@@ -47,10 +60,12 @@ import type { AssetCategoryRef } from "../api/apply-requests.api";
 import type { PipelineAllocation } from "@/features/assets/api/my-assets.api";
 import {
   useAssetCategories,
+  useMyCustody,
   useMyOpenRequestsOfType,
   useMyPipelineAllocations,
   useRequestRouting,
   useRequestTypeByCode,
+  useSubmitAssetRequest,
 } from "../hooks/useApply";
 import { OpenRequestsGrid } from "../components/OpenRequestsGrid";
 import { RequestRoutingCard } from "../components/RequestRoutingCard";
@@ -144,6 +159,39 @@ export default function AssetRequestPage() {
     },
   ];
 
+  const today = nowIstDate();
+  const custody = useMyCustody("all");
+  const [categoryId, setCategoryId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [reason, setReason] = useState("");
+  const [neededBy, setNeededBy] = useState("");
+  const [isReplacement, setIsReplacement] = useState(false);
+  const [replacesId, setReplacesId] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
+  const sendAsset = useSubmitAssetRequest();
+
+  const categoryOptions = categories.data ?? [];
+  const chosenCategory = categoryOptions.find((c) => c.id === categoryId);
+  const custodyOptions = custody.data ?? [];
+
+  /*
+    Every one of these mirrors a server rule — ck_asr__reason, ck_asr__quantity,
+    ck_asr__replacement_pair, and the needed-by half of trg_asr__check. The
+    server is what enforces them; this is only so the refusal arrives before the
+    round trip rather than after it.
+  */
+  const quantityNumber = Number(quantity);
+  const assetBlockers: string[] = [];
+  if (chosenCategory === undefined) assetBlockers.push(t("apply.asset.blocked.category"));
+  if (!Number.isInteger(quantityNumber) || quantityNumber < 1 || quantityNumber > ASSET_REQUEST_MAX_QUANTITY) {
+    assetBlockers.push(t("apply.asset.blocked.quantity", { max: String(ASSET_REQUEST_MAX_QUANTITY) }));
+  }
+  if (reason.trim().length < 10) assetBlockers.push(t("apply.asset.blocked.reason"));
+  if (neededBy !== "" && neededBy < today) assetBlockers.push(t("apply.asset.blocked.date"));
+  if (isReplacement && custodyOptions.length > 0 && replacesId === "") {
+    assetBlockers.push(t("apply.asset.blocked.replaces"));
+  }
+
   return (
     <div>
       <PageHeader
@@ -158,25 +206,155 @@ export default function AssetRequestPage() {
       />
 
       <div className="space-y-6">
-        <Notice tone="error">
-          <p className="font-medium">{t("apply.asset.gap.title")}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            <li>{t("apply.asset.gap.chain")}</li>
-            <li>{t("apply.asset.gap.catalogue")}</li>
-            <li>{t("apply.asset.gap.number")}</li>
-          </ul>
-        </Notice>
+        {sent !== null ? <Notice tone="success">{t("apply.asset.done")}</Notice> : null}
 
-        <EmptyState
-          icon={LifeBuoy}
-          title={t("apply.asset.alt.title")}
-          hint={t("apply.asset.alt.hint")}
-          action={
-            <Button asChild>
-              <Link to="/me/helpdesk">{t("apply.asset.alt.cta")}</Link>
-            </Button>
-          }
-        />
+        <section className="rounded-lg border bg-card p-4" aria-labelledby="asset-form">
+          <h2 id="asset-form" className="font-display text-lg font-semibold">
+            {t("apply.asset.form.title")}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t("apply.asset.form.hint")}</p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="ar-cat">{t("apply.asset.field.category")}</Label>
+              <select
+                id="ar-cat"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                disabled={categoryOptions.length === 0}
+                className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+              >
+                <option value="">{t("apply.asset.field.category.none")}</option>
+                {categoryOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="ar-qty">{t("apply.asset.field.quantity")}</Label>
+              <Input
+                id="ar-qty"
+                type="number"
+                min={1}
+                max={ASSET_REQUEST_MAX_QUANTITY}
+                step={1}
+                className="mt-1.5 h-11"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="ar-by">{t("apply.asset.field.neededBy")}</Label>
+              <Input
+                id="ar-by"
+                type="date"
+                min={today}
+                className="mt-1.5 h-11"
+                value={neededBy}
+                onChange={(e) => setNeededBy(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">{t("apply.asset.field.neededBy.hint")}</p>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Label htmlFor="ar-reason">{t("apply.asset.field.reason")}</Label>
+            <textarea
+              id="ar-reason"
+              rows={3}
+              maxLength={1000}
+              className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+
+          {/*
+            The replacement pair. `ck_asr__replacement_pair` refuses a unit id
+            without the flag, and `trg_asr__check` refuses a unit that is not in
+            this person's custody — so the picker offers exactly what
+            v_asset_custody returns for them and nothing else.
+          */}
+          <div className="mt-3 rounded-md border bg-muted/30 p-3">
+            <label className="flex items-start gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 rounded border-input"
+                checked={isReplacement}
+                onChange={(e) => {
+                  setIsReplacement(e.target.checked);
+                  if (!e.target.checked) setReplacesId("");
+                }}
+              />
+              <span>
+                <span className="font-medium">{t("apply.asset.field.replacement")}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {t("apply.asset.field.replacement.hint")}
+                </span>
+              </span>
+            </label>
+
+            {isReplacement ? (
+              custodyOptions.length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t("apply.asset.field.replaces.none")}
+                </p>
+              ) : (
+                <div className="mt-2">
+                  <Label htmlFor="ar-replaces">{t("apply.asset.field.replaces")}</Label>
+                  <select
+                    id="ar-replaces"
+                    value={replacesId}
+                    onChange={(e) => setReplacesId(e.target.value)}
+                    className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="">{t("apply.asset.field.replaces.pick")}</option>
+                    {custodyOptions.map((row) => (
+                      <option key={row.allocation_id} value={row.asset_id}>
+                        {row.asset_name} · {row.asset_tag}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
+            ) : null}
+          </div>
+
+          {sendAsset.isError ? (
+            <div className="mt-3"><Notice tone="error">{mutationUserMessage(sendAsset.error)}</Notice></div>
+          ) : null}
+
+          {assetBlockers.length > 0 ? (
+            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <p className="font-medium">{t("apply.asset.blocked.title")}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {assetBlockers.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          <Button
+            className="mt-4 w-full"
+            disabled={assetBlockers.length > 0 || sendAsset.isPending}
+            onClick={() => {
+              if (assetBlockers.length > 0 || chosenCategory === undefined) return;
+              sendAsset.mutate(
+                {
+                  assetCategoryId: chosenCategory.id,
+                  assetCategoryName: chosenCategory.name,
+                  quantity: Number(quantity),
+                  reason,
+                  neededBy: neededBy === "" ? null : neededBy,
+                  isReplacement,
+                  replacesAssetId: replacesId === "" ? null : replacesId,
+                },
+                { onSuccess: (r) => { setSent(r.requestId); setReason(""); } },
+              );
+            }}
+          >
+            {sendAsset.isPending ? t("apply.asset.sending") : t("apply.asset.send")}
+          </Button>
+        </section>
 
         {/* ── What Stores stocks ──────────────────────────────────────────── */}
         <section aria-labelledby="asset-categories">

@@ -67,8 +67,28 @@ import { keysHrWorkforce } from "./keys/hr-workforce";
 import { keysHrMovement } from "./keys/hr-movement";
 import { keysAnalyticsLive } from "./keys/analytics-live";
 
+/**
+ * Keep the key set exact, widen every value to `string`.
+ *
+ * `as const` used to sit at the bottom of this object. It made each of the
+ * ~11,000 values its own string literal type, which meant the declaration TypeScript
+ * writes for `en` contained the entire English text of the product — and past a
+ * certain size the compiler refuses to serialize it at all (TS7056: "the
+ * inferred type of this node exceeds the maximum length the compiler will
+ * serialize"). Adding a key to a screen would fail the build somewhere else
+ * entirely, for a reason with nothing to do with the key.
+ *
+ * Nothing ever needed the values to be literal types. `t()` returns `string`,
+ * every caller uses it as `string`, and what must stay exact is the KEY set —
+ * that is what makes `t("typo.here")` a compile error. The mapped return type
+ * below keeps exactly that and throws away the rest.
+ */
+function catalogue<T extends Record<string, string>>(entries: T): { readonly [K in keyof T]: string } {
+  return entries;
+}
+
 // Per-screen catalogues, each owned by exactly one author (see keys/*.ts).
-export const en = {
+export const en = catalogue({
   ...keysLeaveAdmin,
   ...keysKioskAdmin,
   ...keysOrgAdmin,
@@ -10281,13 +10301,15 @@ export const en = {
   // §E-10.4 · /me/apply/asset -------------------------------------------------
   "apply.asset.title": "Asset request",
   "apply.asset.subtitle": "Ask Stores for equipment or a uniform item.",
-  "apply.asset.gap.title": "An asset request cannot be raised from here yet",
-  "apply.asset.gap.chain": "No approval route is configured for asset requests, so the server would refuse it outright.",
-  "apply.asset.gap.catalogue": "A request has to name one specific item, and you can only read items already issued to you — there is no catalogue to choose from.",
-  "apply.asset.gap.number": "Allocation numbers are not issued by the server for this record, and this app will not invent a reference.",
-  "apply.asset.alt.title": "Ask Stores directly",
-  "apply.asset.alt.hint": "A help desk ticket to the Stores queue reaches the same team, with a service-level clock you can watch.",
-  "apply.asset.alt.cta": "Raise a Stores ticket",
+  /*
+    Shown only when `approval_chains` comes back empty for this type — which,
+    since migration 041300 seeded AC-ASSET, means somebody has deactivated it
+    rather than that the feature was never built. The three sibling gap keys
+    (.title, .catalogue, .number) were deleted with the notice they explained:
+    041400 gave the type its own detail table, so a request no longer has to name
+    a unit or carry an allocation number.
+  */
+  "apply.asset.gap.chain": "No active approval route is configured for asset requests right now, so the server will refuse this. Tell an administrator — AC-ASSET should be active.",
   "apply.asset.cats.title": "What Stores stocks",
   "apply.asset.cats.hint": "The venue's asset categories, as configured. Quote the category when you raise a ticket.",
   "apply.asset.cats.empty.title": "No asset categories are configured",
@@ -10861,7 +10883,7 @@ export const en = {
   "helpdesk.today.apply": "Apply for something",
   "helpdesk.today.policies": "Read a policy",
   "helpdesk.today.approvals": "See what's waiting on you",
-} as const;
+});
 
 export type MessageKey = keyof typeof en;
 

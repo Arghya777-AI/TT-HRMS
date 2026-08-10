@@ -20,15 +20,18 @@ export const keysMeApply = {
   "apply.travel.title": "Travel requisition",
   "apply.travel.subtitle": "Trip request with advance and estimated cost.",
 
-  "apply.travel.gap.title": "A travel requisition cannot be filed yet",
-  "apply.travel.gap.table":
-    "The request type points at a table called travel_requisitions, and no migration creates it — the name exists only inside a CHECK constraint and the seed row. Every approval request must name a detail row, so there is nothing for this one to point at.",
+  /*
+    Shown only when `approval_chains` comes back empty for this type — which,
+    since migration 041100 seeded AC-TRAVEL, means somebody has deactivated it
+    rather than that the feature was never built. Worded as a live fault to
+    report, not as a permanent gap to accept.
+  */
   "apply.travel.gap.chain":
-    "No approval chain is configured for Travel Requisition, so the workflow engine has nobody to route the trip to and refuses the request outright.",
+    "No active approval chain is configured for Travel Requisition right now, so the workflow engine has nobody to route the trip to and will refuse the request. Tell an administrator — AC-TRAVEL should be active.",
 
-  "apply.travel.alt.title": "Your trip still gets reimbursed",
+  "apply.travel.alt.title": "Claim the money once the trip is done",
   "apply.travel.alt.hint":
-    "Travel is one of the nine claim heads the expense table already accepts. Book the trip the way you do today, keep the receipts, and claim it back under Travel — that request is real, routed and tracked.",
+    "An approved requisition is permission to travel, not a payment. Keep the receipts, and once you are back claim the actual spend under Travel — it can now be settled against this trip rather than filed loose.",
   "apply.travel.alt.cta": "Claim travel expense",
 
   "apply.travel.caps.title": "Three figures this screen will not make up",

@@ -18,7 +18,16 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
-import { submitResignation, type SubmitResignationInput } from "../api/simple-requests.api";
+import {
+  submitAssetRequest,
+  submitDocumentRequest,
+  submitResignation,
+  submitTravelRequisition,
+  type SubmitAssetRequestInput,
+  type SubmitDocumentRequestInput,
+  type SubmitResignationInput,
+  type SubmitTravelInput,
+} from "../api/simple-requests.api";
 import {
   submitWebPunchRequest,
   type SubmittedWebPunch,
@@ -273,6 +282,63 @@ export function useSubmitResignation(): UseMutationResult<
   return useMutation({
     mutationFn: (input: Omit<SubmitResignationInput, "employeeId">) =>
       submitResignation({ ...input, employeeId: requireEmployeeId(employeeId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
+  });
+}
+
+/** Raise a travel requisition. */
+export function useSubmitTravelRequisition(): UseMutationResult<
+  { detailId: string; requestId: string },
+  Error,
+  Omit<SubmitTravelInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitTravelInput, "employeeId">) =>
+      submitTravelRequisition({ ...input, employeeId: requireEmployeeId(employeeId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
+  });
+}
+
+/** Raise a document or payslip request. Routed by kind — see the api module. */
+export function useSubmitDocumentRequest(): UseMutationResult<
+  { detailId: string; requestId: string },
+  Error,
+  Omit<SubmitDocumentRequestInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitDocumentRequestInput, "employeeId">) =>
+      submitDocumentRequest({ ...input, employeeId: requireEmployeeId(employeeId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
+  });
+}
+
+/** Raise an asset request against a category Stores actually stocks. */
+export function useSubmitAssetRequest(): UseMutationResult<
+  { detailId: string; requestId: string },
+  Error,
+  Omit<SubmitAssetRequestInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitAssetRequestInput, "employeeId">) =>
+      submitAssetRequest({ ...input, employeeId: requireEmployeeId(employeeId) }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.apply.all });
       void client.invalidateQueries({ queryKey: qk.approvals.all });

@@ -18,6 +18,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { submitResignation, type SubmitResignationInput } from "../api/simple-requests.api";
 import {
   submitWebPunchRequest,
   type SubmittedWebPunch,
@@ -253,6 +254,25 @@ export function useSubmitWebPunchRequest(): UseMutationResult<
   return useMutation({
     mutationFn: (input: Omit<SubmitWebPunchInput, "employeeId">) =>
       submitWebPunchRequest({ ...input, employeeId: requireEmployeeId(employeeId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
+  });
+}
+
+/** Raise a resignation. Same invalidation reasoning as every other request. */
+export function useSubmitResignation(): UseMutationResult<
+  { detailId: string; requestId: string },
+  Error,
+  Omit<SubmitResignationInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitResignationInput, "employeeId">) =>
+      submitResignation({ ...input, employeeId: requireEmployeeId(employeeId) }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.apply.all });
       void client.invalidateQueries({ queryKey: qk.approvals.all });

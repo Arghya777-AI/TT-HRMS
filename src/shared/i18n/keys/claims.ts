@@ -133,4 +133,32 @@ export const keysClaims = {
   "apply.webpunch.blocked.when": "Give the time you punched.",
   "apply.webpunch.blocked.future": "A punch cannot be dated in the future.",
   "apply.webpunch.blocked.reason": "Explain why it was not at the gate, in at least ten characters.",
+
+  // ── Resignation (migration 040800 gave it a table; this is the form) ────────
+  "apply.resign.form.title": "File your resignation",
+  "apply.resign.form.hint":
+    "It goes to your reporting manager, then to HR. Your notice period is the one on your employment record.",
+  "apply.resign.field.lastDay": "Intended last working day",
+  "apply.resign.field.lastDay.hint": "Your notice period is {days} days.",
+  "apply.resign.field.category": "Main reason",
+  "apply.resign.field.reason": "In your own words",
+  "apply.resign.field.reason.hint": "At least ten characters. Your manager and HR read this.",
+  "apply.resign.category.better_opportunity": "A better opportunity",
+  "apply.resign.category.higher_studies": "Higher studies",
+  "apply.resign.category.relocation": "Relocating",
+  "apply.resign.category.health": "Health",
+  "apply.resign.category.family": "Family",
+  "apply.resign.category.compensation": "Compensation",
+  "apply.resign.category.work_environment": "Work environment",
+  "apply.resign.category.career_change": "Change of career",
+  "apply.resign.category.personal": "Personal",
+  "apply.resign.category.other": "Something else",
+  "apply.resign.send": "File the resignation",
+  "apply.resign.sending": "Filing…",
+  "apply.resign.done": "Filed. It is with your manager now.",
+  "apply.resign.blocked.title": "Before you can file this",
+  "apply.resign.blocked.past": "The last working day cannot be in the past.",
+  "apply.resign.blocked.reason": "Say why, in at least ten characters.",
+  "apply.resign.blocked.notice":
+    "Your notice period is not on your record yet — ask HR to set it before filing.",
 } as const;

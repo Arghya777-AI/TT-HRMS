@@ -50,7 +50,13 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Notice } from "@/features/admin/components/Notice";
 import { EMPLOYMENT_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS } from "@/features/admin/api/employees.api";
 import { EXIT_TYPE_LABELS, LIFECYCLE_EVENT_LABELS } from "@/features/admin/api/lifecycle.api";
-import { t } from "@/shared/i18n/en";
+import { useState } from "react";
+import { type MessageKey, t } from "@/shared/i18n/en";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { mutationUserMessage } from "@/shared/api/query";
+import { resignationReasonValues, type ResignationReason } from "../api/simple-requests.api";
+import { useSubmitResignation } from "../hooks/useApply";
 import { dash, formatNumber } from "@/lib/format";
 import { addIstDays, fmtCivilDateWeekday, fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { REQUEST_CODE_RESIGNATION, type LifecycleEvent } from "../api/apply-forms.api";
@@ -156,6 +162,17 @@ export default function ResignationPage() {
     },
   ];
 
+  const [lastDay, setLastDay] = useState<string>(today);
+  const [category, setCategory] = useState<ResignationReason>("better_opportunity");
+  const [reason, setReason] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
+  const send = useSubmitResignation();
+
+  const resignBlockers: string[] = [];
+  if (lastDay < today) resignBlockers.push(t("apply.resign.blocked.past"));
+  if (reason.trim().length < 10) resignBlockers.push(t("apply.resign.blocked.reason"));
+  if (noticeDays === null) resignBlockers.push(t("apply.resign.blocked.notice"));
+
   return (
     <div>
       <PageHeader
@@ -171,14 +188,102 @@ export default function ResignationPage() {
 
       <div className="space-y-6">
         {/* ── The blocking facts, named ───────────────────────────────────── */}
-        <Notice tone="error">
-          <p className="font-medium">{t("apply.resign.gap.title")}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            <li>{t("apply.resign.gap.table")}</li>
-            <li>{t("apply.resign.gap.chain")}</li>
-            <li>{t("apply.resign.gap.clearance")}</li>
-          </ul>
-        </Notice>
+        {/*
+          The gap notice that stood here said a resignation could not be filed
+          because `resignations` did not exist and no chain was configured. Both
+          were true; migration 040800 created the table and seeded AC-RESIGN.
+        */}
+        {sent !== null ? (
+          <Notice tone="success">{t("apply.resign.done")}</Notice>
+        ) : null}
+
+        <section className="rounded-lg border bg-card p-4" aria-labelledby="resign-form">
+          <h2 id="resign-form" className="font-display text-lg font-semibold">
+            {t("apply.resign.form.title")}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t("apply.resign.form.hint")}</p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="rg-last">{t("apply.resign.field.lastDay")}</Label>
+              <Input
+                id="rg-last"
+                type="date"
+                min={today}
+                className="mt-1.5 h-11"
+                value={lastDay}
+                onChange={(e) => setLastDay(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("apply.resign.field.lastDay.hint", { days: String(noticeDays ?? 30) })}
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="rg-why">{t("apply.resign.field.category")}</Label>
+              <select
+                id="rg-why"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as ResignationReason)}
+                className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {resignationReasonValues.map((v) => (
+                  <option key={v} value={v}>{t(`apply.resign.category.${v}` as MessageKey)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Label htmlFor="rg-reason">{t("apply.resign.field.reason")}</Label>
+            <textarea
+              id="rg-reason"
+              rows={3}
+              maxLength={1000}
+              className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">{t("apply.resign.field.reason.hint")}</p>
+          </div>
+
+          {send.isError ? (
+            <div className="mt-3"><Notice tone="error">{mutationUserMessage(send.error)}</Notice></div>
+          ) : null}
+
+          {resignBlockers.length > 0 ? (
+            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <p className="font-medium">{t("apply.resign.blocked.title")}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {resignBlockers.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          <Button
+            className="mt-4 w-full"
+            disabled={resignBlockers.length > 0 || send.isPending}
+            onClick={() => {
+              if (resignBlockers.length > 0 || noticeDays === null) return;
+              send.mutate(
+                {
+                  /*
+                    The notice period comes from `employees.notice_period_days`,
+                    never from anything typed here. It is the figure the contract
+                    is written against, and `trg_resign__notice` checks the last
+                    working day against it server-side.
+                  */
+                  noticePeriodDays: noticeDays,
+                  intendedLastWorkingDay: lastDay,
+                  reasonCategory: category,
+                  reason,
+                },
+                { onSuccess: (r) => { setSent(r.requestId); setReason(""); } },
+              );
+            }}
+          >
+            {send.isPending ? t("apply.resign.sending") : t("apply.resign.send")}
+          </Button>
+        </section>
 
         {/* ── How a resignation is actually recorded here ──────────────────── */}
         <EmptyState

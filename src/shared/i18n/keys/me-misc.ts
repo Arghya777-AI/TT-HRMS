@@ -18,8 +18,14 @@ export const keysMeMisc = {
   "meTicket.title": "Ticket",
   "meTicket.subtitle": "The conversation on this request, and the clock the approver is answering against.",
   "meTicket.back": "All my requests",
+  /*
+    Reworded once helpdesk_tickets landed (migration 041500). The old copy said
+    no ticket table existed anywhere, which stopped being true; what is still
+    true — and is the only thing a reader of THIS page needs — is that a request
+    is not a ticket.
+  */
   "meTicket.source":
-    "There is no ticket table in this database — no helpdesk_tickets, no ticket_messages, no ticket_slas. What this screen opens is the thing that IS deployed and that carries a conversation and a service-level clock: the request you raised, its approval thread, and the SLA hours its request type sets. Nothing here is renamed to look like a help-desk queue.",
+    "This is a request you raised, not a help desk ticket — it has an approver and a decision rather than an assignee and a conversation. The clock below is the SLA its request type sets. Your help desk tickets are on the Help desk page.",
   "meTicket.notFound.title": "No thread with this reference",
   "meTicket.notFound.hint":
     "Either the reference is wrong, or the request belongs to someone else — row-level security only returns requests you raised or that name you as the subject.",

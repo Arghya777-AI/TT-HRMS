@@ -216,7 +216,20 @@ export const qk = {
     inbox: () => ["approvals", "inbox"] as const,
   },
   policies: domainKeys("policies"),
-  helpdesk: domainKeys("helpdesk"),
+  helpdesk: {
+    ...domainKeys("helpdesk"),
+    /*
+      TWO DIFFERENT OBJECTS LIVE UNDER THIS DOMAIN, and they must not share a
+      key. `detail(id)` is a REQUEST THREAD — an `approval_requests` row read by
+      `/me/helpdesk/:id`, keyed by uuid or request number. The two below are the
+      `helpdesk_tickets` queue (migration 041500), which has an assignee and a
+      conversation rather than an approver and a decision. Both are keyed by a
+      uuid, so `detail()` for one would silently collide with `detail()` for the
+      other the day the same id appeared twice.
+    */
+    myTickets: () => ["helpdesk", "tickets"] as const,
+    ticketMessages: (ticketId: string) => ["helpdesk", "tickets", ticketId, "messages"] as const,
+  },
   holidays: domainKeys("holidays"),
   notifications: {
     ...domainKeys("notifications"),

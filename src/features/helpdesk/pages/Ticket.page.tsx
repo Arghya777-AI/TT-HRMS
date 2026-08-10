@@ -2,14 +2,18 @@
  * E-14 · /me/helpdesk/:id — one thread: what was asked, who it is with, the
  * clock it is being answered against, and every word said on it.
  *
- * WHY THIS IS NOT A TICKET SCREEN, AND SAYS SO. `tickets`, `ticket_messages`,
- * `ticket_slas` and `ticket_queues` do not exist in this database (see the gap
- * page at `/me/helpdesk`, and the header of `../api/ticket.api.ts` for the probe).
- * The route promises "the conversation and its service-level clock", and exactly
- * one deployed object has both: the request the employee raised. So this screen
- * opens THAT, names it a request, and states in a banner that the ticket tables
- * are absent. Nothing is relabelled: no ticket number is minted, no queue is
- * implied, and no "0 open tickets" tile pretends a queue exists and is empty.
+ * WHY THIS IS NOT THE TICKET QUEUE. This route opens an APPROVAL REQUEST — what
+ * was asked, who it is with, its SLA clock, and the trail. `helpdesk_tickets`
+ * and `helpdesk_messages` now exist (migration 041500) and are listed on
+ * `/me/helpdesk`, but they are a different object: a ticket has an assignee and
+ * a conversation, a request has an approver and a decision. This screen renders
+ * the second and calls it a request. Nothing is relabelled: no ticket number is
+ * minted here and no queue is implied.
+ *
+ * (When this was written NO ticket table existed at all, and the banner below
+ * said so. That sentence is now wrong and has been removed from the copy — a
+ * page that keeps apologising for a gap somebody closed teaches people to
+ * ignore its warnings.)
  *
  * WHAT IS REAL AND WRITABLE HERE. The reply box is not decoration:
  * `public.act_on_approval` accepts `comment` from the subject of a request and

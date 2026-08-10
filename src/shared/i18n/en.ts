@@ -10864,20 +10864,13 @@ export const en = catalogue({
   // ---------------------------------------------------------------------------
   "helpdesk.title": "Help desk",
   "helpdesk.subtitle": "Raise a ticket to HR, Payroll, Stores or IT.",
-  "helpdesk.gap.notice":
-    "The ticket table isn't in the database yet, so nothing on this page can pretend to be your queue. The API answers 404 for helpdesk_tickets — this screen says so rather than showing approval rows under a ticket heading.",
-  "helpdesk.gap.title": "Tickets aren't switched on yet",
-  "helpdesk.gap.hint":
-    "Until they are, anything that needs a decision goes through Apply — those requests are real, routed and tracked.",
-  "helpdesk.gap.applyAction": "Raise a request instead",
-  "helpdesk.gap.footnote":
-    "Nothing you have sent has been lost: no ticket has ever been created here, because there has never been anywhere to put one.",
-  "helpdesk.whenReady.title": "What this page will do",
-  "helpdesk.whenReady.hint": "The moment the ticket tables land, and not a screen before.",
-  "helpdesk.whenReady.item1": "Raise a ticket against HR, Payroll, Stores or IT with attachments.",
-  "helpdesk.whenReady.item2": "Track its service-level clock — time to first reply, time to close.",
-  "helpdesk.whenReady.item3": "Read the whole conversation, including what the desk wrote back.",
-  "helpdesk.whenReady.item4": "Reopen a ticket that was closed too early, with your reason.",
+  "helpdesk.whenReady.title": "How a ticket works",
+  "helpdesk.whenReady.hint": "Two clocks, one conversation, and nothing hidden from you.",
+  "helpdesk.whenReady.item1": "It goes to the desk you choose — HR, Payroll, Stores or IT.",
+  "helpdesk.whenReady.item2": "Two clocks run: time to first reply, and time to close. Late ones are flagged in the list.",
+  "helpdesk.whenReady.item3": "Every reply is on the ticket. You get the whole conversation, not a summary of it.",
+  "helpdesk.whenReady.item4": "Resolved too early? Reopen it — that is counted, so the desk sees it happening.",
+  "helpdesk.whenReady.item5": "Attachments are not in yet: files have no ticket to hang off, so nothing on this page offers one.",
   "helpdesk.today.title": "What works today",
   "helpdesk.today.hint": "Real screens, backed by tables that exist.",
   "helpdesk.today.apply": "Apply for something",

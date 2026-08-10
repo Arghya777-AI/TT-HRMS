@@ -18,6 +18,11 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import {
+  submitWebPunchRequest,
+  type SubmittedWebPunch,
+  type SubmitWebPunchInput,
+} from "../api/web-punch-submit.api";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import {
@@ -228,5 +233,30 @@ export function useMyPipelineAllocations(): UseQueryResult<PipelineAllocation[],
     queryFn: ({ signal }) => fetchMyPipelineAllocations(requireEmployeeId(employeeId), signal),
     enabled: employeeId !== null,
     retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Raise a web-punch request.
+ *
+ * Invalidates the whole `apply` domain: one submit changes this screen's own
+ * list and the launcher's open-request grid. Nothing is patched optimistically —
+ * the request number is minted by the server and only the server can report it.
+ */
+export function useSubmitWebPunchRequest(): UseMutationResult<
+  SubmittedWebPunch,
+  Error,
+  Omit<SubmitWebPunchInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitWebPunchInput, "employeeId">) =>
+      submitWebPunchRequest({ ...input, employeeId: requireEmployeeId(employeeId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
   });
 }

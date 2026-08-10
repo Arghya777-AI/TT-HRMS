@@ -111,4 +111,26 @@ export const keysClaims = {
   "claim.noManager.title": "{n} employees have no reporting manager",
   "claim.noManager.hint":
     "Their claims skip the manager check and go straight to an administrator. Set a reporting manager on each record to route them properly.",
+
+  // ── Web punch (migration 040900 gave it a table; this is the form) ──────────
+  "apply.webpunch.form.title": "Ask for a punch to be recorded",
+  "apply.webpunch.form.hint":
+    "For a shift you worked away from the gate. Your manager sees the time you give and the reason.",
+  "apply.webpunch.field.when": "When you punched",
+  "apply.webpunch.field.direction": "In or out",
+  "apply.webpunch.field.reason": "Why it was not at the gate",
+  "apply.webpunch.field.reason.placeholder":
+    "At the Coorg site all day for the handover; no camera there.",
+  "apply.webpunch.field.reason.hint": "At least ten characters. Your approver reads this first.",
+  "apply.webpunch.direction.in": "Punch in",
+  "apply.webpunch.direction.out": "Punch out",
+  "apply.webpunch.direction.break_start": "Break start",
+  "apply.webpunch.direction.break_end": "Break end",
+  "apply.webpunch.send": "Send the request",
+  "apply.webpunch.sending": "Sending…",
+  "apply.webpunch.done": "Sent. It is with your approver now and appears below.",
+  "apply.webpunch.blocked.title": "Before you can send this",
+  "apply.webpunch.blocked.when": "Give the time you punched.",
+  "apply.webpunch.blocked.future": "A punch cannot be dated in the future.",
+  "apply.webpunch.blocked.reason": "Explain why it was not at the gate, in at least ten characters.",
 } as const;

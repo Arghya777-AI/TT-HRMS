@@ -25,6 +25,7 @@
  *
  * @route /me/apply/web-punch
  */
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ClipboardList, ScanFace, ShieldCheck, ShieldX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -33,13 +34,22 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { Notice } from "@/features/admin/components/Notice";
-import { t } from "@/shared/i18n/en";
+import { type MessageKey, t } from "@/shared/i18n/en";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { mutationUserMessage } from "@/shared/api/query";
+import { nowIstDate } from "@/lib/datetime";
+import {
+  webPunchDirectionValues,
+  type WebPunchDirection,
+} from "../api/web-punch-submit.api";
 import { dash } from "@/lib/format";
 import { REQUEST_CODE_WEB_PUNCH } from "../api/apply-requests.api";
 import {
   useMyOpenRequestsOfType,
   useRequestRouting,
   useRequestTypeByCode,
+  useSubmitWebPunchRequest,
   useWebPunchEntitlement,
 } from "../hooks/useApply";
 import { OpenRequestsGrid } from "../components/OpenRequestsGrid";
@@ -85,6 +95,23 @@ export default function WebPunchRequestPage() {
 
   const policy = entitlement.data?.policy ?? null;
 
+  const today = nowIstDate();
+  const [when, setWhen] = useState<string>(`${today}T09:00`);
+  const [direction, setDirection] = useState<WebPunchDirection>("in");
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const submit = useSubmitWebPunchRequest();
+
+  /*
+    Mirrors the CHECKs the table already enforces, so the refusal arrives before
+    the round trip rather than after it. `ck_wpr__not_future` and
+    `ck_wpr__employee_reason` are the rules; these are the courtesy.
+  */
+  const blockers: string[] = [];
+  if (when.trim() === "") blockers.push(t("apply.webpunch.blocked.when"));
+  else if (when.slice(0, 10) > today) blockers.push(t("apply.webpunch.blocked.future"));
+  if (reason.trim().length < 10) blockers.push(t("apply.webpunch.blocked.reason"));
+
   return (
     <div>
       <PageHeader
@@ -99,14 +126,116 @@ export default function WebPunchRequestPage() {
       />
 
       <div className="space-y-6">
-        {/* ── The blocking facts, named ───────────────────────────────────── */}
-        <Notice tone="error">
-          <p className="font-medium">{t("apply.webpunch.gap.title")}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            <li>{t("apply.webpunch.gap.table")}</li>
-            <li>{t("apply.webpunch.gap.chain")}</li>
-          </ul>
-        </Notice>
+        {/*
+          The gap notice that stood here — "the request type points at a server
+          record called web_punch_requests, and that table has not been created"
+          — was true when it was written and is not any more. Migration 040900
+          creates the table and seeds chain AC-WEBPUNCH, so the form below is the
+          part that was missing rather than the explanation.
+        */}
+        {submitted !== null ? (
+          <Notice tone="success">{t("apply.webpunch.done")}</Notice>
+        ) : null}
+
+        <section className="rounded-lg border bg-card p-4" aria-labelledby="webpunch-form">
+          <h2 id="webpunch-form" className="font-display text-lg font-semibold">
+            {t("apply.webpunch.form.title")}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {t("apply.webpunch.form.hint")}
+          </p>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="wp-when">{t("apply.webpunch.field.when")}</Label>
+              <Input
+                id="wp-when"
+                type="datetime-local"
+                max={`${today}T23:59`}
+                className="mt-1.5 h-11"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="wp-direction">{t("apply.webpunch.field.direction")}</Label>
+              <select
+                id="wp-direction"
+                value={direction}
+                onChange={(e) => setDirection(e.target.value as WebPunchDirection)}
+                className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {webPunchDirectionValues.map((value) => (
+                  <option key={value} value={value}>
+                    {t(`apply.webpunch.direction.${value}` as MessageKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <Label htmlFor="wp-reason">{t("apply.webpunch.field.reason")}</Label>
+            <textarea
+              id="wp-reason"
+              rows={3}
+              maxLength={500}
+              className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={t("apply.webpunch.field.reason.placeholder")}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("apply.webpunch.field.reason.hint")}
+            </p>
+          </div>
+
+          {submit.isError ? (
+            <div className="mt-3">
+              {/*
+                The server's own sentence. `trg_wpr__entitlement` and the CHECKs
+                refuse with wording written for the person reading it, so nothing
+                is re-phrased here.
+              */}
+              <Notice tone="error">{mutationUserMessage(submit.error)}</Notice>
+            </div>
+          ) : null}
+
+          {blockers.length > 0 ? (
+            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <p className="font-medium">{t("apply.webpunch.blocked.title")}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {blockers.map((b) => <li key={b}>{b}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          <Button
+            className="mt-4 w-full"
+            disabled={blockers.length > 0 || submit.isPending}
+            onClick={() => {
+              if (blockers.length > 0) return;
+              submit.mutate(
+                {
+                  /*
+                    The employee typed an IST wall-clock time, so it is sent as
+                    one: `+05:30` appended, parsed by Postgres into timestamptz.
+                    `new Date(when).toISOString()` would have read the string in
+                    the BROWSER's zone and shifted every punch — lint refused it,
+                    correctly. No date arithmetic happens here at all.
+                  */
+                  requestedPunchAt: `${when}:00+05:30`,
+                  istDate: when.slice(0, 10),
+                  direction,
+                  reason,
+                },
+                { onSuccess: (r) => { setSubmitted(r.requestId); setReason(""); } },
+              );
+            }}
+          >
+            {submit.isPending ? t("apply.webpunch.sending") : t("apply.webpunch.send")}
+          </Button>
+        </section>
 
         {/* ── Am I entitled at all? ───────────────────────────────────────── */}
         <section aria-labelledby="webpunch-entitlement">

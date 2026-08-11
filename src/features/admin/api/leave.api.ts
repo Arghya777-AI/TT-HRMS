@@ -122,11 +122,17 @@ export const leaveTypeSchema = z.object({
   max_encashment_days: dbNumericNullable,
   min_days_per_request: dbNumericNullable,
   max_days_per_request: dbNumericNullable,
-  /** 041600 — the ceiling for one calendar month, across every request. */
-  max_days_per_month: dbNumericNullable,
+  /*
+    041600's two columns, optional for the same reason the employee-side schema
+    makes them optional: a database that has not had the migration applied yet
+    must degrade, not blank the Leave Type Master. `fetchLeaveTypeRulebook`
+    selects `*`, so a missing column simply does not arrive.
+  */
+  max_days_per_month: dbNumericNullable.optional().default(null),
   max_consecutive_days: dbNumericNullable,
-  /** 041600 — does an employee have to say why? True for Sick Leave. */
-  requires_reason: z.boolean(),
+  /* `true` when absent, matching the pre-041600 rule: ck_lr__reason demanded a
+     reason from every type, so that is what an un-migrated database enforces. */
+  requires_reason: z.boolean().optional().default(true),
   min_notice_days: dbIntNullable,
   max_backdated_days: dbIntNullable,
   requires_document_after_days: dbNumericNullable,

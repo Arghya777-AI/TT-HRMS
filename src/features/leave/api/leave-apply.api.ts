@@ -118,22 +118,43 @@ export const leaveTypeRuleSchema = z.object({
    * the allocation form never names a code.
    */
   allows_combination: z.boolean(),
-  /** 041600 — reason mandatory for this type (Sick Leave). */
-  requires_reason: z.boolean(),
-  /** 041600 — ceiling per calendar month, across every request. */
-  max_days_per_month: dbNumericNullable,
+  /*
+    ── THE TWO 041600 COLUMNS ARE OPTIONAL, AND THAT IS DELIBERATE ────────────
+
+    A deployment's database can be BEHIND its browser — the code ships to Vercel
+    the moment it is pushed, and a migration is applied by hand afterwards. When
+    these two were required, the whole apply screen died on
+    "column leave_types.requires_reason does not exist": PostgREST refuses the
+    entire query if one name in the select list is unknown, so one pending
+    migration took out every leave type, every balance and the form.
+
+    Optional with a default means the screen degrades to the OLD behaviour
+    instead of to a red box, and picks up the real values the moment the
+    migration lands — with no second deploy.
+
+    THE DEFAULT IS `true`, NOT `false`, AND THAT IS THE WHOLE POINT. A database
+    without this column is a database that still carries `ck_lr__reason`, which
+    demands ten characters on EVERY leave request. Defaulting to "no reason
+    needed" would produce a form that cheerfully submits and a server that
+    refuses it — worse than the error box, because the employee would have typed
+    the whole application first. The absent column means the old rule, so the old
+    rule is what the form asks for.
+
+    This is also why the read below no longer names its columns. An explicit
+    list cannot express "this one if you have it".
+  */
+  requires_reason: z.boolean().optional().default(true),
+  max_days_per_month: dbNumericNullable.optional().default(null),
 });
 
 export type LeaveTypeRule = z.infer<typeof leaveTypeRuleSchema>;
 
-const LEAVE_TYPE_RULE_COLUMNS =
-  "id, code, name, description, sort_order, is_paid, is_comp_off, unit, allow_half_day, " +
-  "min_days_per_request, max_days_per_request, max_consecutive_days, min_notice_days, " +
-  "max_backdated_days, requires_document_after_days, availing_allowed_during_probation, " +
-  "allow_negative_balance, max_negative_days, count_weekly_off_as_leave, " +
-  "count_holiday_as_leave, min_service_months, max_times_in_service, " +
-  "applies_to_employment_types, gender_restriction, colour_hex, allows_combination, " +
-  "requires_reason, max_days_per_month";
+/*
+  No explicit column list, on purpose — see the note on `requires_reason` above.
+  `leave_types` is a dozen rows of configuration read once and cached for five
+  minutes, so the handful of extra columns costs nothing, and the schema above is
+  still what decides which of them this module can see.
+*/
 
 /** Active leave types, in the order the admin console assigned them. */
 export async function fetchLeaveTypeRules(signal?: AbortSignal): Promise<LeaveTypeRule[]> {
@@ -144,7 +165,6 @@ export async function fetchLeaveTypeRules(signal?: AbortSignal): Promise<LeaveTy
       { column: "code", ascending: true },
     ],
     limit: 50,
-    columns: LEAVE_TYPE_RULE_COLUMNS,
     ...(signal ? { signal } : {}),
   });
 }

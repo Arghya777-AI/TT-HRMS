@@ -35,6 +35,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { useAuth } from "@/app/auth/AuthProvider";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery, type Cursor, type Page } from "@/shared/api/query";
 import {
   useAuditedMutation,
@@ -42,6 +43,8 @@ import {
 } from "@/shared/hooks/useAuditedMutation";
 import {
   BREACH_ID_CAP,
+  DECIDED_BY_ME_CAP,
+  fetchRequestIdsDecidedBy,
   countApprovalChains,
   countApprovalRequests,
   countApprovalSlaRows,
@@ -240,6 +243,24 @@ export function useOpenBreachRequestIds(): UseQueryResult<string[], Error> {
     queryKey: [...SLA_KEY, "open-breach-ids", BREACH_ID_CAP],
     queryFn: ({ signal }) => fetchOpenBreachRequestIds(BREACH_ID_CAP, signal),
     refetchInterval: WORKFLOW_REFETCH_MS,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Every request the signed-in approver has acted on.
+ *
+ * Keyed by the PROFILE id, because `approval_actions.actor_id` is a profile —
+ * the same person's employee id answers "waiting on me", and mixing the two is
+ * how a slice silently returns nothing.
+ */
+export function useRequestIdsDecidedByMe(): UseQueryResult<string[], Error> {
+  const { user } = useAuth();
+  const profileId = user?.id ?? null;
+  return useQuery({
+    queryKey: [...SLA_KEY, "decided-by-me", profileId ?? "none", DECIDED_BY_ME_CAP],
+    queryFn: ({ signal }) => fetchRequestIdsDecidedBy(profileId ?? "", signal),
+    enabled: profileId !== null,
     retry: shouldRetryQuery,
   });
 }

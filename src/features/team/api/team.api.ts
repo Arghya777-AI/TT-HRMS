@@ -986,7 +986,16 @@ export const teamDaySchema = z.object({
   anomaly_flags: z.array(z.string()).nullable(),
   has_anomalies: z.boolean().nullable(),
   is_regularized: z.boolean().nullable(),
-  manual_override_status: z.string().nullable(),
+  /*
+    BOOLEAN, not string. `attendance_days.manual_override_status` is
+    `boolean NOT NULL DEFAULT false` (017) and the view passes it through
+    untouched; the two other readers of this view — features/attendance and
+    features/admin — both declare `z.boolean()`. This one said `z.string()` and
+    took the whole Team Attendance grid down with
+    "Expected string, received boolean" the first day a team had any rows in it.
+    It was invisible until then because zod never sees a row that does not exist.
+  */
+  manual_override_status: z.boolean().nullable(),
   is_locked: z.boolean().nullable(),
 });
 export type TeamDay = z.infer<typeof teamDaySchema>;

@@ -116,6 +116,12 @@ export const OVERRIDE_PAGE_SIZE = 50;
  * inbox says so instead of silently truncating.
  */
 export const BREACH_ID_CAP = 200;
+/**
+ * How many of an approver's own decisions the `decided_by_me` slice may carry
+ * into an `IN (…)` predicate. Past this the register is the right screen, and
+ * silently truncating would let somebody believe they had decided 200 things.
+ */
+export const DECIDED_BY_ME_CAP = 200;
 
 /**
  * A uuid no row holds, used when a slice's server-derived id set is EMPTY.
@@ -327,6 +333,7 @@ const APPROVAL_REQUEST_COLUMNS =
 export const inboxSliceValues = [
   "open",
   "mine",
+  "decided_by_me",
   "escalated",
   "breached",
   "settled",
@@ -347,6 +354,8 @@ export interface InboxFilters {
   readonly approverEmployeeId?: string;
   /** Open-breach request ids from `sla_breaches` — required by `breached`. */
   readonly breachedRequestIds?: readonly string[];
+  /** Request ids this actor has acted on — required by `decided_by_me`. */
+  readonly decidedRequestIds?: readonly string[];
 }
 
 /**
@@ -380,6 +389,23 @@ export function inboxFilters(f: InboxFilters): readonly Filter[] {
       out.push(inList("status", OPEN_APPROVAL_STATUSES));
       const ids = f.breachedRequestIds ?? [];
       out.push(ids.length === 0 ? eq("id", NO_SUCH_ID) : inList("id", ids));
+      break;
+    }
+    case "decided_by_me": {
+      /*
+        WHAT I DECIDED — the other half of an approver's job, and the half that
+        had no screen. `mine` answers "what is waiting on me" and drops a request
+        the moment it is acted on, so an approver could not answer "did I approve
+        that, and when" without asking the person who raised it.
+
+        The ids come from `approval_actions`, which is where a decision is
+        RECORDED. `decided_by` on the request names only whoever settled the LAST
+        level, so a level-1 approver on a two-level chain does not appear in it at
+        all — filtering on that column would quietly hide most of a manager's own
+        work.
+      */
+      const acted = f.decidedRequestIds ?? [];
+      out.push(acted.length === 0 ? eq("id", NO_SUCH_ID) : inList("id", acted));
       break;
     }
     case "settled":
@@ -958,6 +984,38 @@ export type PersonRef = z.infer<typeof personRefSchema>;
 
 const PERSON_REF_COLUMNS =
   "id, profile_id, employee_code, display_name, designation_name, department_name";
+
+/**
+ * Every request this person has acted on, most recent first.
+ *
+ * `approval_actions` is append-only and carries the actor as a `profiles.id`, so
+ * this is the authoritative answer to "what have I decided" — including levels
+ * somebody else finished afterwards.
+ *
+ * `submit` and `comment` are excluded: raising your own request is not deciding
+ * it, and a passing remark is not a decision. What remains is the set of actions
+ * that MOVED a request.
+ */
+export async function fetchRequestIdsDecidedBy(
+  actorProfileId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const rows = await selectMany(
+    APPROVAL_ACTIONS_TABLE,
+    z.object({ approval_request_id: dbUuid }),
+    {
+      columns: "approval_request_id",
+      filters: [
+        eq("actor_id", actorProfileId),
+        inList("action", ["approve", "reject", "request_info", "delegate", "reassign", "escalate"]),
+      ],
+      order: [{ column: "acted_at", ascending: false }],
+      limit: DECIDED_BY_ME_CAP,
+      ...(signal ? { signal } : {}),
+    },
+  );
+  return [...new Set(rows.map((r) => r.approval_request_id))];
+}
 
 export function fetchPeopleByProfileIds(
   profileIds: readonly string[],

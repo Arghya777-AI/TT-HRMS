@@ -19,7 +19,7 @@
  * @route /me/approvals
  */
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Inbox } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,8 +31,9 @@ import { t } from "@/shared/i18n/en";
 import { fmtCivilDate, fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { dash } from "@/lib/format";
 import type { ActionKind, PendingAction, PendingActionsResult } from "../api/approvals.api";
-import { usePendingActions, useMyOpenRequests } from "../hooks/useApprovals";
-import { OpenRequestsGrid } from "@/features/apply/components/OpenRequestsGrid";
+import { usePendingActions } from "../hooks/useApprovals";
+import { RequestRegister } from "@/features/apply/components/RequestRegister";
+import { isRequestSlice, type RequestSlice } from "@/features/apply/api/apply.api";
 
 const KIND_LABEL: Record<ActionKind, string> = {
   decision: t("approvals.kind.decision"),
@@ -136,7 +137,9 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
 
 export default function ApprovalsPage() {
   const actions = usePendingActions();
-  const tracking = useMyOpenRequests();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sliceParam = searchParams.get("slice");
+  const slice: RequestSlice = isRequestSlice(sliceParam) ? sliceParam : "open";
 
   const rows = useMemo(
     () => (actions.data ? buildActions(actions.data) : []),
@@ -222,24 +225,33 @@ export default function ApprovalsPage() {
         </StateBoundary>
       </section>
 
+      {/*
+        ── THE REGISTER, NOT A LIST OF WHAT IS IN FLIGHT ────────────────────
+
+        This section showed `OpenRequestsGrid`, which filters to the three open
+        statuses — so a request VANISHED the moment it was decided, and "was mine
+        approved or rejected?" had no answer on any screen. The register keeps
+        every request of every type, with the stage it reached, who holds it now,
+        and the trail of who acted.
+
+        The slice lives in the URL so a filtered view can be linked and survives
+        a reload — the same pattern the lifecycle and payroll registers use.
+      */}
       <section aria-labelledby="approvals-tracking-heading">
         <h2 id="approvals-tracking-heading" className="font-display text-lg font-semibold">
           {t("approvals.tracking.title")}
         </h2>
         <p className="mb-3 text-sm text-muted-foreground">{t("approvals.tracking.hint")}</p>
-        <StateBoundary
-          loading={tracking.isLoading}
-          error={tracking.error ?? undefined}
-          onRetry={() => void tracking.refetch()}
-        >
-          <OpenRequestsGrid
-            rows={tracking.data?.rows ?? []}
-            approvers={tracking.data?.approvers ?? {}}
-            emptyTitle={t("approvals.tracking.empty.title")}
-            emptyHint={t("approvals.tracking.empty.hint")}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">{t("approvals.nudge.unavailable")}</p>
-        </StateBoundary>
+        <RequestRegister
+          slice={slice}
+          onSliceChange={(next) => {
+            const params = new URLSearchParams(searchParams);
+            if (next === "open") params.delete("slice");
+            else params.set("slice", next);
+            setSearchParams(params, { replace: true });
+          }}
+        />
+        <p className="mt-2 text-xs text-muted-foreground">{t("approvals.nudge.unavailable")}</p>
       </section>
     </div>
   );

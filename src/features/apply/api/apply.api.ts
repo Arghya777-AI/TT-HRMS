@@ -25,7 +25,9 @@ import {
   dbUuid,
   eq,
   inList,
+  selectCount,
   selectMany,
+  type Filter,
 } from "@/shared/api/query";
 import { nowInstantIso, type Instant } from "@/lib/datetime";
 
@@ -182,6 +184,95 @@ export async function fetchMyOpenRequests(
   const approvers: Record<string, DirectoryEntry> = {};
   for (const person of people) approvers[person.id] = person;
   return { rows, approvers };
+}
+
+/*
+  ── THE EMPLOYEE'S OWN REGISTER ─────────────────────────────────────────────
+
+  `fetchMyOpenRequests` above answers "what is in flight". It cannot answer the
+  questions actually asked — "which were approved or rejected", "who has mine
+  now", "what happened to the one from last month" — because it filters to the
+  three open statuses and a settled request simply vanishes from the screen the
+  moment it is decided.
+
+  Same reader, same schema, same approver-name resolution; the slice is the only
+  difference. Sharing the reader is the point: a register that computed its own
+  status or level would be a second opinion about a row the server already
+  describes completely.
+*/
+
+/** The slices an employee can ask for. `all` is the register; the rest filter it. */
+export const requestSliceValues = ["open", "approved", "rejected", "all"] as const;
+export type RequestSlice = (typeof requestSliceValues)[number];
+
+export function isRequestSlice(value: string | null): value is RequestSlice {
+  return value !== null && (requestSliceValues as readonly string[]).includes(value);
+}
+
+/**
+ * `approved` deliberately covers `auto_approved` and `applied` as well.
+ *
+ * All three mean "you got it" to the person who asked: `auto_approved` is the
+ * SLA engine deciding on nobody's behalf, and `applied` is a decision that has
+ * also been written onto the detail row. Showing them as three different words
+ * on an employee's screen would invite three different questions with the same
+ * answer.
+ *
+ * `cancelled` and `withdrawn` are the employee's own doing and appear only under
+ * `all` — a register of what happened, not a list of things to worry about.
+ */
+const SLICE_STATUSES: Readonly<Record<Exclude<RequestSlice, "all">, readonly string[]>> = {
+  open: ["pending", "in_progress", "escalated"],
+  approved: ["approved", "auto_approved", "applied"],
+  rejected: ["rejected", "expired", "failed"],
+};
+
+/** ONE predicate builder, so a tile count and the grid below it cannot disagree. */
+export function myRequestFilters(employeeId: string, slice: RequestSlice): readonly Filter[] {
+  const base: Filter[] = [eq("subject_employee_id", employeeId)];
+  if (slice === "all") return base;
+  return [...base, inList("status", SLICE_STATUSES[slice])];
+}
+
+/** One slice of the employee's register, with the current approvers named. */
+export async function fetchMyRequests(
+  employeeId: string,
+  slice: RequestSlice,
+  signal?: AbortSignal,
+): Promise<MyOpenRequests> {
+  const rows = await selectMany(APPROVAL_REQUESTS_TABLE, openRequestSchema, {
+    columns: OPEN_REQUEST_COLUMNS,
+    filters: myRequestFilters(employeeId, slice),
+    order: [{ column: "submitted_at", ascending: false }],
+    limit: 200,
+    ...(signal ? { signal } : {}),
+  });
+
+  const ids = [...new Set(rows.flatMap((r) => r.current_approver_ids))];
+  if (ids.length === 0) return { rows, approvers: {} };
+
+  const people = await selectMany(EMPLOYEE_DIRECTORY_VIEW, directoryEntrySchema, {
+    columns: "id, employee_code, display_name, designation_name",
+    filters: [inList("id", ids)],
+    limit: ids.length,
+    ...(signal ? { signal } : {}),
+  });
+  const approvers: Record<string, DirectoryEntry> = {};
+  for (const person of people) approvers[person.id] = person;
+  return { rows, approvers };
+}
+
+/** `count=exact` from Postgres for one slice — never `rows.length`. */
+export function countMyRequests(
+  employeeId: string,
+  slice: RequestSlice,
+  signal?: AbortSignal,
+): Promise<number> {
+  return selectCount(
+    APPROVAL_REQUESTS_TABLE,
+    myRequestFilters(employeeId, slice),
+    signal ? { signal } : {},
+  );
 }
 
 /**

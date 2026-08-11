@@ -348,4 +348,62 @@ export const keysClaims = {
   "adminLeave.types.field.combinable": "Can share an application",
   "adminLeave.types.help.combinable":
     "On: an employee can take 5 days as 2 of this plus 3 of something else. Off: this type has to be the only one in an application, and the database refuses a mixed one. Each type still gets its own dates \u2014 two types cannot cover the same day.",
+
+  // ── The request register (/me/approvals) ───────────────────────────────────
+  "register.slice.open": "In flight",
+  "register.slice.approved": "Approved",
+  "register.slice.rejected": "Rejected",
+  "register.slice.all": "Everything",
+  "register.hint":
+    "Every request you have raised, of every kind. Tap one to see who has acted on it and what they said.",
+  "register.col.ref": "Reference",
+  "register.col.type": "Kind",
+  "register.col.what": "What you asked for",
+  "register.col.status": "Where it stands",
+  "register.col.level": "Stage",
+  "register.col.with": "With",
+  "register.col.raised": "Raised",
+  "register.col.decided": "Decided",
+  "register.level.of": "Level {level} of {total}",
+  "register.level.notYet": "Not routed yet",
+  "register.with.nobody": "Nobody yet",
+  "register.empty.title": "Nothing here",
+  "register.empty.hint": "Requests you raise appear here, whatever happens to them.",
+  "register.trail.title": "What has happened to it",
+  "register.trail.empty": "Nothing recorded yet.",
+  "register.trail.system": "The system",
+  "register.trail.atLevel": "at level {level}",
+
+  // `approval_status`, in the words an employee uses.
+  "register.status.draft": "Draft",
+  "register.status.pending": "Waiting",
+  "register.status.in_progress": "Being decided",
+  "register.status.escalated": "Escalated",
+  "register.status.approved": "Approved",
+  "register.status.auto_approved": "Approved automatically",
+  "register.status.applied": "Approved and applied",
+  "register.status.rejected": "Rejected",
+  "register.status.expired": "Expired",
+  "register.status.failed": "Failed",
+  "register.status.cancelled": "Cancelled",
+  "register.status.withdrawn": "Withdrawn",
+
+  // `approval_action`, likewise.
+  "register.action.submit": "Raised",
+  "register.action.approve": "Approved",
+  "register.action.reject": "Rejected",
+  "register.action.request_info": "Asked a question",
+  "register.action.provide_info": "Answered",
+  "register.action.delegate": "Delegated",
+  "register.action.reassign": "Reassigned",
+  "register.action.escalate": "Escalated",
+  "register.action.recall": "Withdrawn",
+  "register.action.cancel": "Cancelled",
+  "register.action.comment": "Commented",
+  "register.action.auto_approve": "Approved automatically",
+  "register.action.skip_level": "Level skipped",
+
+  "admin.wf.inbox.tile.decided": "I decided",
+  "admin.wf.inbox.hint.decided":
+    "Requests you have acted on, whatever happened to them afterwards. Read from the append-only action trail, so a level somebody else finished later still shows your decision.",
 } as const;

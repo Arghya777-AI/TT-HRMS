@@ -1,275 +1,164 @@
 -- =============================================================================
--- 20260801042000 — a request nobody decided is not approved
+-- 20260801041900 — the leave notification must not use ON CONFLICT
 -- =============================================================================
 --
--- REPORTED AS "still leave is approving", and then, on being told that a manager
--- with no manager routes to the admin pool: "but manager can also apply for
--- leave.." Both sentences are about the same hole.
+-- THE BUG I SHIPPED IN 041600, AND WHAT IT COST
 --
--- ── WHAT HAPPENS TODAY TO A MANAGER'S OWN LEAVE ──────────────────────────────
+-- `leave_requests_raise_approval` ends by writing an in-app notification for each
+-- resolved approver, and it deduplicated with
 --
--- `resolve_approvers` never removes the SUBJECT from the set it returns. So for
--- somebody with no reporting manager who is themselves an administrator:
+--     ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
 --
---   level 1  reporting_manager  → nobody → ladder → hr_admin → {the applicant}
---   level 2  hr_admin           → {the applicant}
+-- which raises, every single time:
 --
--- `advance_approval` drops the subject only when the level resolved to MORE
--- people than just them:
+--     42P10: there is no unique or exclusion constraint matching the
+--            ON CONFLICT specification
 --
---     IF COALESCE(array_length(v_ids, 1), 0) > 1 THEN
---       v_ids := array_remove(v_ids, v_req.subject_employee_id);
+-- `public.notifications` is `PARTITION BY RANGE (recorded_at)` (027 §…), and its
+-- dedupe index is created per PARTITION — `uq_notifications_2026_q3__dedupe` and
+-- siblings. ON CONFLICT infers against the relation it was handed, the PARENT,
+-- where no such index exists and none CAN: a unique index on a partitioned table
+-- must contain the partition key, and `(dedupe_key)` does not.
 --
--- With exactly one id — theirs — that does not fire. The next branch then reads:
+-- The notification insert sits OUTSIDE the exception handler that guards
+-- `create_approval_request`, so the failure propagated: the UPDATE that moves a
+-- leave request to 'pending' was refused, and the employee got "The server
+-- refused this application" with nothing written. Reported as "why still
+-- failing" after 041600 had been applied — and the diagnostic showed the
+-- balances correct, the triggers installed, and `My requests` empty, which is
+-- exactly this shape.
 --
---     IF v_level.skip_if_same_as_previous AND v_ids <@ ARRAY[subject, last_actor]
---       … CONTINUE;
+-- HOW IT SURVIVED: the same clause is written into `sla_sweep` (029), inside an
+-- `EXECUTE format(...)` that only runs on a genuine SLA breach. It has evidently
+-- never run there either, so the pattern looked established and I copied it.
+-- Copying an untested line is how it becomes two untested lines.
 --
--- and `skip_if_same_as_previous` is `true` on every level 045 seeds. Both levels
--- are skipped, the loop runs out, and the function's last statement is
+-- THE FIX: `WHERE NOT EXISTS`, which reads the same index the planner would have
+-- used and needs no inference. `dedupe_key` is still written — the per-partition
+-- index still enforces uniqueness within a quarter, which is all it ever did.
 --
---     -- No actionable level remains: fully approved.
---     UPDATE public.approval_requests SET status = 'approved' …
---
--- So the leave is APPROVED with no human decision, no approver, and no
--- `approval_actions` row anybody signed. Worse, it is approved only on the
--- workflow side: `decideApproval`'s step 2 — the thing that writes
--- `leave_requests.status` and the ledger — runs when a person clicks Approve, and
--- nobody clicked. The employee's own screen keeps saying Pending while the
--- approval request says Approved, and no balance ever moves.
---
--- ── TWO CHANGES, AND WHY BOTH ────────────────────────────────────────────────
---
--- §1 THE SUBJECT IS NEVER AN APPROVER. Removing them inside `resolve_approvers`
--- — at every rung of the fallback ladder, not just the first — means a level that
--- collapses onto the applicant comes back EMPTY, so the ladder keeps walking and
--- finds the other administrators. On this deployment that is four people instead
--- of a silent self-approval. `act_on_approval` has always refused self-approval;
--- this makes the resolver agree with it.
---
--- §2 A SKIPPED-EVERYTHING CHAIN NO LONGER APPROVES. Even with §1, a company whose
--- only administrator is the applicant resolves to nobody at every level. That is
--- a configuration gap, and the honest outcome is a request sitting unrouted where
--- somebody can see it — not an approval nobody granted. The guard is narrow: it
--- fires only when NO human has acted on the request at any level
--- (`first_action_at IS NULL`). A chain where somebody approved level 1 and level
--- 2 legitimately skips still settles exactly as before.
---
--- ── WHAT THIS DOES NOT DO ────────────────────────────────────────────────────
---
--- It does not give anybody a reporting manager. 79 of 81 employees still have
--- none, so most leave still lands on the admin pool — which is correct, just
--- coarse. The admin console's own screen lists who is missing one.
+-- `sla_sweep` is deliberately NOT touched here: it is 200 lines of another
+-- concern and its copy of the bug deserves its own migration with its own test,
+-- not a drive-by edit inside a fix for leave.
 -- =============================================================================
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 042000: the subject of a request can never be its approver, and a chain that skipped every level does not self-approve', true);
+SELECT set_config('app.reason', 'migration 041900: fix 42P10 — the leave notification cannot ON CONFLICT against a partitioned parent', true);
 SELECT set_config('app.source', 'migration', true);
 
--- -----------------------------------------------------------------------------
--- 1. resolve_approvers — the subject is never in the set
--- -----------------------------------------------------------------------------
---
--- Body copied from 029 with one addition: `v_ids := array_remove(v_ids,
--- p_subject_employee_id)` after each resolution, so the emptiness the ladder
--- tests for accounts for the exclusion. Everything else — the delegation
--- expansion, the STABLE/DEFINER markers, the return shape — is unchanged.
-
-CREATE OR REPLACE FUNCTION public.resolve_approvers(
-  p_chain_level_id uuid,
-  p_subject_employee_id uuid,
-  p_request_type_id uuid DEFAULT NULL,
-  p_expand_delegations boolean DEFAULT true)
-RETURNS uuid[] LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $$
+CREATE OR REPLACE FUNCTION public.leave_requests_raise_approval()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE
-  v_level public.approval_chain_levels%ROWTYPE;
-  v_ids   uuid[];
+  v_request_id uuid;
+  lt           public.leave_types%ROWTYPE;
+  e            public.employees%ROWTYPE;
+  v_approver   uuid;
+  v_title      text;
+  v_body       text;
+  v_dedupe     text;
 BEGIN
-  SELECT * INTO v_level FROM public.approval_chain_levels WHERE id = p_chain_level_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'approval chain level % not found', p_chain_level_id;
-  END IF;
+  SELECT * INTO lt FROM public.leave_types WHERE id = NEW.leave_type_id;
+  SELECT * INTO e  FROM public.employees   WHERE id = NEW.employee_id;
 
-  v_ids := public.resolve_approver_kind(
-    v_level.approver_kind, v_level.role, v_level.specific_employee_id, p_subject_employee_id);
-  -- Nobody approves their own request. Stated HERE so the ladder below sees an
-  -- empty set and keeps walking, rather than stopping on a level that resolved
-  -- to the one person who cannot act on it.
-  v_ids := array_remove(v_ids, p_subject_employee_id);
+  BEGIN
+    v_request_id := public.create_approval_request(
+      p_request_type_code  => 'LEAVE',
+      p_subject_employee_id=> NEW.employee_id,
+      p_detail_id          => NEW.id,
+      p_title              => COALESCE(lt.name, 'Leave') || ' · ' ||
+                              to_char(NEW.from_date, 'DD Mon') ||
+                              CASE WHEN NEW.to_date <> NEW.from_date
+                                   THEN ' – ' || to_char(NEW.to_date, 'DD Mon') ELSE '' END,
+      p_summary            => jsonb_build_object(
+                                'summary',        NULLIF(btrim(COALESCE(NEW.reason, '')), ''),
+                                'leave_type',     lt.name,
+                                'leave_type_code',lt.code,
+                                'from_date',      NEW.from_date,
+                                'to_date',        NEW.to_date,
+                                'total_days',     NEW.total_days,
+                                'request_number', NEW.request_number),
+      p_amount             => NULL,
+      p_days               => NEW.total_days,
+      p_priority           => 'normal',
+      p_on_behalf_of       => NULL);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'leave request % filed but no approval request could be raised: %',
+      NEW.request_number, SQLERRM;
+    RETURN NULL;
+  END;
 
-  -- Fallback ladder: an unresolvable mandatory level lands with HR admins,
-  -- then super-admins, so no request can strand ownerless.
-  IF COALESCE(array_length(v_ids, 1), 0) = 0 AND NOT v_level.is_optional THEN
-    v_ids := array_remove(
-      public.resolve_approver_kind('hr_admin', NULL, NULL, p_subject_employee_id),
-      p_subject_employee_id);
-    IF COALESCE(array_length(v_ids, 1), 0) = 0 THEN
-      v_ids := array_remove(
-        public.resolve_approver_kind('super_admin', NULL, NULL, p_subject_employee_id),
-        p_subject_employee_id);
-    END IF;
-  END IF;
+  UPDATE public.leave_requests
+     SET approval_request_id = v_request_id
+   WHERE id = NEW.id;
 
-  -- Delegation expansion (depth 1, approvals scope, active, date-covered,
-  -- request-type-covered). The delegator stays in the set — they may still act.
-  IF p_expand_delegations AND COALESCE(array_length(v_ids, 1), 0) > 0 THEN
-    v_ids := ARRAY(
-      SELECT DISTINCT u FROM (
-        SELECT unnest(v_ids) AS u
-        UNION
-        SELECT e2.id
-        FROM public.delegations dl
-        JOIN public.employees del ON del.profile_id = dl.delegator_profile_id
-                                 AND del.id = ANY (v_ids)
-        JOIN public.employees e2  ON e2.profile_id = dl.delegate_profile_id
-                                 AND e2.deleted_at IS NULL
-        WHERE dl.is_active
-          AND dl.scope IN ('approvals','approvals_and_team_view')
-          AND CURRENT_DATE BETWEEN dl.from_date AND COALESCE(dl.to_date, CURRENT_DATE)
-          AND (dl.request_type_ids IS NULL
-            OR p_request_type_id IS NULL
-            OR p_request_type_id = ANY (dl.request_type_ids))
-      ) s WHERE u IS NOT NULL);
-    -- A delegation could hand the request back to the subject; it must not.
-    v_ids := array_remove(v_ids, p_subject_employee_id);
-  END IF;
-
-  RETURN COALESCE(v_ids, '{}');
-END;
-$$;
-
-COMMENT ON FUNCTION public.resolve_approvers(uuid, uuid, uuid, boolean) IS
-  'Who may act on one level of one request, never including the subject — at any rung of the fallback ladder or through a delegation. Before 042000 a level that resolved to only the applicant was skipped, and a chain of such levels approved itself.';
-
--- -----------------------------------------------------------------------------
--- 2. advance_approval — no decision, no approval
--- -----------------------------------------------------------------------------
---
--- Body copied from 029; the only change is the final UPDATE, which now refuses
--- to settle a request that nobody has acted on. `first_action_at` is stamped by
--- `act_on_approval` on the first human decision, so its being NULL at the end of
--- the loop means every level was skipped or unresolvable.
-
-CREATE OR REPLACE FUNCTION public.advance_approval(p_request_id uuid)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE
-  v_req        public.approval_requests%ROWTYPE;
-  v_level      public.approval_chain_levels%ROWTYPE;
-  v_ids        uuid[];
-  v_last_actor uuid;   -- employee id of the most recent human actor
-  v_last_level integer;
-BEGIN
-  SELECT * INTO v_req FROM public.approval_requests WHERE id = p_request_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'approval request % not found', p_request_id;
-  END IF;
-  IF v_req.status NOT IN ('pending','in_progress','escalated') THEN
-    RETURN;   -- already decided; nothing to advance
-  END IF;
-
-  SELECT e.id INTO v_last_actor
-  FROM public.approval_actions a
-  JOIN public.employees e ON e.profile_id = a.actor_id
-  WHERE a.approval_request_id = p_request_id AND a.actor_id IS NOT NULL
-  ORDER BY a.acted_at DESC LIMIT 1;
-
-  FOR v_level IN
-    SELECT * FROM public.approval_chain_levels
-    WHERE approval_chain_id = v_req.approval_chain_id
-      AND level > v_req.current_level
-    ORDER BY level
-  LOOP
-    v_last_level := v_level.level;
-
-    -- notify-only levels never hold the request
-    IF v_level.notify_only THEN
-      CONTINUE;
-    END IF;
-
-    v_ids := public.resolve_approvers(v_level.id, v_req.subject_employee_id, v_req.request_type_id);
-
-    -- Belt and braces: resolve_approvers excludes the subject since 042000, so
-    -- this can no longer fire for that reason. Kept because a delegation chain
-    -- or a hand-edited set could still contain them.
-    IF COALESCE(array_length(v_ids, 1), 0) > 1 THEN
-      v_ids := array_remove(v_ids, v_req.subject_employee_id);
-    END IF;
-
-    -- skip_if_same_as_previous: the level collapses onto the actor who just
-    -- approved — skip it rather than ask someone to approve their own work.
-    IF v_level.skip_if_same_as_previous
-       AND COALESCE(array_length(v_ids, 1), 0) > 0
-       AND v_ids <@ ARRAY[v_req.subject_employee_id, v_last_actor]::uuid[]
-    THEN
-      INSERT INTO public.approval_actions
-        (approval_request_id, level, actor_id, action, comment)
-      VALUES
-        (p_request_id, v_level.level, NULL, 'skip_level',
-         'level skipped: approver identical to requester/previous approver');
-      CONTINUE;
-    END IF;
-
-    IF COALESCE(array_length(v_ids, 1), 0) = 0 THEN
-      IF v_level.is_optional THEN
-        CONTINUE;   -- optional level with nobody to ask
-      END IF;
-      -- resolve_approvers already fell back to hr_admin/super_admin; an empty
-      -- set here means the instance has nobody who may act — leave the level in
-      -- place so the console surfaces it.
-    END IF;
-
-    UPDATE public.approval_requests
-    SET current_level        = v_level.level,
-        current_approver_ids = v_ids,
-        status               = CASE WHEN first_action_at IS NULL THEN 'pending'
-                                    ELSE 'in_progress' END::public.approval_status
-    WHERE id = p_request_id;
-    RETURN;
-  END LOOP;
+  v_title := COALESCE(e.display_name, 'An employee') || ' applied for ' ||
+             trim(to_char(NEW.total_days, 'FM999999.99')) || ' day(s) of ' ||
+             COALESCE(lt.name, 'leave');
+  v_body  := COALESCE(e.display_name, 'An employee') || ' applied for ' ||
+             trim(to_char(NEW.total_days, 'FM999999.99')) || ' day(s) of ' ||
+             COALESCE(lt.name, 'leave') || ' (' ||
+             to_char(NEW.from_date, 'DD Mon YYYY') || ' to ' ||
+             to_char(NEW.to_date, 'DD Mon YYYY') || ').' ||
+             CASE WHEN NULLIF(btrim(COALESCE(NEW.reason, '')), '') IS NULL
+                  THEN '' ELSE ' Reason: ' || btrim(NEW.reason) END;
 
   /*
-    NO ACTIONABLE LEVEL REMAINS — AND THAT IS TWO DIFFERENT SITUATIONS.
+    WRAPPED, because a notification is not worth losing a leave application over.
 
-    If somebody has acted (`first_action_at IS NOT NULL`), the chain has run its
-    course and the request is approved. That is the ordinary path and it is
-    unchanged.
-
-    If NOBODY has acted, every level was skipped or resolved to nobody, and
-    approving would be inventing a decision. Before 042000 that is exactly what
-    happened to a manager's own leave: two levels collapsing onto the applicant
-    were both skipped and the request came out Approved with no approver and no
-    signed action. It now stays pending, parked on the last level with nobody
-    holding it, and says so in the trail — a state an administrator can find and
-    fix by assigning a reporting manager.
+    Everything above this point is the request itself; everything below is telling
+    people about it. 041600 left the notification insert unguarded and a 42P10
+    inside it refused the whole submission — the failure mode this handler now
+    makes impossible. A warning in the Postgres log with nobody notified is bad;
+    an employee unable to apply is worse.
   */
-  IF v_req.first_action_at IS NULL THEN
-    INSERT INTO public.approval_actions
-      (approval_request_id, level, actor_id, action, comment)
-    VALUES
-      (p_request_id, COALESCE(v_last_level, v_req.current_level), NULL, 'skip_level',
-       'not routed: every level resolved to nobody who may act on it, so this request '
-       || 'is waiting for an approver rather than approved. Assign a reporting manager '
-       || 'or an administrator who is not the requester.');
+  BEGIN
+    FOR v_approver IN
+      SELECT unnest(ar.current_approver_ids)
+        FROM public.approval_requests ar
+       WHERE ar.id = v_request_id
+    LOOP
+      v_dedupe := 'LEAVE_APPLIED:' || NEW.id || ':' || v_approver;
 
-    UPDATE public.approval_requests
-    SET current_level        = COALESCE(v_last_level, current_level),
-        current_approver_ids = '{}',
-        status               = 'pending'
-    WHERE id = p_request_id;
-    RETURN;
-  END IF;
+      /*
+        NOT `ON CONFLICT (dedupe_key)`. `notifications` is partitioned by
+        `recorded_at` and its dedupe index lives on each PARTITION, so inference
+        against the parent raises 42P10 every time. NOT EXISTS uses the same
+        index without asking the planner to infer an arbiter.
+      */
+      INSERT INTO public.notifications
+        (employee_id, profile_id, event_code, channel, title, body, deep_link,
+         payload, priority, status, dedupe_key)
+      SELECT ap.id, ap.profile_id, 'LEAVE_APPLIED', 'in_app',
+             v_title, v_body, '/team/approvals',
+             jsonb_build_object(
+               'total_days',      NEW.total_days,
+               'days',            trim(to_char(NEW.total_days, 'FM999999.99')),
+               'leave_request_id',NEW.id,
+               'approval_request_id', v_request_id,
+               'employee_name',   COALESCE(e.display_name, 'An employee'),
+               'leave_type_name', COALESCE(lt.name, 'leave'),
+               'from_date',       to_char(NEW.from_date, 'DD Mon YYYY'),
+               'to_date',         to_char(NEW.to_date, 'DD Mon YYYY')),
+             CASE WHEN NEW.total_days >= 3 THEN 'high' ELSE 'normal' END,
+             'queued',
+             v_dedupe
+        FROM public.employees ap
+       WHERE ap.id = v_approver
+         AND ap.profile_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM public.notifications n2 WHERE n2.dedupe_key = v_dedupe);
+    END LOOP;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'leave request % filed but the approver was not notified: %',
+      NEW.request_number, SQLERRM;
+  END;
 
-  UPDATE public.approval_requests
-  SET status               = 'approved',
-      decided_at           = now(),
-      decided_by           = COALESCE(app.ctx_actor_id(), decided_by),
-      current_approver_ids = '{}'
-  WHERE id = p_request_id;
+  RETURN NULL;
 END;
 $$;
 
-COMMENT ON FUNCTION public.advance_approval(uuid) IS
-  'Move a request to its next actionable level, or settle it. A request on which no human has acted is never settled as approved — before 042000 a chain whose every level collapsed onto the applicant approved itself.';
+COMMENT ON FUNCTION public.leave_requests_raise_approval() IS
+  'Raises the approval_requests row for a leave application and notifies the resolved approvers. Both halves are wrapped: neither a missing chain nor a failed notification may cost an employee their application.';
 
 COMMIT;

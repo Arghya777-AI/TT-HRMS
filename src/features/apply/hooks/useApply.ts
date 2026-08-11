@@ -36,12 +36,16 @@ import {
 import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import {
+  countMyRequests,
   fetchMyOpenRequests,
+  fetchMyRequests,
   fetchRequestTypes,
   NO_EMPLOYEE,
   type MyOpenRequests,
+  type RequestSlice,
   type RequestType,
 } from "../api/apply.api";
+import { fetchApprovalTrail, type ApprovalTrail } from "@/features/team/api/team.api";
 import {
   fetchAssetCategories,
   fetchMyOpenRequestsOfType,
@@ -344,5 +348,56 @@ export function useSubmitAssetRequest(): UseMutationResult<
       void client.invalidateQueries({ queryKey: qk.approvals.all });
     },
     retry: false,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// The employee's own register — every request, and where it got to
+// -----------------------------------------------------------------------------
+
+/** One slice of my requests, with the current approvers resolved to names. */
+export function useMyRequests(slice: RequestSlice): UseQueryResult<MyOpenRequests, Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: [...qk.apply.openRequests(), "register", employeeId ?? NO_EMPLOYEE, slice],
+    queryFn: ({ signal }) => fetchMyRequests(requireEmployeeId(employeeId), slice, signal),
+    enabled: employeeId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * `count=exact` for one slice.
+ *
+ * A separate query per tile, deliberately: one failing count shows a dash on its
+ * own tile instead of blanking the row, and the number is Postgres's rather than
+ * `rows.length`, which would report the page size.
+ */
+export function useMyRequestCount(slice: RequestSlice): UseQueryResult<number, Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: [...qk.apply.openRequests(), "register-count", employeeId ?? NO_EMPLOYEE, slice],
+    queryFn: ({ signal }) => countMyRequests(requireEmployeeId(employeeId), slice, signal),
+    enabled: employeeId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * The append-only decision trail of one request.
+ *
+ * Reader borrowed from the team feature rather than rewritten: `approval_actions`
+ * has one shape and one meaning, and `aa__via_request_read` already lets an
+ * employee read the trail of a request they can see. Two copies of this would be
+ * two chances to render the same evidence differently.
+ */
+export function useApprovalTrail(
+  approvalRequestId: string | null,
+): UseQueryResult<ApprovalTrail, Error> {
+  return useQuery({
+    queryKey: qk.approvals.detail(approvalRequestId ?? "none"),
+    queryFn: ({ signal }) => fetchApprovalTrail(approvalRequestId ?? "", signal),
+    enabled: approvalRequestId !== null,
+    retry: shouldRetryQuery,
   });
 }

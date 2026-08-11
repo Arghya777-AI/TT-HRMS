@@ -88,6 +88,7 @@ import {
   useApprovalTrail,
   useDecideApproval,
   useOpenBreachRequestIds,
+  useRequestIdsDecidedByMe,
   usePeopleByEmployeeId,
   useRequestTypeMap,
   useRequestTypes,
@@ -102,12 +103,20 @@ const TILES: readonly { slice: TileSlice; label: string; ring: string }[] = [
   { slice: "mine", label: t("admin.wf.inbox.tile.mine"), ring: "border-primary/50" },
   { slice: "breached", label: t("admin.wf.inbox.tile.breached"), ring: "border-destructive/50" },
   { slice: "escalated", label: t("admin.wf.inbox.tile.escalated"), ring: "border-warning/50" },
+  /*
+    "What I decided" belongs beside "what is waiting on me". An approver's own
+    record had no screen at all: `mine` drops a request the moment it is acted on,
+    so the only way to answer "did I approve that?" was to ask the person who
+    raised it.
+  */
+  { slice: "decided_by_me", label: t("admin.wf.inbox.tile.decided"), ring: "border-success/50" },
   { slice: "settled", label: t("admin.wf.inbox.tile.settled"), ring: "border-border" },
 ];
 
 const SLICE_HINT: Readonly<Record<InboxSlice, string>> = {
   open: t("admin.wf.inbox.hint.open"),
   mine: t("admin.wf.inbox.hint.mine"),
+  decided_by_me: t("admin.wf.inbox.hint.decided"),
   breached: t("admin.wf.inbox.hint.breached"),
   escalated: t("admin.wf.inbox.hint.escalated"),
   settled: t("admin.wf.inbox.hint.settled"),
@@ -150,6 +159,7 @@ export default function ApprovalInboxPage() {
 
   // The one server-recorded "late" fact available org-wide (see the header).
   const breachIds = useOpenBreachRequestIds();
+  const decidedIds = useRequestIdsDecidedByMe();
 
   const filters = useMemo<InboxFilters>(
     () => ({
@@ -159,8 +169,9 @@ export default function ApprovalInboxPage() {
       ...(priority !== undefined ? { priority } : {}),
       ...(myEmployeeId !== null ? { approverEmployeeId: myEmployeeId } : {}),
       ...(slice === "breached" ? { breachedRequestIds: breachIds.data ?? [] } : {}),
+      ...(slice === "decided_by_me" ? { decidedRequestIds: decidedIds.data ?? [] } : {}),
     }),
-    [slice, requestTypeId, status, priority, myEmployeeId, breachIds.data],
+    [slice, requestTypeId, status, priority, myEmployeeId, breachIds.data, decidedIds.data],
   );
 
   const list = useApprovalRequests(filters);
@@ -173,12 +184,14 @@ export default function ApprovalInboxPage() {
     ...filters,
     slice: tileSlice,
     ...(tileSlice === "breached" ? { breachedRequestIds: breachIds.data ?? [] } : {}),
+    ...(tileSlice === "decided_by_me" ? { decidedRequestIds: decidedIds.data ?? [] } : {}),
   });
   const counts: Record<TileSlice, ReturnType<typeof useApprovalRequestCount>> = {
     open: useApprovalRequestCount(tileFilters("open")),
     mine: useApprovalRequestCount(tileFilters("mine")),
     breached: useApprovalRequestCount(tileFilters("breached")),
     escalated: useApprovalRequestCount(tileFilters("escalated")),
+    decided_by_me: useApprovalRequestCount(tileFilters("decided_by_me")),
     settled: useApprovalRequestCount(tileFilters("settled")),
   };
 

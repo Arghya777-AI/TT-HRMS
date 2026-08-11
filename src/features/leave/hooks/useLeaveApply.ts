@@ -25,6 +25,7 @@ import {
   withdrawLeaveRequest,
   type ApprovalTrail,
   type CalendarHoliday,
+  fetchDepartmentIsOperational,
   type CountableDate,
   type LeaveAllocationDay,
   type EmployeeRef,
@@ -193,6 +194,24 @@ export function useCountableDates(
     enabled: ok,
     // The rota and the holiday calendar do not move during an application.
     staleTime: 5 * 60 * 1000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Whether the signed-in employee's department demands a named cover.
+ *
+ * Its own query rather than a column on the context: `v_my_employee` is a fixed
+ * allowlist that does not carry the department's flags, and widening a view
+ * everybody reads to answer one form's question is the wrong trade.
+ */
+export function useDepartmentIsOperational(
+  departmentId: string | null,
+): UseQueryResult<boolean, Error> {
+  return useQuery({
+    queryKey: qk.leave.detail(`department-operational:${departmentId ?? "none"}`),
+    queryFn: ({ signal }) => fetchDepartmentIsOperational(departmentId, signal),
+    staleTime: 5 * 60_000,
     retry: shouldRetryQuery,
   });
 }

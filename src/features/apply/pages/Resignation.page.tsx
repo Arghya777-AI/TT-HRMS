@@ -55,6 +55,7 @@ import { type MessageKey, t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { resignationReasonValues, type ResignationReason } from "../api/simple-requests.api";
 import { useSubmitResignation } from "../hooks/useApply";
 import { dash, formatNumber } from "@/lib/format";
@@ -167,6 +168,7 @@ export default function ResignationPage() {
   const [reason, setReason] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const send = useSubmitResignation();
+  const attempt = useSubmitAttempt();
 
   const resignBlockers: string[] = [];
   if (lastDay < today) resignBlockers.push(t("apply.resign.blocked.past"));
@@ -250,20 +252,20 @@ export default function ResignationPage() {
             <div className="mt-3"><Notice tone="error">{mutationUserMessage(send.error)}</Notice></div>
           ) : null}
 
-          {resignBlockers.length > 0 ? (
-            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-              <p className="font-medium">{t("apply.resign.blocked.title")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-                {resignBlockers.map((b) => <li key={b}>{b}</li>)}
-              </ul>
-            </div>
-          ) : null}
+          <SubmitBlockers
+            attempt={attempt}
+            blockers={resignBlockers}
+            id="resign-blockers"
+            title={t("apply.resign.blocked.title")}
+          />
 
           <Button
             className="mt-4 w-full"
-            disabled={resignBlockers.length > 0 || send.isPending}
+            disabled={send.isPending}
+            {...blockerButtonProps(attempt, resignBlockers, "resign-blockers")}
             onClick={() => {
-              if (resignBlockers.length > 0 || noticeDays === null) return;
+              if (!attempt.press(resignBlockers)) return;
+              if (noticeDays === null) return;
               send.mutate(
                 {
                   /*

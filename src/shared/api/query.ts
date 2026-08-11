@@ -28,6 +28,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { nowInstantIso } from "@/lib/datetime";
 import { t, type MessageKey } from "@/shared/i18n/en";
+import { humaniseRefusal } from "./humaniseRefusal";
 // Safe: `invoke.ts` does not import from this module, so this is not a cycle.
 import { TTApiError } from "./invoke";
 
@@ -904,8 +905,15 @@ export function mutationUserMessage(e: unknown): string {
       `isRuleRejection` in write.ts has documented since it was written that
       these messages "are safe to render". Nothing called it.
     */
+    /*
+      Humanised, then shown. `ruleRejectionMessage` decides whether the server
+      said something showable; `humaniseRefusal` turns the ones that name a column
+      into the same fact in words an employee can act on. Anything it does not
+      recognise passes through unchanged — a new rule shows its own sentence
+      rather than a vague apology.
+    */
     const rule = ruleRejectionMessage(e);
-    if (rule !== null) return rule;
+    if (rule !== null) return humaniseRefusal(rule);
     /*
       The SQLSTATE, when there is one. Whoever is asked to "report it" can only
       report what they were shown, and three very different faults share this one

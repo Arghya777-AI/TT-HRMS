@@ -50,7 +50,9 @@ import { useState } from "react";
 import { t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { ASSET_REQUEST_MAX_QUANTITY } from "../api/simple-requests.api";
 import { dash, formatNumber } from "@/lib/format";
@@ -169,6 +171,7 @@ export default function AssetRequestPage() {
   const [replacesId, setReplacesId] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const sendAsset = useSubmitAssetRequest();
+  const attempt = useSubmitAttempt();
 
   const categoryOptions = categories.data ?? [];
   const chosenCategory = categoryOptions.find((c) => c.id === categoryId);
@@ -216,7 +219,7 @@ export default function AssetRequestPage() {
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor="ar-cat">{t("apply.asset.field.category")}</Label>
+              <Label htmlFor="ar-cat">{t("apply.asset.field.category")}<Required /></Label>
               <select
                 id="ar-cat"
                 value={categoryId}
@@ -231,7 +234,7 @@ export default function AssetRequestPage() {
               </select>
             </div>
             <div>
-              <Label htmlFor="ar-qty">{t("apply.asset.field.quantity")}</Label>
+              <Label htmlFor="ar-qty">{t("apply.asset.field.quantity")}<Required /></Label>
               <Input
                 id="ar-qty"
                 type="number"
@@ -258,7 +261,7 @@ export default function AssetRequestPage() {
           </div>
 
           <div className="mt-3">
-            <Label htmlFor="ar-reason">{t("apply.asset.field.reason")}</Label>
+            <Label htmlFor="ar-reason">{t("apply.asset.field.reason")}<Required /></Label>
             <textarea
               id="ar-reason"
               rows={3}
@@ -267,6 +270,7 @@ export default function AssetRequestPage() {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
+            <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
           </div>
 
           {/*
@@ -324,20 +328,20 @@ export default function AssetRequestPage() {
             <div className="mt-3"><Notice tone="error">{mutationUserMessage(sendAsset.error)}</Notice></div>
           ) : null}
 
-          {assetBlockers.length > 0 ? (
-            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-              <p className="font-medium">{t("apply.asset.blocked.title")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-                {assetBlockers.map((b) => <li key={b}>{b}</li>)}
-              </ul>
-            </div>
-          ) : null}
+          <SubmitBlockers
+            attempt={attempt}
+            blockers={assetBlockers}
+            id="asset-blockers"
+            title={t("apply.asset.blocked.title")}
+          />
 
           <Button
             className="mt-4 w-full"
-            disabled={assetBlockers.length > 0 || sendAsset.isPending}
+            disabled={sendAsset.isPending}
+            {...blockerButtonProps(attempt, assetBlockers, "asset-blockers")}
             onClick={() => {
-              if (assetBlockers.length > 0 || chosenCategory === undefined) return;
+              if (!attempt.press(assetBlockers)) return;
+              if (chosenCategory === undefined) return;
               sendAsset.mutate(
                 {
                   assetCategoryId: chosenCategory.id,
@@ -348,7 +352,7 @@ export default function AssetRequestPage() {
                   isReplacement,
                   replacesAssetId: replacesId === "" ? null : replacesId,
                 },
-                { onSuccess: (r) => { setSent(r.requestId); setReason(""); } },
+                { onSuccess: (r) => { attempt.reset(); setSent(r.requestId); setReason(""); } },
               );
             }}
           >

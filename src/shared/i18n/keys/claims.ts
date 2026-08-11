@@ -406,4 +406,12 @@ export const keysClaims = {
   "admin.wf.inbox.tile.decided": "I decided",
   "admin.wf.inbox.hint.decided":
     "Requests you have acted on, whatever happened to them afterwards. Read from the append-only action trail, so a level somebody else finished later still shows your decision.",
+
+  /*
+    ONE SENTENCE, EVERY FORM. Four screens demanded ten characters and only one
+    said so, which is how somebody types "werwe" and then hunts for the reason
+    the button did nothing.
+  */
+  "form.needTen": "At least 10 characters.",
+  "form.required": "(required)",
 } as const;

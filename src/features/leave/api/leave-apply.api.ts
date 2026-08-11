@@ -214,6 +214,34 @@ export async function fetchMyLeaveContext(signal?: AbortSignal): Promise<MyLeave
   });
 }
 
+/**
+ * Is this employee's department an operational one?
+ *
+ * `leave_requests_submit_guard` refuses a request with no
+ * `handover_to_employee_id` when it is — "handover_to_employee_id is mandatory
+ * for operational departments", which is the sentence people were getting AFTER
+ * filling the whole form. The form can ask first: `departments` is readable by
+ * every signed-in user (`departments__all_read__select`), so this is one small
+ * read rather than a rule the browser has to guess at.
+ *
+ * `null` department means the question does not apply — not that the answer is
+ * yes. Refusing to submit because we could not read a flag would be worse than
+ * letting the server say so.
+ */
+export async function fetchDepartmentIsOperational(
+  departmentId: string | null,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (departmentId === null) return false;
+  const row = await selectOne(
+    "departments",
+    z.object({ is_operational: z.boolean() }),
+    [eq("id", departmentId)],
+    signal ? { signal } : {},
+  );
+  return row?.is_operational ?? false;
+}
+
 /** True when this type may not be availed yet because the employee is on probation. */
 export function isProbationLocked(rule: LeaveTypeRule, ctx: MyLeaveContext | null): boolean {
   if (ctx === null) return false;

@@ -48,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Required } from "@/shared/ui/Required";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -56,6 +57,7 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/features/admin/components/Notice";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { type MessageKey, t } from "@/shared/i18n/en";
 import { documentKindValues, type DocumentKind } from "@/features/apply/api/simple-requests.api";
@@ -211,6 +213,7 @@ export default function HelpdeskPage() {
   const [periodTo, setPeriodTo] = useState("");
   const [docSent, setDocSent] = useState<string | null>(null);
   const sendDoc = useSubmitDocumentRequest();
+  const docAttempt = useSubmitAttempt();
 
   const periodic = PERIODIC_KINDS.includes(kind);
 
@@ -226,6 +229,7 @@ export default function HelpdeskPage() {
   // ── Tickets (helpdesk_tickets, migration 041500) ───────────────────────────
   const tickets = useMyTickets();
   const raise = useRaiseTicket();
+  const ticketAttempt = useSubmitAttempt();
   const [desk, setDesk] = useState<HelpdeskDesk>("hr");
   const [priority, setPriority] = useState<HelpdeskPriority>("normal");
   const [subject, setSubject] = useState("");
@@ -339,7 +343,7 @@ export default function HelpdeskPage() {
         </div>
 
         <div className="mt-3">
-          <Label htmlFor="hd-subject">{t("helpdesk.new.subject")}</Label>
+          <Label htmlFor="hd-subject">{t("helpdesk.new.subject")}<Required /></Label>
           <Input
             id="hd-subject"
             className="mt-1.5 h-11"
@@ -350,7 +354,7 @@ export default function HelpdeskPage() {
         </div>
 
         <div className="mt-3">
-          <Label htmlFor="hd-detail">{t("helpdesk.new.detail")}</Label>
+          <Label htmlFor="hd-detail">{t("helpdesk.new.detail")}<Required /></Label>
           <textarea
             id="hd-detail"
             rows={3}
@@ -359,26 +363,26 @@ export default function HelpdeskPage() {
             value={detail}
             onChange={(e) => setDetail(e.target.value)}
           />
+          <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
         </div>
 
         {raise.isError ? (
           <div className="mt-3"><Notice tone="error">{mutationUserMessage(raise.error)}</Notice></div>
         ) : null}
 
-        {ticketBlockers.length > 0 ? (
-          <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-            <p className="font-medium">{t("helpdesk.new.blocked.title")}</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-              {ticketBlockers.map((b) => <li key={b}>{b}</li>)}
-            </ul>
-          </div>
-        ) : null}
+        <SubmitBlockers
+          attempt={ticketAttempt}
+          blockers={ticketBlockers}
+          id="hd-ticket-blockers"
+          title={t("helpdesk.new.blocked.title")}
+        />
 
         <Button
           className="mt-4 w-full"
-          disabled={ticketBlockers.length > 0 || raise.isPending}
+          disabled={raise.isPending}
+          {...blockerButtonProps(ticketAttempt, ticketBlockers, "hd-ticket-blockers")}
           onClick={() => {
-            if (ticketBlockers.length > 0) return;
+            if (!ticketAttempt.press(ticketBlockers)) return;
             raise.mutate(
               { desk, priority, subject, description: detail },
               {
@@ -496,7 +500,7 @@ export default function HelpdeskPage() {
         </div>
 
         <div className="mt-3">
-          <Label htmlFor="dr-note">{t("helpdesk.doc.note")}</Label>
+          <Label htmlFor="dr-note">{t("helpdesk.doc.note")}<Required /></Label>
           <textarea
             id="dr-note"
             rows={3}
@@ -505,26 +509,26 @@ export default function HelpdeskPage() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
+          <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
         </div>
 
         {sendDoc.isError ? (
           <div className="mt-3"><Notice tone="error">{mutationUserMessage(sendDoc.error)}</Notice></div>
         ) : null}
 
-        {docBlockers.length > 0 ? (
-          <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-            <p className="font-medium">{t("helpdesk.doc.blocked.title")}</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-              {docBlockers.map((b) => <li key={b}>{b}</li>)}
-            </ul>
-          </div>
-        ) : null}
+        <SubmitBlockers
+          attempt={docAttempt}
+          blockers={docBlockers}
+          id="hd-doc-blockers"
+          title={t("helpdesk.doc.blocked.title")}
+        />
 
         <Button
           className="mt-4 w-full"
-          disabled={docBlockers.length > 0 || sendDoc.isPending}
+          disabled={sendDoc.isPending}
+          {...blockerButtonProps(docAttempt, docBlockers, "hd-doc-blockers")}
           onClick={() => {
-            if (docBlockers.length > 0) return;
+            if (!docAttempt.press(docBlockers)) return;
             sendDoc.mutate(
               {
                 documentKind: kind,

@@ -52,7 +52,7 @@
  *
  * @route /me/leave/apply
  */
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CalendarPlus, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { t } from "@/shared/i18n/en";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtCivilDayMonthWeekday, nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -197,22 +198,11 @@ export default function LeaveApplicationPage() {
   const [addressAway, setAddressAway] = useState("");
   const [mentioned, setMentioned] = useState<readonly string[]>([]);
   /*
-    A DISABLED BUTTON ANSWERS NO QUESTIONS.
-
-    "so it should show when user click otherwise how we will know about this
-    error??" — exactly right, and it is not only a preference: a disabled button
-    does not fire a click at all, so pressing it produces nothing. No feedback,
-    no focus change, nothing for a screen reader to announce. The employee is
-    left to guess which of eleven fields is wrong.
-
-    So the button stays LIVE. Pressing it with something outstanding reveals the
-    list and moves focus to it; pressing it when everything is in order submits.
-    `attempted` is what makes the list appear on demand rather than nagging from
-    the first keystroke — nobody needs "say how many days" before they have had a
-    chance to type anything.
+    The shared attempt state — see `SubmitBlockers`. This page had the first copy
+    of it; seven other forms then needed the same behaviour, so it moved into one
+    file rather than being pasted eight times with eight small differences.
   */
-  const [attempted, setAttempted] = useState(false);
-  const blockerListRef = useRef<HTMLDivElement | null>(null);
+  const attempt = useSubmitAttempt();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
@@ -309,13 +299,23 @@ export default function LeaveApplicationPage() {
   /* `canSubmitAllocation` is exactly `allocationProblems(...).length === 0`, so
      walking the problems here is the same test — stated once instead of twice. */
   for (const problem of problems) blockers.push(problemText(problem));
+  /*
+    NO COVER BLOCKER. Migration 042200 removed the server rule that demanded a
+    named colleague in an operational department — "don't make mandatory who is
+    covering" — so the form must not demand it either. The field stays, unstarred,
+    because filling it in is still the decent thing to do.
+  */
   if (needsReason && reason.trim().length < 10) {
     blockers.push(t("leave.app.blocked.reason", { n: String(reason.trim().length) }));
   }
   if (split.problem !== null) blockers.push(splitProblemText(split.problem));
   if (total > 0 && split.segments.length === 0) blockers.push(t("leave.app.blocked.noSegments"));
 
-  const ready = blockers.length === 0;
+  /*
+    `ready` is gone: the button no longer consults it. `blockers` IS the answer —
+    empty means send, non-empty means show the box — and a second boolean saying
+    the same thing is a second thing that can disagree with it.
+  */
 
   /** Unpaid leave, if the venue has such a type — what a shortfall can be taken as. */
   const lwpType = useMemo(() => types.find((type) => !type.isPaid) ?? null, [types]);
@@ -384,7 +384,7 @@ export default function LeaveApplicationPage() {
         setDone(result);
         setAllocations([]);
         setReason("");
-        setAttempted(false);
+        attempt.reset();
       })
       .catch((err: unknown) => setFailure(mutationUserMessage(err)))
       .finally(() => setBusy(false));
@@ -933,48 +933,20 @@ export default function LeaveApplicationPage() {
           </div>
         ) : null}
 
-        {/*
-          Beside the button, not somewhere above it. `aria-describedby` ties the
-          two together for a screen reader, which otherwise announces a disabled
-          control with no explanation at all.
-        */}
-        {attempted && blockers.length > 0 ? (
-          <div
-            id="leave-app-blockers"
-            ref={blockerListRef}
-            tabIndex={-1}
-            role="alert"
-            className="mt-4 rounded-lg border border-warning/50 bg-warning/5 p-3 text-xs outline-none"
-          >
-            <p className="font-medium">{t("leave.app.blocked.title")}</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5">
-              {blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        <SubmitBlockers
+          attempt={attempt}
+          blockers={blockers}
+          id="leave-app-blockers"
+          title={t("leave.app.blocked.title")}
+        />
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             disabled={busy}
-            aria-invalid={attempted && !ready}
+            {...blockerButtonProps(attempt, blockers, "leave-app-blockers")}
             onClick={() => {
-              if (!ready) {
-                setAttempted(true);
-                /*
-                  Reveal AND go to it. On a phone the list can be off-screen
-                  above the button, and a message nobody scrolls to is the same
-                  as no message. Focus follows so a screen reader reads it.
-                */
-                window.requestAnimationFrame(() => {
-                  blockerListRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-                  blockerListRef.current?.focus();
-                });
-                return;
-              }
+              if (!attempt.press(blockers)) return;
               submit();
             }}
-            {...(attempted && !ready ? { "aria-describedby": "leave-app-blockers" } : {})}
           >
             {busy ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
             {t("leave.app.submit")}

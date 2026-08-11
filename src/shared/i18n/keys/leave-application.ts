@@ -48,6 +48,8 @@ export const keysLeaveApplication = {
   "leave.app.cap.use": "Ask for {days} day(s) instead",
   "leave.app.blocked.title": "Before you can send this",
   "leave.app.blocked.noDays": "Say how many days you want.",
+  "leave.app.blocked.handover":
+    "Your department needs someone named to cover for you — pick a colleague under \u201cWho is covering for you\u201d.",
   "leave.app.blocked.reason":
     "Sick leave needs a reason of at least 10 characters — you have typed {n}.",
   "leave.app.blocked.noSegments":

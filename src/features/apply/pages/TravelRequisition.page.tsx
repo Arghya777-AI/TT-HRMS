@@ -51,7 +51,9 @@ import { useState } from "react";
 import { t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { rupeesToPaise } from "../api/claim-submit.api";
 import { useSubmitTravelRequisition } from "../hooks/useApply";
@@ -158,6 +160,7 @@ export default function TravelRequisitionPage() {
   const [advance, setAdvance] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const sendTr = useSubmitTravelRequisition();
+  const attempt = useSubmitAttempt();
 
   const trBlockers: string[] = [];
   if (fromLoc.trim() === "" || toLoc.trim() === "") trBlockers.push(t("apply.travel.blocked.where"));
@@ -198,12 +201,12 @@ export default function TravelRequisitionPage() {
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor="tr-from">{t("apply.travel.field.from")}</Label>
+              <Label htmlFor="tr-from">{t("apply.travel.field.from")}<Required /></Label>
               <Input id="tr-from" className="mt-1.5 h-11" value={fromLoc}
                 onChange={(e) => setFromLoc(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="tr-to">{t("apply.travel.field.to")}</Label>
+              <Label htmlFor="tr-to">{t("apply.travel.field.to")}<Required /></Label>
               <Input id="tr-to" className="mt-1.5 h-11" value={toLoc}
                 onChange={(e) => setToLoc(e.target.value)} />
             </div>
@@ -231,27 +234,27 @@ export default function TravelRequisitionPage() {
           </div>
 
           <div className="mt-3">
-            <Label htmlFor="tr-purpose">{t("apply.travel.field.purpose")}</Label>
+            <Label htmlFor="tr-purpose">{t("apply.travel.field.purpose")}<Required /></Label>
             <textarea id="tr-purpose" rows={3} maxLength={500} value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
               className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
           </div>
 
           {sendTr.isError ? (
             <div className="mt-3"><Notice tone="error">{mutationUserMessage(sendTr.error)}</Notice></div>
           ) : null}
-          {trBlockers.length > 0 ? (
-            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-              <p className="font-medium">{t("apply.travel.blocked.title")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-                {trBlockers.map((b) => <li key={b}>{b}</li>)}
-              </ul>
-            </div>
-          ) : null}
+          <SubmitBlockers
+            attempt={attempt}
+            blockers={trBlockers}
+            id="travel-blockers"
+            title={t("apply.travel.blocked.title")}
+          />
 
-          <Button className="mt-4 w-full" disabled={trBlockers.length > 0 || sendTr.isPending}
+          <Button className="mt-4 w-full" disabled={sendTr.isPending}
+            {...blockerButtonProps(attempt, trBlockers, "travel-blockers")}
             onClick={() => {
-              if (trBlockers.length > 0) return;
+              if (!attempt.press(trBlockers)) return;
               sendTr.mutate(
                 { fromLocation: fromLoc, toLocation: toLoc, fromDate, toDate, purpose,
                   estimatedCostRupees: cost, advanceRupees: advance },

@@ -38,6 +38,7 @@ import { type MessageKey, t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { mutationUserMessage } from "@/shared/api/query";
+import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import {
   webPunchDirectionValues,
@@ -101,6 +102,7 @@ export default function WebPunchRequestPage() {
   const [reason, setReason] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
   const submit = useSubmitWebPunchRequest();
+  const attempt = useSubmitAttempt();
 
   /*
     Mirrors the CHECKs the table already enforces, so the refusal arrives before
@@ -201,20 +203,19 @@ export default function WebPunchRequestPage() {
             </div>
           ) : null}
 
-          {blockers.length > 0 ? (
-            <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-              <p className="font-medium">{t("apply.webpunch.blocked.title")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
-                {blockers.map((b) => <li key={b}>{b}</li>)}
-              </ul>
-            </div>
-          ) : null}
+          <SubmitBlockers
+            attempt={attempt}
+            blockers={blockers}
+            id="webpunch-blockers"
+            title={t("apply.webpunch.blocked.title")}
+          />
 
           <Button
             className="mt-4 w-full"
-            disabled={blockers.length > 0 || submit.isPending}
+            disabled={submit.isPending}
+          {...blockerButtonProps(attempt, blockers, "webpunch-blockers")}
             onClick={() => {
-              if (blockers.length > 0) return;
+              if (!attempt.press(blockers)) return;
               submit.mutate(
                 {
                   /*

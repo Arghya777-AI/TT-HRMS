@@ -23,6 +23,7 @@ import {
   isMutationErrorOfKind,
   isReasonValid,
   mutationUserMessage,
+  QueryError,
   softDelete,
   updateRow,
   upsertRow,
@@ -185,5 +186,43 @@ describe("the helpers refuse before they reach the network", () => {
     await expect(softDelete("employees", "1", short)).rejects.toMatchObject({
       mutationKind: "reason_required",
     });
+  });
+});
+
+describe("mutationUserMessage — the database's own sentence", () => {
+  const refusal = (code: string, message: string): QueryError =>
+    new QueryError("leave_requests", code === "42501" ? "no_permission" : "conflict", message, {
+      code,
+    });
+
+  it("shows a trigger's RAISE verbatim", () => {
+    // What the employee needs is the sentence the trigger wrote, not a retry.
+    const message = "Sick Leave must be taken on its own and cannot be combined with another leave type";
+    expect(mutationUserMessage(refusal("23514", message))).toBe(message);
+  });
+
+  it("shows the append-only guard's sentence", () => {
+    const message = "DELETE on public.leave_ledger is not permitted: append-only ledger";
+    expect(mutationUserMessage(refusal("0A000", message))).toBe(message);
+  });
+
+  it("hides Postgres's own constraint prose", () => {
+    /*
+      A bare CHECK reports the CONSTRAINT NAME, which is not something an
+      employee can act on. Same SQLSTATE as the trigger above, different author.
+    */
+    const raw = 'new row for relation "leave_requests" violates check constraint "ck_lr__reason"';
+    expect(mutationUserMessage(refusal("23514", raw))).not.toBe(raw);
+  });
+
+  it("hides a unique violation, whose message names an index", () => {
+    const raw = 'duplicate key value violates unique constraint "uq_hdt__number"';
+    expect(mutationUserMessage(refusal("23505", raw))).not.toBe(raw);
+  });
+
+  it("still prefers the permission message over the raw one", () => {
+    // 42501 is RLS refusing; the reason is never the employee's to fix.
+    const denied = mutationUserMessage(refusal("42501", "new row violates row-level security policy"));
+    expect(denied).not.toContain("row-level security");
   });
 });

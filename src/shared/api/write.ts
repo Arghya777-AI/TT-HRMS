@@ -93,6 +93,13 @@ export function isRuleRejection(e: unknown): e is QueryError {
   return e instanceof QueryError && e.kind === "conflict";
 }
 
+/*
+  `ruleRejectionMessage` — "did the database say something worth SHOWING?" —
+  lives in query.ts beside `QueryError` and `mutationUserMessage`. It cannot live
+  here: this module imports query.ts, and the dependency the other way would be a
+  cycle.
+*/
+
 interface WriteBuilder {
   insert(values: Record<string, unknown>): WriteBuilder;
   update(values: Record<string, unknown>): WriteBuilder;

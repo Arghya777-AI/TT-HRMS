@@ -846,11 +846,75 @@ export function isMutationErrorOfKind(e: unknown, kind: MutationErrorKind): bool
  * The plain-English sentence for ANY thrown value, so a form's error slot is
  * never empty and never shows a SQLSTATE.
  */
+/**
+ * Postgres's own constraint prose, which is NOT written for a person.
+ *
+ * A 23514 can come from two places that look identical to the client: a trigger
+ * that did `RAISE EXCEPTION 'Sick Leave must be taken on its own…'`, and a bare
+ * CHECK constraint, which Postgres reports as `new row for relation
+ * "leave_requests" violates check constraint "ck_lr__reason"`. The first is an
+ * answer; the second is a constraint name an employee cannot act on.
+ */
+const PG_CONSTRAINT_PROSE = [
+  /^new row for relation /i,
+  /^duplicate key value /i,
+  /^insert or update on table /i,
+  /^update or delete on table /i,
+  /^null value in column /i,
+  /violates (check|foreign key|unique|exclusion|not-null) constraint/i,
+];
+
+/**
+ * True when the database refused the write AND said something worth showing.
+ *
+ * The distinction `isRuleRejection` does not make: it answers "was this a
+ * business rule", which is the right question for deciding whether to retry, but
+ * not for deciding whether to render `e.message`. This answers the second.
+ *
+ * The codes are the ones this schema's own guards raise — 23514 from a trigger's
+ * RAISE, 0A000 from the append-only and system-managed guards, P0002 from a
+ * definer function that found nothing. Unique and foreign-key violations are
+ * excluded by code, and a bare CHECK is excluded by the shape of its message.
+ */
+export function ruleRejectionMessage(e: unknown): string | null {
+  if (!(e instanceof QueryError)) return null;
+  const code = e.code ?? "";
+  if (code !== "23514" && code !== "0A000" && code !== "P0002") return null;
+  const message = e.message.trim();
+  if (message === "") return null;
+  if (PG_CONSTRAINT_PROSE.some((pattern) => pattern.test(message))) return null;
+  return message;
+}
+
 export function mutationUserMessage(e: unknown): string {
   if (e instanceof MutationError) return e.userMessage;
   if (e instanceof QueryError) {
     if (e.isOffline) return t("write.error.offline");
     if (e.isNoPermission) return t("write.error.permissionDenied");
+    /*
+      THE DATABASE'S OWN SENTENCE, WHICH WAS BEING THROWN AWAY.
+
+      The same defect the note below describes for edge functions, left standing
+      for the database path: a trigger raises "Sick Leave must be taken on its
+      own and cannot be combined with another leave type", and the employee was
+      shown "The change could not be saved. Try again, and report it if it keeps
+      failing." — which is wrong twice, because retrying cannot fix a rule and
+      the one sentence that would have told them what to do was discarded.
+
+      `isRuleRejection` in write.ts has documented since it was written that
+      these messages "are safe to render". Nothing called it.
+    */
+    const rule = ruleRejectionMessage(e);
+    if (rule !== null) return rule;
+    /*
+      The SQLSTATE, when there is one. Whoever is asked to "report it" can only
+      report what they were shown, and three very different faults share this one
+      sentence.
+    */
+    const code = e.code;
+    if (typeof code === "string" && code.trim() !== "") {
+      return t("write.error.unknownWithCode", { code });
+    }
     return t("write.error.unknown");
   }
   /*

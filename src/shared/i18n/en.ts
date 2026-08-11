@@ -2203,6 +2203,17 @@ export const en = catalogue({
   "write.error.parse":
     "The record was saved but came back in an unexpected shape. Reload before making another change.",
   "write.error.unknown": "The change could not be saved. Try again, and report it if it keeps failing.",
+  /*
+    THE SAME SENTENCE, PLUS THE SQLSTATE.
+
+    A screenshot of the plain message is undiagnosable: 42P10 (a broken ON
+    CONFLICT), 42501 (RLS) and 40001 (serialisation) all read identically. Five
+    characters in a monospace suffix turned a round trip of guessing into a
+    one-line answer, so they stay. It is deliberately NOT the whole Postgres
+    message — that names constraints and columns an employee cannot act on.
+  */
+  "write.error.unknownWithCode":
+    "The change could not be saved. Try again, and report it if it keeps failing. (code {code})",
   "write.saved": "Saved.",
   "write.saving": "Saving…",
 

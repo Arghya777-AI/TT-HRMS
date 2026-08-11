@@ -402,6 +402,14 @@ COMMENT ON FUNCTION public.leave_requests_raise_approval() IS
 -- It does NOT touch anyone's availed days or invent a balance: it inserts the
 -- monthly credit and asks `recompute_leave_balance` for the arithmetic, which is
 -- the same function the accrual job uses.
+--
+-- ONE MONTH, DATED THE 1st OF THE MONTH IT IS FOR. That is 038500's convention
+-- and this keeps it: an employee who joined in August has a day for August, on
+-- 1 August. `accrue_leave` files ITS credits in arrears — run on the 1st of
+-- September, it credits September's 1st for the month of August — so the two
+-- never collide on `effective_date` and the unique index is what proves it. The
+-- practical effect is what was asked for: the month you join, you have a sick
+-- day, and an unused one stays on the ledger rather than lapsing.
 
 CREATE OR REPLACE FUNCTION public.backfill_sick_leave_accrual(p_as_of date DEFAULT NULL)
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
@@ -423,17 +431,28 @@ BEGIN
     RETURN 0;
   END IF;
 
+  /*
+    WHO ACCRUES IS `accrue_leave`'S QUESTION, NOT THIS FUNCTION'S.
+
+    The status list and the `date_of_join IS NOT NULL` test are copied from the
+    monthly job's own WHERE clause, so a catch-up run credits exactly the people
+    the scheduler would have credited and nobody else. An earlier draft said
+    `employment_status <> 'exited'`, which quietly included `pre_joining` —
+    somebody who has not started earning sick leave because they have not
+    started.
+  */
   FOR e IN
     SELECT id, date_of_join
       FROM public.employees
      WHERE deleted_at IS NULL
-       AND employment_status <> 'exited'
+       AND employment_status IN
+           ('active','on_probation','confirmed','on_notice','on_long_leave')
+       AND date_of_join IS NOT NULL
   LOOP
-    -- Nobody accrues for a month they had not joined by. The employee's own
-    -- join month is the floor; the leave year's January is the other.
-    v_first := GREATEST(
-      DATE '2026-01-01',
-      date_trunc('month', COALESCE(e.date_of_join, DATE '2026-01-01'))::date);
+    -- Nobody accrues for a month they had not joined by, and the leave year's
+    -- January is the other floor. Someone joining next month gets v_first later
+    -- than v_last, so the loop below simply does not run.
+    v_first := GREATEST(DATE '2026-01-01', date_trunc('month', e.date_of_join)::date);
 
     m := v_first;
     WHILE m <= v_last LOOP

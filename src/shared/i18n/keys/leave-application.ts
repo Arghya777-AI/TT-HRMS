@@ -35,9 +35,18 @@ export const keysLeaveApplication = {
     "{type} has to be taken on its own, so the other types are switched off. Clear it to combine types instead.",
 
   "leave.app.step3": "3 · Why, and who to contact",
+  /*
+    Two labels for one field. Migration 041600 put `requires_reason` on the leave
+    TYPE — true for Sick Leave, false for everything else — so the form says
+    which of the two this application is, rather than demanding a sentence for a
+    week-off nobody needs an explanation for.
+  */
+  "leave.app.monthlyCap": "max {days}/month",
   "leave.app.reason": "Reason",
+  "leave.app.reason.optional": "Reason (optional)",
   "leave.app.reasonPlaceholder": "e.g. family function out of town",
-  "leave.app.reasonHint": "At least 10 characters.",
+  "leave.app.reasonHint": "Sick leave needs a reason — at least 10 characters.",
+  "leave.app.reasonHint.optional": "Leave it blank if you would rather not say.",
   "leave.app.contact": "Contact while away (optional)",
   "leave.app.handover": "Handover notes (optional)",
 

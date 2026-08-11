@@ -394,6 +394,28 @@ export default function AdminLeaveTypesPage() {
             max: 365,
             help: t("adminLeave.types.help.maxDays"),
           },
+          /*
+            The MONTHLY ceiling, next to the per-request one it is constantly
+            confused with. `max_days_per_request` caps a single application —
+            four separate applications walk straight past it — and
+            `max_days_per_month` is what actually bounds a month. Migration
+            041600 seeds it at 3 for every active type, including Earned Leave,
+            so this field is where a longer holiday gets unlocked.
+          */
+          {
+            name: "max_days_per_month",
+            label: t("adminLeave.types.field.maxPerMonth"),
+            kind: "decimal",
+            min: 0,
+            max: 365,
+            help: t("adminLeave.types.help.maxPerMonth"),
+          },
+          {
+            name: "requires_reason",
+            label: t("adminLeave.types.field.requiresReason"),
+            kind: "checkbox",
+            help: t("adminLeave.types.help.requiresReason"),
+          },
           {
             name: "max_consecutive_days",
             label: t("adminLeave.types.field.maxConsecutive"),

@@ -52,6 +52,8 @@ export function useAllocatableTypes(context: MyLeaveContext | null): Allocatable
         minDays: rule.min_days_per_request,
         allowHalfDay: rule.allow_half_day,
         isPaid: rule.is_paid,
+        requiresReason: rule.requires_reason,
+        maxDaysPerMonth: rule.max_days_per_month,
       }))
       // Something to spend first, then alphabetically — an employee scanning for "what can I
       // actually use" should not have to read past nine empty types to find it.

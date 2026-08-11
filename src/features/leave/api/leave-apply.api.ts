@@ -118,6 +118,10 @@ export const leaveTypeRuleSchema = z.object({
    * the allocation form never names a code.
    */
   allows_combination: z.boolean(),
+  /** 041600 — reason mandatory for this type (Sick Leave). */
+  requires_reason: z.boolean(),
+  /** 041600 — ceiling per calendar month, across every request. */
+  max_days_per_month: dbNumericNullable,
 });
 
 export type LeaveTypeRule = z.infer<typeof leaveTypeRuleSchema>;
@@ -128,7 +132,8 @@ const LEAVE_TYPE_RULE_COLUMNS =
   "max_backdated_days, requires_document_after_days, availing_allowed_during_probation, " +
   "allow_negative_balance, max_negative_days, count_weekly_off_as_leave, " +
   "count_holiday_as_leave, min_service_months, max_times_in_service, " +
-  "applies_to_employment_types, gender_restriction, colour_hex, allows_combination";
+  "applies_to_employment_types, gender_restriction, colour_hex, allows_combination, " +
+  "requires_reason, max_days_per_month";
 
 /** Active leave types, in the order the admin console assigned them. */
 export async function fetchLeaveTypeRules(signal?: AbortSignal): Promise<LeaveTypeRule[]> {

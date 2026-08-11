@@ -122,7 +122,11 @@ export const leaveTypeSchema = z.object({
   max_encashment_days: dbNumericNullable,
   min_days_per_request: dbNumericNullable,
   max_days_per_request: dbNumericNullable,
+  /** 041600 — the ceiling for one calendar month, across every request. */
+  max_days_per_month: dbNumericNullable,
   max_consecutive_days: dbNumericNullable,
+  /** 041600 — does an employee have to say why? True for Sick Leave. */
+  requires_reason: z.boolean(),
   min_notice_days: dbIntNullable,
   max_backdated_days: dbIntNullable,
   requires_document_after_days: dbNumericNullable,

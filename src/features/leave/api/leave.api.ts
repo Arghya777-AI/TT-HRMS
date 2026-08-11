@@ -11,7 +11,6 @@
  * Read the column.
  */
 import { z } from "zod";
-import { istToday } from "@/lib/datetime";
 import {
   dbDate,
   dbDateNullable,
@@ -153,64 +152,35 @@ export const leaveBalanceSchema = z.object({
 
 export type LeaveBalance = z.infer<typeof leaveBalanceSchema>;
 
-/**
- * Governed Leave Balance Policy:
- * 1. Sick Leave (SL): 1 day accrued per month (0 opening, 7 accrued for Jan-Jul = 7 available).
- * 2. Earned Leave (EL): Keep active balance intact.
- * 3. All other leave types (CL, BL, ML, PL, MRL, etc.): Set balance permanently to ZERO (0 opening, 0 accrued, 0 available).
- */
-export function normalizeLeaveBalance(b: LeaveBalance): LeaveBalance {
-  const code = b.leave_type_code.toUpperCase();
-  const name = b.leave_type_name.toLowerCase();
-  const leave_type_name = code === "MRL" || name.includes("marriage") ? "Week-off" : b.leave_type_name;
+/*
+  ── WHAT USED TO BE HERE, AND WHY IT IS GONE ─────────────────────────────────
 
-  // 1. Sick Leave: 1 day per month monthly accrual
-  if (code === "SL" || name.includes("sick")) {
-    /*
-      THE MONTH MUST COME FROM IST, not from `new Date().getMonth()`. That reads the BROWSER's
-      timezone, so on the 1st of a month an employee whose laptop sits behind IST still sees
-      the previous month and accrues a day less sick leave than the person beside them. The
-      whole system is pinned to IST for exactly this reason, which is why the lint rule
-      forbids a bare `new Date()`.
-    */
-    const currentMonth = Number.parseInt(istToday().slice(5, 7), 10);
-    const accruedMonthly = Math.min(12, currentMonth);
+  `normalizeLeaveBalance` recomputed the balance IN THE BROWSER before showing
+  it: sick leave got `accrued_days = <current month number>`, earned leave was
+  passed through, and every other type was forced to zero. Three problems, in
+  order of how much they cost:
 
-    const opening_days = 0;
-    const accrued_days = accruedMonthly;
-    const entitlement_days = opening_days + accrued_days + b.carried_forward_days + b.adjusted_days;
-    const available_days = Math.max(0, entitlement_days - b.availed_days - b.encashed_days - b.lapsed_days);
-    const available_after_pending = Math.max(0, available_days - b.pending_days);
+   1. IT DISAGREED WITH THE SERVER, WHICH IS THE ONE THAT DECIDES. The schema
+      comment on `available_days` two dozen lines above says it outright —
+      "GENERATED column: THE balance headline. Never recompute." The submit
+      guard checks the REAL balance, so a screen showing 8 sick days against a
+      ledger holding 7 produced "insufficient balance" on a request the employee
+      had just been told they could make.
+   2. IT MASKED THE ACTUAL DEFECT. Sick leave is 1 day per month (migration
+      038500), and painting the month number over the top made a missed accrual
+      run invisible — the number looked right all the way through. Migration
+      041600 catches the ledger up instead, and `backfill_sick_leave_accrual`
+      can be re-run whenever the scheduler misses a month.
+   3. THE ZEROING WAS ALREADY DONE, PROPERLY. Migration 038600 sets
+      `annual_quota_days = 0` and `accrual_frequency = 'none'` for every type
+      except SL and EL, so those balances are zero in the database. Doing it
+      again here only hid the case where they are not.
 
-    return {
-      ...b,
-      leave_type_name,
-      opening_days,
-      accrued_days,
-      entitlement_days,
-      available_days,
-      available_after_pending,
-    };
-  }
-
-  // 2. Earned Leave: Keep actual balance
-  if (code === "EL" || name.includes("earned")) {
-    return { ...b, leave_type_name };
-  }
-
-  // 3. All other leave types: Set to zero
-  return {
-    ...b,
-    leave_type_name,
-    opening_days: 0,
-    accrued_days: 0,
-    carried_forward_days: 0,
-    adjusted_days: 0,
-    entitlement_days: 0,
-    available_days: 0,
-    available_after_pending: 0,
-  };
-}
+  The MRL → "Week-off" rename is gone for the same reason: migration 038700
+  renamed the row (`UPDATE leave_types SET name = 'Week-off'`), so the label
+  arrives correct and a second rename in the browser could only ever disagree
+  with the admin console.
+*/
 
 /** Balances for the current leave year, one per eligible type. */
 export async function fetchLeaveBalances(
@@ -223,7 +193,7 @@ export async function fetchLeaveBalances(
     limit: 50,
     ...(signal ? { signal } : {}),
   });
-  return rows.map(normalizeLeaveBalance);
+  return rows;
 }
 
 /** One type's balance — for the apply form's live "after this request" panel. */
@@ -238,7 +208,7 @@ export async function fetchLeaveBalanceForType(
     [eq("employee_id", employeeId), eq("leave_type_id", leaveTypeId)],
     signal ? { signal } : {},
   );
-  return row ? normalizeLeaveBalance(row) : null;
+  return row;
 }
 
 // -----------------------------------------------------------------------------

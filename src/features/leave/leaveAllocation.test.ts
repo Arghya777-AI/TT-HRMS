@@ -14,6 +14,7 @@ import {
   allocationProblems,
   canSubmitAllocation,
   remainingDays,
+  reasonRequired,
   suggestAllocation,
   type AllocatableType,
 } from "./leaveAllocation";
@@ -27,6 +28,8 @@ const WEEK_OFF: AllocatableType = {
   minDays: 0.5,
   allowHalfDay: true,
   isPaid: true,
+  requiresReason: false,
+  maxDaysPerMonth: 3,
 };
 
 const EARNED: AllocatableType = {
@@ -38,6 +41,8 @@ const EARNED: AllocatableType = {
   minDays: 0.5,
   allowHalfDay: true,
   isPaid: true,
+  requiresReason: false,
+  maxDaysPerMonth: 3,
 };
 
 /** Non-combinable, mirroring `allows_combination = false` on SL. */
@@ -50,6 +55,9 @@ const SICK: AllocatableType = {
   minDays: 0.5,
   allowHalfDay: true,
   isPaid: true,
+  /* `requires_reason = true` — 041600 sets it on SL and nothing else. */
+  requiresReason: true,
+  maxDaysPerMonth: 3,
 };
 
 const UNPAID: AllocatableType = {
@@ -61,6 +69,8 @@ const UNPAID: AllocatableType = {
   minDays: 0.5,
   allowHalfDay: true,
   isPaid: false,
+  requiresReason: false,
+  maxDaysPerMonth: 3,
 };
 
 const NO_HALVES: AllocatableType = {
@@ -72,6 +82,8 @@ const NO_HALVES: AllocatableType = {
   minDays: 0.5,
   allowHalfDay: false,
   isPaid: true,
+  requiresReason: false,
+  maxDaysPerMonth: 3,
 };
 
 const ALL = [WEEK_OFF, EARNED, SICK, UNPAID, NO_HALVES];
@@ -214,5 +226,35 @@ describe("suggestAllocation", () => {
     expect(suggestion.length).toBeGreaterThan(0);
     // And the form will then report the shortfall rather than pretending it is complete.
     expect(canSubmitAllocation(100, suggestion, ALL)).toBe(false);
+  });
+});
+
+describe("reasonRequired", () => {
+  const ALL = [WEEK_OFF, EARNED, SICK, UNPAID, NO_HALVES];
+
+  it("is false when nothing chosen requires one", () => {
+    expect(reasonRequired([{ typeId: "el", days: 2 }], ALL)).toBe(false);
+  });
+
+  it("is true as soon as a type that requires one is used", () => {
+    expect(reasonRequired([{ typeId: "sl", days: 1 }], ALL)).toBe(true);
+  });
+
+  it("is true for a mixed application containing that type", () => {
+    // The form carries ONE reason field, so any member demanding it makes the
+    // whole application demand it.
+    expect(
+      reasonRequired([{ typeId: "el", days: 1 }, { typeId: "sl", days: 1 }], ALL),
+    ).toBe(true);
+  });
+
+  it("ignores a type allocated zero days", () => {
+    // A row the employee opened and left at 0 is not part of the application,
+    // and demanding a reason for it would be a form that cannot be submitted.
+    expect(reasonRequired([{ typeId: "sl", days: 0 }], ALL)).toBe(false);
+  });
+
+  it("ignores an allocation naming a type that is not offered", () => {
+    expect(reasonRequired([{ typeId: "ghost", days: 3 }], ALL)).toBe(false);
   });
 });

@@ -80,6 +80,7 @@ import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
 import {
   allocationProblems,
   canSubmitAllocation,
+  reasonRequired,
   remainingDays,
   suggestAllocation,
   type Allocation,
@@ -205,9 +206,19 @@ export default function LeaveApplicationPage() {
 
   /* Submitting over a range the allocation does not match would hand the employee a refusal
      with a number this screen never showed them — `total_days` is stamped from the DATES. */
+  /*
+    WHO HAS TO SAY WHY.
+
+    This used to demand ten characters from everybody, because `ck_lr__reason`
+    did. Migration 041600 moved that rule onto the TYPE — `requires_reason`, true
+    for Sick Leave and false for the rest — and `trg_leave_requests__submit_rules`
+    is what enforces it now. So the form asks only when something chosen asks.
+  */
+  const needsReason = useMemo(() => reasonRequired(allocations, types), [allocations, types]);
+
   const ready =
     canSubmitAllocation(total, allocations, types) &&
-    reason.trim().length >= 10 &&
+    (!needsReason || reason.trim().length >= 10) &&
     badRange === null &&
     mismatch === null &&
     split.problem === null &&
@@ -613,6 +624,19 @@ export default function LeaveApplicationPage() {
                           ? t("leave.app.available", { days: formatNumber(type.availableDays) })
                           : t("leave.app.unpaid")}
                         {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
+                        {/*
+                          STATED, NOT ENFORCED HERE. Knowing how much of the
+                          month's ceiling is already spent needs a read this form
+                          does not make, and a ceiling half-checked in the
+                          browser is worse than one named plainly:
+                          `trg_leave_requests__submit_rules` refuses with the
+                          month and the days already booked in it.
+                        */}
+                        {type.maxDaysPerMonth !== null
+                          ? ` · ${t("leave.app.monthlyCap", {
+                              days: formatNumber(type.maxDaysPerMonth),
+                            })}`
+                          : ""}
                       </span>
                     </span>
                     <input
@@ -640,7 +664,9 @@ export default function LeaveApplicationPage() {
           <h2 className="font-display text-sm font-semibold">{t("leave.app.step3")}</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-              <span className="font-medium text-muted-foreground">{t("leave.app.reason")}</span>
+              <span className="font-medium text-muted-foreground">
+                {needsReason ? t("leave.app.reason") : t("leave.app.reason.optional")}
+              </span>
               <input
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
@@ -648,7 +674,9 @@ export default function LeaveApplicationPage() {
                 placeholder={t("leave.app.reasonPlaceholder")}
                 className="h-10 rounded-md border bg-background px-3 text-sm"
               />
-              <span className="text-muted-foreground">{t("leave.app.reasonHint")}</span>
+              <span className="text-muted-foreground">
+                {needsReason ? t("leave.app.reasonHint") : t("leave.app.reasonHint.optional")}
+              </span>
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="font-medium text-muted-foreground">{t("leave.app.contact")}</span>

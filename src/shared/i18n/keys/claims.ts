@@ -331,4 +331,12 @@ export const keysClaims = {
   "admin.hd.relatedHint": "Approvals and their service levels are a different queue, and they live here.",
   "admin.hd.footnote":
     "Reassigning to somebody else is not offered: there is no desk-membership table, so there is no list of who is on a desk, and the whole directory would let a ticket be parked on a chef. Claiming it yourself is the one assignment that is unambiguous.",
+
+  // ── Leave Type Master — the two rules migration 041600 added ───────────────
+  "adminLeave.types.field.maxPerMonth": "Max days per month",
+  "adminLeave.types.help.maxPerMonth":
+    "The ceiling for one calendar month, counted across every request of this type. Different from max per request, which four separate requests walk straight past. Blank means no ceiling.",
+  "adminLeave.types.field.requiresReason": "Reason mandatory",
+  "adminLeave.types.help.requiresReason":
+    "Make the employee say why. On for Sick Leave; off elsewhere, where a reason is offered but not demanded.",
 } as const;

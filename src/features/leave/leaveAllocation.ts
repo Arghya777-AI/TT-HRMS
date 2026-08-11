@@ -37,12 +37,46 @@ export interface AllocatableType {
   readonly allowHalfDay: boolean;
   /** Unpaid leave has no balance to run out of. */
   readonly isPaid: boolean;
+  /**
+   * `leave_types.requires_reason` — true for Sick Leave, false for the rest.
+   *
+   * The form asks for a reason when ANY chosen type requires one, and
+   * `trg_leave_requests__submit_rules` refuses the request if it is missing.
+   */
+  readonly requiresReason: boolean;
+  /**
+   * `leave_types.max_days_per_month` — the ceiling for one calendar month
+   * across every request of this type. Null means no ceiling.
+   *
+   * Shown, not enforced here: knowing how much of it is already spent takes a
+   * server read the form does not make, and a half-enforced ceiling is worse
+   * than a stated one. The trigger refuses with its own sentence, naming the
+   * month and the days already booked.
+   */
+  readonly maxDaysPerMonth: number | null;
 }
 
 /** One line of the split: this many days from this type. */
 export interface Allocation {
   readonly typeId: string;
   readonly days: number;
+}
+
+/**
+ * Does this application need a reason typed?
+ *
+ * ANY chosen type asking for one is enough — a combined Sick + Week-off
+ * application carries ONE reason field, and Sick Leave is what makes it
+ * mandatory. Allocations of zero days do not count: a type sitting at 0 is one
+ * the employee looked at and did not use.
+ */
+export function reasonRequired(
+  allocations: readonly Allocation[],
+  types: readonly AllocatableType[],
+): boolean {
+  return allocations.some(
+    (a) => a.days > 0 && types.find((t) => t.id === a.typeId)?.requiresReason === true,
+  );
 }
 
 export type AllocationProblem =

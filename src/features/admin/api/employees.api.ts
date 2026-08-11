@@ -258,21 +258,52 @@ export function countEmployeeDirectory(
   });
 }
 
+/** How a person wants the directory ordered. */
+export const directorySortValues = ["name", "code", "joined"] as const;
+export type DirectorySort = (typeof directorySortValues)[number];
+
+export function isDirectorySort(value: string | null): value is DirectorySort {
+  return value !== null && (directorySortValues as readonly string[]).includes(value);
+}
+
 /**
- * One keyset page of the directory, ordered by employee_code (which is
- * monotonic and unique, so it is both the sort key and the tiebreak-safe key —
- * `id` is still passed as the tiebreak because the contract requires a unique
- * column and a future legacy import could repeat a code).
+ * The column and direction for each sort.
+ *
+ * `id` is the tiebreak in every case: `display_name` repeats (two people called
+ * Suresh Kumar is ordinary) and even `employee_code` could repeat after a legacy
+ * import, and keyset paging needs a unique second key or it loses rows on the
+ * page boundary.
+ *
+ * Joining date descends — the newest joiner is the one being looked for — while
+ * the two alphabetical sorts ascend.
+ */
+const SORT_KEY: Readonly<Record<DirectorySort, { column: string; ascending: boolean }>> = {
+  name: { column: "display_name", ascending: true },
+  code: { column: "employee_code", ascending: true },
+  joined: { column: "date_of_join", ascending: false },
+};
+
+/**
+ * One keyset page of the directory.
+ *
+ * BY NAME BY DEFAULT, asked for directly: "for employee records based on name".
+ * It used to be `employee_code`, which is stable and meaningless — nobody scans a
+ * list of people looking for TT0018.
+ *
+ * Sorting by name is only possible because `cursorValue` quotes the cursor
+ * instead of banning punctuation: "Raghu K.R." and "D'Souza" are ordinary names
+ * here and each would have thrown on page two under the old rule.
  */
 export function fetchEmployeeDirectory(
   filters: DirectoryFilters,
   pageSize: number,
   cursor: Cursor | null,
+  sort: DirectorySort = "name",
   signal?: AbortSignal,
 ): Promise<Page<DirectoryRow>> {
   return paginate(V_ADMIN_EMPLOYEE, directoryRowSchema, {
-    orderBy: "employee_code",
-    ascending: true,
+    orderBy: SORT_KEY[sort].column,
+    ascending: SORT_KEY[sort].ascending,
     tiebreak: "id",
     pageSize,
     cursor,

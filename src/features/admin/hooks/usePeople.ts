@@ -35,6 +35,7 @@ import {
   fetchAdminEmployeeByCode,
   fetchBankAccountsMasked,
   fetchEmployeeDirectory,
+  type DirectorySort,
   fetchStatutoryMasked,
   revealBankAccounts,
   revealStatutory,
@@ -89,13 +90,16 @@ function directoryKey(f: DirectoryFilters, pageSize: number): Record<string, unk
 export function useEmployeeDirectory(
   filters: DirectoryFilters,
   pageSize = DIRECTORY_PAGE_SIZE,
+  sort: DirectorySort = "name",
 ): DirectoryInfinite {
   return useInfiniteQuery({
     initialPageParam: null as Cursor | null,
     retry: shouldRetryQuery,
-    queryKey: qk.admin.employees(directoryKey(filters, pageSize)),
+    /* The sort is part of the key: changing it changes the ORDER of every page,
+       so the cached pages of the old sort are not pages of the new one. */
+    queryKey: qk.admin.employees({ ...directoryKey(filters, pageSize), sort }),
     queryFn: ({ pageParam, signal }) =>
-      fetchEmployeeDirectory(filters, pageSize, pageParam, signal),
+      fetchEmployeeDirectory(filters, pageSize, pageParam, sort, signal),
     getNextPageParam: (last) => last.nextCursor,
   });
 }

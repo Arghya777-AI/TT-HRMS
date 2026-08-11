@@ -50,6 +50,7 @@ import { fmtCivilDate, fmtDateTime, fmtDurationFromHours } from "@/lib/datetime"
 import { dash, formatDays, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { summaryText } from "@/features/apply/api/apply.api";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { Notice } from "@/features/admin/components/Notice";
 import { PersonCell } from "@/features/admin/components/PersonCell";
@@ -186,10 +187,6 @@ export default function TeamApprovalsPage() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [allRows]);
 
-  const openRow = useMemo(
-    () => allRows.find((r) => r.approval_request_id === openId) ?? null,
-    [allRows, openId],
-  );
 
   const prompt = useReasonPrompt<DecisionTarget>();
   const { ask, close: closePrompt, target, isOpen } = prompt;
@@ -224,10 +221,22 @@ export default function TeamApprovalsPage() {
         width: "15rem",
         sortable: true,
         sortValue: (r) => r.request_type_name,
+        /*
+          THE TITLE, NOT JUST THE TYPE.
+
+          Reported: "I request laptop it is not visible, to show I have to click
+          to see more details". The column said "Asset Request" for every asset
+          request — true and useless. `approval_requests.title` is written by
+          whoever raised it and says WHICH thing: "Asset · Laptops ×1",
+          "Travel · Bengaluru → Coorg", "Sick Leave · 11 Aug". Every request type
+          carries one, so this needs no per-type branch.
+        */
         render: (r) => (
           <span className="flex flex-col leading-tight">
-            <span className="font-medium">{r.request_type_name}</span>
-            <span className="num text-xs text-muted-foreground">{r.request_number}</span>
+            <span className="font-medium">{r.title}</span>
+            <span className="text-xs text-muted-foreground">
+              {r.request_type_name} · <span className="num">{r.request_number}</span>
+            </span>
           </span>
         ),
       },
@@ -267,15 +276,23 @@ export default function TeamApprovalsPage() {
         width: "16rem",
         hideBelow: "lg",
         render: (r) => {
+          /*
+            LEAVE FIRST, then everything else. A leave request's reason is the
+            sentence the employee typed into `leave_requests`, which no workflow
+            table carries — so it is worth the extra read. Every OTHER type puts
+            its sentence in `approval_requests.summary`, and this column used to
+            return a dash for all of them: an asset request showed nothing at all,
+            which is what sent managers clicking into each row to find out what
+            was being asked for.
+          */
           const ref = context.data?.refs.get(r.approval_request_id);
           const leave =
             ref !== undefined && ref.detail_table === LEAVE_REQUESTS_TABLE
               ? context.data?.leave.get(ref.detail_id)
               : undefined;
-          if (leave === undefined) return dash(null);
-          return (
-            <span className="line-clamp-2 text-sm text-muted-foreground">{leave.reason}</span>
-          );
+          const text = leave?.reason ?? summaryText(ref?.summary);
+          if (text === null || text === undefined || text.trim() === "") return dash(null);
+          return <span className="line-clamp-2 text-sm text-muted-foreground">{text}</span>;
         },
       },
       {
@@ -514,13 +531,20 @@ export default function TeamApprovalsPage() {
             onRowClick={(r) =>
               setParam("open", openId === r.approval_request_id ? "" : r.approval_request_id)
             }
+            /*
+              UNDER THE ROW, not under the grid. It used to render after the whole
+              list: "if we have lot row then we have to go down to see details".
+              With 25 rows on a page the detail was a screen and a half away from
+              the row it described.
+            */
+            renderRowDetail={(r) =>
+              r.approval_request_id === openId ? (
+                <RequestDetail row={r} onClose={() => setParam("open", "")} />
+              ) : null
+            }
           />
         </StateBoundary>
       </div>
-
-      {openRow !== null ? (
-        <RequestDetail row={openRow} onClose={() => setParam("open", "")} />
-      ) : null}
 
       <div className="mt-4">
         <Notice tone="info">{t("team.approvals.footnote")}</Notice>

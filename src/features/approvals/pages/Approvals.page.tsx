@@ -140,6 +140,7 @@ export default function ApprovalsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const sliceParam = searchParams.get("slice");
   const slice: RequestSlice = isRequestSlice(sliceParam) ? sliceParam : "open";
+  const requestTypeId = searchParams.get("type") ?? "";
 
   const rows = useMemo(
     () => (actions.data ? buildActions(actions.data) : []),
@@ -248,6 +249,13 @@ export default function ApprovalsPage() {
             const params = new URLSearchParams(searchParams);
             if (next === "open") params.delete("slice");
             else params.set("slice", next);
+            setSearchParams(params, { replace: true });
+          }}
+          requestTypeId={requestTypeId}
+          onRequestTypeChange={(next) => {
+            const params = new URLSearchParams(searchParams);
+            if (next === "") params.delete("type");
+            else params.set("type", next);
             setSearchParams(params, { replace: true });
           }}
         />

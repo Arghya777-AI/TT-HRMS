@@ -414,4 +414,9 @@ export const keysClaims = {
   */
   "form.needTen": "At least 10 characters.",
   "form.required": "(required)",
+  "register.filter.type": "Kind of request",
+  "register.filter.allTypes": "All kinds",
+  "register.filter.clear": "Clear",
+  "grid.expand": "Show details",
+  "grid.collapse": "Hide details",
 } as const;

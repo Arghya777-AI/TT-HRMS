@@ -227,22 +227,38 @@ const SLICE_STATUSES: Readonly<Record<Exclude<RequestSlice, "all">, readonly str
   rejected: ["rejected", "expired", "failed"],
 };
 
-/** ONE predicate builder, so a tile count and the grid below it cannot disagree. */
-export function myRequestFilters(employeeId: string, slice: RequestSlice): readonly Filter[] {
-  const base: Filter[] = [eq("subject_employee_id", employeeId)];
-  if (slice === "all") return base;
-  return [...base, inList("status", SLICE_STATUSES[slice])];
+/**
+ * ONE predicate builder, so a tile count and the grid below it cannot disagree.
+ *
+ * The type filter is applied HERE rather than by filtering rows in the browser,
+ * which is what makes the tiles mean what they say: with "Leave" selected, the
+ * Approved tile counts approved LEAVE, not approved everything. A client-side
+ * filter would have left five tiles describing a different set from the grid
+ * under them.
+ */
+export function myRequestFilters(
+  employeeId: string,
+  slice: RequestSlice,
+  requestTypeId?: string,
+): readonly Filter[] {
+  const out: Filter[] = [eq("subject_employee_id", employeeId)];
+  if (slice !== "all") out.push(inList("status", SLICE_STATUSES[slice]));
+  if (requestTypeId !== undefined && requestTypeId !== "") {
+    out.push(eq("request_type_id", requestTypeId));
+  }
+  return out;
 }
 
 /** One slice of the employee's register, with the current approvers named. */
 export async function fetchMyRequests(
   employeeId: string,
   slice: RequestSlice,
+  requestTypeId?: string,
   signal?: AbortSignal,
 ): Promise<MyOpenRequests> {
   const rows = await selectMany(APPROVAL_REQUESTS_TABLE, openRequestSchema, {
     columns: OPEN_REQUEST_COLUMNS,
-    filters: myRequestFilters(employeeId, slice),
+    filters: myRequestFilters(employeeId, slice, requestTypeId),
     order: [{ column: "submitted_at", ascending: false }],
     limit: 200,
     ...(signal ? { signal } : {}),
@@ -266,11 +282,12 @@ export async function fetchMyRequests(
 export function countMyRequests(
   employeeId: string,
   slice: RequestSlice,
+  requestTypeId?: string,
   signal?: AbortSignal,
 ): Promise<number> {
   return selectCount(
     APPROVAL_REQUESTS_TABLE,
-    myRequestFilters(employeeId, slice),
+    myRequestFilters(employeeId, slice, requestTypeId),
     signal ? { signal } : {},
   );
 }

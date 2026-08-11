@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -192,6 +199,10 @@ export function DataGrid<T>({
                   )}
                 </TableHead>
               ))}
+
+              {/* The chevron column has no heading — its meaning is the icon. */}
+
+              {renderRowDetail ? <TableHead className="w-10" /> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -229,6 +240,34 @@ export function DataGrid<T>({
                           {cellContent(row, col)}
                         </TableCell>
                       ))}
+                      {/*
+                        AN AFFORDANCE, not just a clickable row. "add expand and
+                        close button to see more details otherwise how manager
+                        will know about it" — a row that expands with no visible
+                        control is a feature only the person who built it knows
+                        about. The chevron turns when open, and it is a real
+                        button so the keyboard reaches it.
+                      */}
+                      {renderRowDetail ? (
+                        <TableCell className="w-10 p-0 text-right">
+                          <button
+                            type="button"
+                            aria-expanded={detail !== null}
+                            aria-label={detail === null ? t("grid.expand") : t("grid.collapse")}
+                            onClick={(e) => {
+                              // The row handler would toggle it a second time.
+                              e.stopPropagation();
+                              onRowClick?.(row);
+                            }}
+                            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <ChevronDown
+                              className={cn("size-4 transition-transform", detail !== null && "rotate-180")}
+                              aria-hidden
+                            />
+                          </button>
+                        </TableCell>
+                      ) : null}
                     </TableRow>,
                   ];
                   if (detail !== null) {
@@ -236,7 +275,7 @@ export function DataGrid<T>({
                       // `hover:bg-transparent` so the detail does not light up as
                       // if it were another clickable row.
                       <TableRow key={`${rowKey(row)}--detail`} className="hover:bg-transparent">
-                        <TableCell colSpan={columns.length} className="p-0">
+                        <TableCell colSpan={columns.length + 1} className="p-0">
                           {detail}
                         </TableCell>
                       </TableRow>,
@@ -246,7 +285,7 @@ export function DataGrid<T>({
                 })}
             {empty ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={columns.length} className="p-6">
+                <TableCell colSpan={columns.length + (renderRowDetail ? 1 : 0)} className="p-6">
                   {emptyState ?? <EmptyState title={t("common.noRows.title")} />}
                 </TableCell>
               </TableRow>

@@ -41,7 +41,12 @@ import {
   type OpenRequest,
   type RequestSlice,
 } from "../api/apply.api";
-import { useApprovalTrail, useMyRequestCount, useMyRequests } from "../hooks/useApply";
+import {
+  useApprovalTrail,
+  useMyRequestCount,
+  useMyRequests,
+  useRequestTypes,
+} from "../hooks/useApply";
 
 /**
  * `approval_status` has twelve values and an employee needs four ideas.
@@ -75,14 +80,18 @@ const SLICE_TONE: Readonly<Record<RequestSlice, string>> = {
 /** One tile: its own count query, so a failing tile cannot blank the others. */
 function SliceTile({
   slice,
+  requestTypeId,
   active,
   onSelect,
 }: {
   slice: RequestSlice;
+  /* The tile counts the SAME set the grid shows, so "Approved 2" under a Leave
+     filter means two approved leave requests and not two approved anything. */
+  requestTypeId: string;
   active: boolean;
   onSelect: () => void;
 }) {
-  const count = useMyRequestCount(slice);
+  const count = useMyRequestCount(slice, requestTypeId === "" ? undefined : requestTypeId);
   return (
     <button
       type="button"
@@ -162,10 +171,24 @@ function Trail({ requestId }: { requestId: string }) {
 export interface RequestRegisterProps {
   readonly slice: RequestSlice;
   readonly onSliceChange: (slice: RequestSlice) => void;
+  /** `request_types.id`, or "" for every kind. Lives in the URL with the slice. */
+  readonly requestTypeId: string;
+  readonly onRequestTypeChange: (requestTypeId: string) => void;
 }
 
-export function RequestRegister({ slice, onSliceChange }: RequestRegisterProps) {
-  const requests = useMyRequests(slice);
+export function RequestRegister({
+  slice,
+  onSliceChange,
+  requestTypeId,
+  onRequestTypeChange,
+}: RequestRegisterProps) {
+  const requests = useMyRequests(slice, requestTypeId === "" ? undefined : requestTypeId);
+  /*
+    The options are the catalogue, not the rows on screen. Deriving them from the
+    loaded rows would shrink the list to one the moment a filter was applied, and
+    a filter that eats its own options is one nobody can undo.
+  */
+  const types = useRequestTypes();
   const [openId, setOpenId] = useState<string | null>(null);
   const approvers: Readonly<Record<string, DirectoryEntry>> = requests.data?.approvers ?? {};
 
@@ -259,10 +282,39 @@ export function RequestRegister({ slice, onSliceChange }: RequestRegisterProps) 
           <SliceTile
             key={value}
             slice={value}
+            requestTypeId={requestTypeId}
             active={slice === value}
             onSelect={() => onSliceChange(value)}
           />
         ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label htmlFor="register-type" className="text-xs font-medium text-muted-foreground">
+          {t("register.filter.type")}
+        </label>
+        <select
+          id="register-type"
+          value={requestTypeId}
+          onChange={(e) => onRequestTypeChange(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">{t("register.filter.allTypes")}</option>
+          {(types.data ?? []).map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.name}
+            </option>
+          ))}
+        </select>
+        {requestTypeId !== "" ? (
+          <button
+            type="button"
+            className="text-xs font-medium underline"
+            onClick={() => onRequestTypeChange("")}
+          >
+            {t("register.filter.clear")}
+          </button>
+        ) : null}
       </div>
 
       <p className="mt-2 text-xs text-muted-foreground">{t("register.hint")}</p>

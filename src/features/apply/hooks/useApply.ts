@@ -356,11 +356,21 @@ export function useSubmitAssetRequest(): UseMutationResult<
 // -----------------------------------------------------------------------------
 
 /** One slice of my requests, with the current approvers resolved to names. */
-export function useMyRequests(slice: RequestSlice): UseQueryResult<MyOpenRequests, Error> {
+export function useMyRequests(
+  slice: RequestSlice,
+  requestTypeId?: string,
+): UseQueryResult<MyOpenRequests, Error> {
   const employeeId = useEmployeeId();
   return useQuery({
-    queryKey: [...qk.apply.openRequests(), "register", employeeId ?? NO_EMPLOYEE, slice],
-    queryFn: ({ signal }) => fetchMyRequests(requireEmployeeId(employeeId), slice, signal),
+    queryKey: [
+      ...qk.apply.openRequests(),
+      "register",
+      employeeId ?? NO_EMPLOYEE,
+      slice,
+      requestTypeId ?? "any",
+    ],
+    queryFn: ({ signal }) =>
+      fetchMyRequests(requireEmployeeId(employeeId), slice, requestTypeId, signal),
     enabled: employeeId !== null,
     retry: shouldRetryQuery,
   });
@@ -373,11 +383,21 @@ export function useMyRequests(slice: RequestSlice): UseQueryResult<MyOpenRequest
  * own tile instead of blanking the row, and the number is Postgres's rather than
  * `rows.length`, which would report the page size.
  */
-export function useMyRequestCount(slice: RequestSlice): UseQueryResult<number, Error> {
+export function useMyRequestCount(
+  slice: RequestSlice,
+  requestTypeId?: string,
+): UseQueryResult<number, Error> {
   const employeeId = useEmployeeId();
   return useQuery({
-    queryKey: [...qk.apply.openRequests(), "register-count", employeeId ?? NO_EMPLOYEE, slice],
-    queryFn: ({ signal }) => countMyRequests(requireEmployeeId(employeeId), slice, signal),
+    queryKey: [
+      ...qk.apply.openRequests(),
+      "register-count",
+      employeeId ?? NO_EMPLOYEE,
+      slice,
+      requestTypeId ?? "any",
+    ],
+    queryFn: ({ signal }) =>
+      countMyRequests(requireEmployeeId(employeeId), slice, requestTypeId, signal),
     enabled: employeeId !== null,
     retry: shouldRetryQuery,
   });

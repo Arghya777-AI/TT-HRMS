@@ -509,16 +509,30 @@ export interface PaginateOptions {
  * values are ids, dates and numbers; anything else is refused rather than
  * escaped-and-hoped.
  */
-function assertCursorSafe(relation: string, value: FilterScalar): string {
+/**
+ * A cursor value, safe inside PostgREST's `or=(…)` predicate.
+ *
+ * ── WHY THIS IS NOT JUST A REFUSAL ANY MORE ─────────────────────────────────
+ *
+ * It used to throw for any value containing `( ) , . " ' \` and tell the caller
+ * to "paginate on an id or date column". That is fine while every register sorts
+ * by a code or a timestamp, and wrong the moment one sorts by NAME — which is
+ * what a directory should do. "D'Souza", "Raghu K.R." and "Rao, Suresh" are
+ * ordinary names here, and each of them would have thrown on page two.
+ *
+ * PostgREST accepts a double-quoted value inside a filter, so quoting is the
+ * answer rather than banning the characters: inside quotes, commas and parens are
+ * data instead of syntax. An embedded `"` is escaped as `\"`, and a backslash as
+ * `\\`, which is PostgREST's own convention.
+ *
+ * Values with none of those characters are returned bare — the emitted predicate
+ * for a uuid or a timestamp is byte-for-byte what it was before this change, so
+ * every existing register keeps the URL it had.
+ */
+export function cursorValue(value: FilterScalar): string {
   const s = String(value);
-  if (/[(),."'\\]/.test(s)) {
-    throw new QueryError(
-      relation,
-      "unknown",
-      `Cursor value ${JSON.stringify(s)} contains a character that is unsafe in a PostgREST 'or' predicate. Paginate on an id or date column.`,
-    );
-  }
-  return s;
+  if (!/[(),."'\\ ]/.test(s)) return s;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 /**
@@ -542,8 +556,8 @@ export async function paginate<S extends z.ZodTypeAny>(
 
   const cursor = opts.cursor ?? null;
   if (cursor !== null) {
-    const key = assertCursorSafe(view, cursor.key);
-    const tie = assertCursorSafe(view, cursor.tiebreak);
+    const key = cursorValue(cursor.key);
+    const tie = cursorValue(cursor.tiebreak);
     b = b.or(
       `${opts.orderBy}.${cmp}.${key},and(${opts.orderBy}.eq.${key},${opts.tiebreak}.${cmp}.${tie})`,
     );

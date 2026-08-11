@@ -42,6 +42,19 @@ export const keysLeaveApplication = {
     week-off nobody needs an explanation for.
   */
   "leave.app.monthlyCap": "max {days}/month",
+  "leave.app.cap.balance":
+    "You have {days} day(s) of {type} left, and a leave balance cannot go negative.",
+  "leave.app.cap.monthly": "{type} allows at most {days} day(s) in one month.",
+  "leave.app.cap.use": "Ask for {days} day(s) instead",
+  "leave.app.blocked.title": "Before you can send this",
+  "leave.app.blocked.noDays": "Say how many days you want.",
+  "leave.app.blocked.reason":
+    "Sick leave needs a reason of at least 10 characters — you have typed {n}.",
+  "leave.app.blocked.noSegments":
+    "These dates cannot carry the split. Change the dates or the amounts.",
+  "leave.app.reduce.hint":
+    "You asked for {asked} day(s) and only {placed} can be covered by your balances.",
+  "leave.app.reduce.action": "Ask for {days} day(s) instead",
   "leave.app.reason": "Reason",
   "leave.app.reason.optional": "Reason (optional)",
   "leave.app.reasonPlaceholder": "e.g. family function out of town",

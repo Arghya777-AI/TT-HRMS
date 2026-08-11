@@ -52,7 +52,7 @@
  *
  * @route /me/leave/apply
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CalendarPlus, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -79,12 +79,13 @@ import {
 import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
 import {
   allocationProblems,
-  canSubmitAllocation,
   reasonRequired,
   remainingDays,
+  singleTypeCap,
   suggestAllocation,
   type Allocation,
   type AllocationProblem,
+  type SingleTypeCap,
 } from "../leaveAllocation";
 import {
   submitLeaveApplication,
@@ -174,6 +175,20 @@ export default function LeaveApplicationPage() {
   const [totalDays, setTotalDays] = useState("1");
   const [fromDate, setFromDate] = useState(nowIstDate());
   const [toDate, setToDate] = useState(nowIstDate());
+  /*
+    ── ONE PANEL, AND EVERY ROW KNOWS ITS CEILING ────────────────────────────
+
+    A "pick one type first" mode was built here and then removed: putting all
+    five days on a single row IS one type, so the mode was a second way to say
+    the same thing, and two ways to say one thing is what made this screen
+    confusing to begin with.
+
+    What the attempt did surface is the part that was genuinely missing. Somebody
+    holding one sick day who asked for two got "1 still to place" and no way
+    forward — correct, and useless. Now each row carries its own ceiling, cannot
+    be pushed past it, and a total that cannot be placed offers the number that
+    can.
+  */
   const [allocations, setAllocations] = useState<readonly Allocation[]>([]);
   const [reason, setReason] = useState("");
   const [contact, setContact] = useState("");
@@ -181,11 +196,61 @@ export default function LeaveApplicationPage() {
   const [handoverNotes, setHandoverNotes] = useState("");
   const [addressAway, setAddressAway] = useState("");
   const [mentioned, setMentioned] = useState<readonly string[]>([]);
+  /*
+    A DISABLED BUTTON ANSWERS NO QUESTIONS.
+
+    "so it should show when user click otherwise how we will know about this
+    error??" — exactly right, and it is not only a preference: a disabled button
+    does not fire a click at all, so pressing it produces nothing. No feedback,
+    no focus change, nothing for a screen reader to announce. The employee is
+    left to guess which of eleven fields is wrong.
+
+    So the button stays LIVE. Pressing it with something outstanding reveals the
+    list and moves focus to it; pressing it when everything is in order submits.
+    `attempted` is what makes the list appear on demand rather than nagging from
+    the first keystroke — nobody needs "say how many days" before they have had a
+    chance to type anything.
+  */
+  const [attempted, setAttempted] = useState(false);
+  const blockerListRef = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
 
   const total = Number.parseFloat(totalDays) || 0;
+
+  /*
+    THE CEILING PER TYPE.
+
+    "employee can take maximum leave that are available only, leave balance can't
+    be negative" — so a paid balance is a hard limit on its row, and the monthly
+    ceiling (`max_days_per_month`, migration 041600) binds alongside it.
+    `singleTypeCap` picks the tighter of the two and says which, so the message
+    quotes the number the employee can act on.
+
+    `allocationProblems` already refuses an over-balance allocation; this adds the
+    monthly half, which it has no way to know about.
+  */
+  const caps = useMemo(() => {
+    const map = new Map<string, SingleTypeCap>();
+    for (const type of types) {
+      const cap = singleTypeCap(type);
+      if (cap !== null) map.set(type.id, cap);
+    }
+    return map;
+  }, [types]);
+
+  const overCaps = useMemo(
+    () =>
+      allocations.flatMap((a) => {
+        const cap = caps.get(a.typeId);
+        const type = types.find((candidate) => candidate.id === a.typeId);
+        if (cap === undefined || type === undefined || a.days <= cap.days) return [];
+        return [{ type, cap }];
+      }),
+    [allocations, caps, types],
+  );
+
   const remaining = remainingDays(total, allocations);
   const problems = allocationProblems(total, allocations, types);
   /* ── The range, and what it costs ──────────────────────────────────────────
@@ -216,13 +281,41 @@ export default function LeaveApplicationPage() {
   */
   const needsReason = useMemo(() => reasonRequired(allocations, types), [allocations, types]);
 
-  const ready =
-    canSubmitAllocation(total, allocations, types) &&
-    (!needsReason || reason.trim().length >= 10) &&
-    badRange === null &&
-    mismatch === null &&
-    split.problem === null &&
-    split.segments.length > 0;
+  /*
+    WHY THE BUTTON IS OFF, IN WORDS.
+
+    `ready` was seven predicates and the button was simply disabled when any of
+    them failed. Every one has a message SOMEWHERE on the screen — under the date
+    fields, in the warning list beside the balances — but a reason five fields
+    away from a disabled button is a reason nobody connects to it. Reported as
+    "why send for approval is not working", with a five-character reason typed
+    against sick leave, which needs ten.
+
+    So the list and the button are built from the same array. A blocker missing
+    from this list cannot disable the button, and a disabled button always has
+    something to point at.
+  */
+  const blockers: string[] = [];
+  if (total <= 0) blockers.push(t("leave.app.blocked.noDays"));
+  if (badRange !== null) blockers.push(rangeProblemText(badRange));
+  if (mismatch !== null) blockers.push(mismatchText(mismatch));
+  for (const { type, cap } of overCaps) {
+    blockers.push(
+      cap.reason === "balance"
+        ? t("leave.app.cap.balance", { type: type.name, days: formatNumber(cap.days) })
+        : t("leave.app.cap.monthly", { type: type.name, days: formatNumber(cap.days) }),
+    );
+  }
+  /* `canSubmitAllocation` is exactly `allocationProblems(...).length === 0`, so
+     walking the problems here is the same test — stated once instead of twice. */
+  for (const problem of problems) blockers.push(problemText(problem));
+  if (needsReason && reason.trim().length < 10) {
+    blockers.push(t("leave.app.blocked.reason", { n: String(reason.trim().length) }));
+  }
+  if (split.problem !== null) blockers.push(splitProblemText(split.problem));
+  if (total > 0 && split.segments.length === 0) blockers.push(t("leave.app.blocked.noSegments"));
+
+  const ready = blockers.length === 0;
 
   /** Unpaid leave, if the venue has such a type — what a shortfall can be taken as. */
   const lwpType = useMemo(() => types.find((type) => !type.isPaid) ?? null, [types]);
@@ -291,6 +384,7 @@ export default function LeaveApplicationPage() {
         setDone(result);
         setAllocations([]);
         setReason("");
+        setAttempted(false);
       })
       .catch((err: unknown) => setFailure(mutationUserMessage(err)))
       .finally(() => setBusy(false));
@@ -561,101 +655,119 @@ export default function LeaveApplicationPage() {
             </div>
           </section>
 
-          {/* ── 2. Where the days come from ─────────────────────────────────── */}
+          {/* ── 2. Where the days come from ───────────────────────────────────
+              ONE PANEL, NOT TWO MODES. A "pick one type" mode was built and then
+              removed: allocating all five days to a single row IS one type, so
+              the mode was a second way to say the same thing — and two ways to
+              say one thing is what made the screen confusing in the first place.
+
+              What survived from that attempt is the part that was actually
+              missing: every row states its ceiling, no row can be pushed past it,
+              and a request that cannot be placed offers the number that can. */}
           <section className="rounded-lg border bg-card p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-sm font-semibold">{t("leave.app.step2")}</h2>
-              <p
-                className={cn(
-                  "num text-sm font-semibold tabular-nums",
-                  remaining === 0 ? "text-success" : remaining < 0 ? "text-destructive" : "text-warning",
-                )}
-              >
-                {remaining === 0
-                  ? t("leave.app.allPlaced")
-                  : remaining > 0
-                    ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
-                    : t("leave.app.overBy", { days: formatNumber(-remaining) })}
-              </p>
-            </div>
+                <h2 className="font-display text-sm font-semibold">{t("leave.app.step2")}</h2>
+                <p
+                  className={cn(
+                    "num text-sm font-semibold tabular-nums",
+                    remaining === 0 ? "text-success" : remaining < 0 ? "text-destructive" : "text-warning",
+                  )}
+                >
+                  {remaining === 0
+                    ? t("leave.app.allPlaced")
+                    : remaining > 0
+                      ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
+                      : t("leave.app.overBy", { days: formatNumber(-remaining) })}
+                </p>
+              </div>
 
-            {/*
-              TAKE THE SHORTFALL AS LOSS OF PAY. Unpaid leave has no balance to run out of, so
-              this is the honest escape when the paid balances do not cover the request — and it
-              is a deliberate button rather than something the suggester does silently, because
-              it costs the employee money.
-            */}
-            {remaining > 0 && lwpType !== null && exclusiveChosen === null ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => setDays(lwpType.id, daysFor(lwpType.id) + remaining)}
-              >
-                {t("leave.app.takeLwp", { days: formatNumber(remaining) })}
-              </Button>
-            ) : null}
+              {/*
+                TAKE THE SHORTFALL AS LOSS OF PAY. Unpaid leave has no balance to run out of, so
+                this is the honest escape when the paid balances do not cover the request — and it
+                is a deliberate button rather than something the suggester does silently, because
+                it costs the employee money.
+              */}
+              {remaining > 0 && lwpType !== null && exclusiveChosen === null ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => setDays(lwpType.id, daysFor(lwpType.id) + remaining)}
+                >
+                  {t("leave.app.takeLwp", { days: formatNumber(remaining) })}
+                </Button>
+              ) : null}
 
-            {exclusiveChosen !== null ? (
-              <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
-                <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                {t("leave.app.exclusiveLock", { type: exclusiveChosen.name })}
-              </p>
-            ) : null}
+              {exclusiveChosen !== null ? (
+                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground">
+                  <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  {t("leave.app.exclusiveLock", { type: exclusiveChosen.name })}
+                </p>
+              ) : null}
 
-            <ul className="mt-3 space-y-2">
-              {types.map((type) => {
-                const chosen = daysFor(type.id);
-                const locked = exclusiveChosen !== null && exclusiveChosen.id !== type.id;
-                const empty = type.isPaid && type.availableDays <= 0;
-                return (
-                  <li
-                    key={type.id}
-                    className={cn(
-                      "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2",
-                      chosen > 0 ? "border-primary bg-primary/5" : "bg-background/60",
-                      (locked || empty) && "opacity-50",
-                    )}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">{type.name}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {type.isPaid
-                          ? t("leave.app.available", { days: formatNumber(type.availableDays) })
-                          : t("leave.app.unpaid")}
-                        {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
-                        {/*
-                          STATED, NOT ENFORCED HERE. Knowing how much of the
-                          month's ceiling is already spent needs a read this form
-                          does not make, and a ceiling half-checked in the
-                          browser is worse than one named plainly:
-                          `trg_leave_requests__submit_rules` refuses with the
-                          month and the days already booked in it.
-                        */}
-                        {type.maxDaysPerMonth !== null
-                          ? ` · ${t("leave.app.monthlyCap", {
-                              days: formatNumber(type.maxDaysPerMonth),
-                            })}`
-                          : ""}
+              <ul className="mt-3 space-y-2">
+                {types.map((type) => {
+                  const chosen = daysFor(type.id);
+                  const locked = exclusiveChosen !== null && exclusiveChosen.id !== type.id;
+                  const empty = type.isPaid && type.availableDays <= 0;
+                  return (
+                    <li
+                      key={type.id}
+                      className={cn(
+                        "flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2",
+                        chosen > 0 ? "border-primary bg-primary/5" : "bg-background/60",
+                        (locked || empty) && "opacity-50",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{type.name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {type.isPaid
+                            ? t("leave.app.available", { days: formatNumber(type.availableDays) })
+                            : t("leave.app.unpaid")}
+                          {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
+                          {/*
+                            STATED, NOT ENFORCED HERE. Knowing how much of the
+                            month's ceiling is already spent needs a read this form
+                            does not make, and a ceiling half-checked in the
+                            browser is worse than one named plainly:
+                            `trg_leave_requests__submit_rules` refuses with the
+                            month and the days already booked in it.
+                          */}
+                          {type.maxDaysPerMonth !== null
+                            ? ` · ${t("leave.app.monthlyCap", {
+                                days: formatNumber(type.maxDaysPerMonth),
+                              })}`
+                            : ""}
+                        </span>
                       </span>
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={chosen === 0 ? "" : String(chosen)}
-                      placeholder="0"
-                      disabled={locked || empty || busy}
-                      onChange={(event) =>
-                        setDays(type.id, Number.parseFloat(event.target.value) || 0)
-                      }
-                      aria-label={t("leave.app.daysFrom", { type: type.name })}
-                      className="num h-9 w-16 shrink-0 rounded-md border bg-background px-2 text-right tabular-nums"
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        /*
+                          THE ROW'S OWN CEILING. A balance cannot go negative and
+                          a month has a limit, so the stepper stops at whichever
+                          is tighter. `overCaps` below is what refuses a number
+                          typed straight in — `max` alone is advisory in every
+                          browser.
+                        */
+                        {...(caps.has(type.id)
+                          ? { max: String(caps.get(type.id)?.days ?? 0) }
+                          : {})}
+                        value={chosen === 0 ? "" : String(chosen)}
+                        placeholder="0"
+                        disabled={locked || empty || busy}
+                        onChange={(event) =>
+                          setDays(type.id, Number.parseFloat(event.target.value) || 0)
+                        }
+                        aria-label={t("leave.app.daysFrom", { type: type.name })}
+                        className="num h-9 w-16 shrink-0 rounded-md border bg-background px-2 text-right tabular-nums"
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
           </section>
         </div>
 
@@ -771,16 +883,99 @@ export default function LeaveApplicationPage() {
         </section>
 
         {/* Everything wrong, all of it, before they press anything. */}
-        {problems.length > 0 && total > 0 ? (
+        {(problems.length > 0 || overCaps.length > 0) && total > 0 ? (
           <ul className="mt-4 space-y-1 rounded-lg border border-warning/40 bg-warning/5 p-3 text-xs">
+            {overCaps.map(({ type, cap }) => (
+              <li key={`cap-${type.id}`}>
+                {cap.reason === "balance"
+                  ? t("leave.app.cap.balance", {
+                      type: type.name,
+                      days: formatNumber(cap.days),
+                    })
+                  : t("leave.app.cap.monthly", {
+                      type: type.name,
+                      days: formatNumber(cap.days),
+                    })}
+              </li>
+            ))}
             {problems.map((problem, i) => (
               <li key={`${problem.kind}-${String(i)}`}>{problemText(problem)}</li>
             ))}
           </ul>
         ) : null}
 
+        {/*
+          THE WAY OUT OF "STILL TO PLACE".
+
+          This is the state that was reported: two days asked for, one sick day
+          held, sick leave cannot be combined — so nothing could absorb the
+          second day and the screen simply stopped. Refusing without offering the
+          number that WOULD work is the defect; this offers it.
+
+          Only when something HAS been placed: with nothing placed there is no
+          number to fall back to, and "ask for 0 days" is not an offer.
+        */}
+        {remaining > 0 && total - remaining > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/50 bg-warning/5 p-3 text-xs">
+            <span className="min-w-0 flex-1">
+              {t("leave.app.reduce.hint", {
+                asked: formatNumber(total),
+                placed: formatNumber(total - remaining),
+              })}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTotalDays(String(total - remaining))}
+            >
+              {t("leave.app.reduce.action", { days: formatNumber(total - remaining) })}
+            </Button>
+          </div>
+        ) : null}
+
+        {/*
+          Beside the button, not somewhere above it. `aria-describedby` ties the
+          two together for a screen reader, which otherwise announces a disabled
+          control with no explanation at all.
+        */}
+        {attempted && blockers.length > 0 ? (
+          <div
+            id="leave-app-blockers"
+            ref={blockerListRef}
+            tabIndex={-1}
+            role="alert"
+            className="mt-4 rounded-lg border border-warning/50 bg-warning/5 p-3 text-xs outline-none"
+          >
+            <p className="font-medium">{t("leave.app.blocked.title")}</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button disabled={!ready || busy} onClick={submit}>
+          <Button
+            disabled={busy}
+            aria-invalid={attempted && !ready}
+            onClick={() => {
+              if (!ready) {
+                setAttempted(true);
+                /*
+                  Reveal AND go to it. On a phone the list can be off-screen
+                  above the button, and a message nobody scrolls to is the same
+                  as no message. Focus follows so a screen reader reads it.
+                */
+                window.requestAnimationFrame(() => {
+                  blockerListRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+                  blockerListRef.current?.focus();
+                });
+                return;
+              }
+              submit();
+            }}
+            {...(attempted && !ready ? { "aria-describedby": "leave-app-blockers" } : {})}
+          >
             {busy ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
             {t("leave.app.submit")}
           </Button>

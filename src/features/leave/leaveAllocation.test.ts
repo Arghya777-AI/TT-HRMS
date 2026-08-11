@@ -15,6 +15,7 @@ import {
   canSubmitAllocation,
   remainingDays,
   reasonRequired,
+  singleTypeCap,
   suggestAllocation,
   type AllocatableType,
 } from "./leaveAllocation";
@@ -256,5 +257,46 @@ describe("reasonRequired", () => {
 
   it("ignores an allocation naming a type that is not offered", () => {
     expect(reasonRequired([{ typeId: "ghost", days: 3 }], ALL)).toBe(false);
+  });
+});
+
+describe("singleTypeCap", () => {
+  it("is the balance when the balance is the tighter limit", () => {
+    // Week-off holds 0.5 against a 3/month ceiling.
+    expect(singleTypeCap(WEEK_OFF)).toEqual({ days: 0.5, reason: "balance" });
+  });
+
+  it("is the monthly ceiling when the balance is larger", () => {
+    // Earned Leave: 10 available, 3 allowed in a month.
+    expect(singleTypeCap(EARNED)).toEqual({ days: 3, reason: "monthly" });
+  });
+
+  it("ignores the balance for unpaid leave, which has none", () => {
+    expect(singleTypeCap(UNPAID)).toEqual({ days: 3, reason: "monthly" });
+  });
+
+  it("is null when nothing caps it", () => {
+    // Unpaid AND no monthly ceiling: ask for what you like.
+    expect(singleTypeCap({ ...UNPAID, maxDaysPerMonth: null })).toBeNull();
+  });
+
+  it("names the balance when the two limits tie", () => {
+    /*
+      A 3-day ceiling against a 3-day balance. "You have 3 days left" is the fact
+      the employee can act on; "the month allows 3" invites them to wait for next
+      month, which will not help them.
+    */
+    expect(singleTypeCap({ ...EARNED, availableDays: 3 })).toEqual({
+      days: 3,
+      reason: "balance",
+    });
+  });
+
+  it("caps at zero rather than going negative", () => {
+    // The whole point: a spent balance permits a request of nothing, not of -1.
+    expect(singleTypeCap({ ...EARNED, availableDays: 0 })).toEqual({
+      days: 0,
+      reason: "balance",
+    });
   });
 });

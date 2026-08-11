@@ -62,6 +62,47 @@ export interface Allocation {
   readonly days: number;
 }
 
+/** Why a single-type request is capped, so the message can say which. */
+export type CapReason = "balance" | "monthly";
+
+export interface SingleTypeCap {
+  readonly days: number;
+  readonly reason: CapReason;
+}
+
+/**
+ * The most of ONE type an employee may ask for.
+ *
+ * "employee can take maximum leave that are available only, leave balance can't
+ * be negative" — so a paid balance is a hard ceiling, not a warning. The monthly
+ * ceiling (`leave_types.max_days_per_month`, migration 041600) binds as well, and
+ * whichever is smaller is the one to quote: telling somebody they have 8 days
+ * left when the month allows 3 is a true sentence that does not help.
+ *
+ * `null` means genuinely uncapped — unpaid leave with no monthly ceiling. Not
+ * "unknown": every caller treats null as "ask for what you like".
+ *
+ * The monthly figure is the type's WHOLE allowance, not what remains of it this
+ * month — the browser does not know what has already been taken, and
+ * `trg_leave_requests__submit_rules` quotes the exact remainder when it refuses.
+ * So this can be optimistic by design and never permissive beyond the policy.
+ */
+export function singleTypeCap(type: AllocatableType | null): SingleTypeCap | null {
+  if (type === null) return null;
+  const limits: SingleTypeCap[] = [];
+  if (type.isPaid) limits.push({ days: type.availableDays, reason: "balance" });
+  if (type.maxDaysPerMonth !== null) {
+    limits.push({ days: type.maxDaysPerMonth, reason: "monthly" });
+  }
+  if (limits.length === 0) return null;
+  /*
+    Ties go to the BALANCE. When a 3-day monthly ceiling meets a 3-day balance,
+    "you have 3 days left" is the fact the employee can act on; "the month allows
+    3" invites them to wait for next month, which will not help.
+  */
+  return limits.reduce((best, next) => (next.days < best.days ? next : best));
+}
+
 /**
  * Does this application need a reason typed?
  *

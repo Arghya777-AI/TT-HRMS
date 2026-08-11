@@ -133,6 +133,10 @@ export const leaveTypeSchema = z.object({
   /* `true` when absent, matching the pre-041600 rule: ck_lr__reason demanded a
      reason from every type, so that is what an un-migrated database enforces. */
   requires_reason: z.boolean().optional().default(true),
+  /** 039700 — may this type share one application with another? */
+  allows_combination: z.boolean().optional().default(true),
+  /** 041700 — what an employee starts the leave year with. EL is 32.5. */
+  opening_balance_days: dbNumericNullable.optional().default(null),
   min_notice_days: dbIntNullable,
   max_backdated_days: dbIntNullable,
   requires_document_after_days: dbNumericNullable,

@@ -339,4 +339,13 @@ export const keysClaims = {
   "adminLeave.types.field.requiresReason": "Reason mandatory",
   "adminLeave.types.help.requiresReason":
     "Make the employee say why. On for Sick Leave; off elsewhere, where a reason is offered but not demanded.",
+
+  // ── Leave Type Master — the opening balance (migration 041700) ─────────────
+  "adminLeave.types.field.opening": "Opening balance (days)",
+  "adminLeave.types.help.opening":
+    "What everybody starts the leave year holding, before any accrual. Saving a new number credits or debits the difference on every eligible employee's ledger straight away, with a reason recorded — it does not rewrite what was there. Blank means no opening balance.",
+
+  "adminLeave.types.field.combinable": "Can share an application",
+  "adminLeave.types.help.combinable":
+    "On: an employee can take 5 days as 2 of this plus 3 of something else. Off: this type has to be the only one in an application, and the database refuses a mixed one. Each type still gets its own dates \u2014 two types cannot cover the same day.",
 } as const;

@@ -264,6 +264,25 @@ export default function AdminLeaveTypesPage() {
             max: 365,
             help: t("adminLeave.types.help.quota"),
           },
+          /*
+            THE OPENING BALANCE, next to the annual quota because the two are
+            constantly confused: the quota is what a year is worth, this is what
+            people already hold before the year earns them anything. Earned Leave
+            is 32.5 (migration 041700).
+
+            SAVING THIS NUMBER WRITES TO EVERY ELIGIBLE EMPLOYEE'S LEDGER —
+            `trg_leave_types__opening_balance` appends the difference as an
+            adjustment. That is what makes the field real rather than decorative,
+            and it is why the help text says so before somebody discovers it.
+          */
+          {
+            name: "opening_balance_days",
+            label: t("adminLeave.types.field.opening"),
+            kind: "decimal",
+            min: 0,
+            max: 365,
+            help: t("adminLeave.types.help.opening"),
+          },
           {
             name: "accrual_frequency",
             label: t("adminLeave.types.field.frequency"),
@@ -415,6 +434,18 @@ export default function AdminLeaveTypesPage() {
             label: t("adminLeave.types.field.requiresReason"),
             kind: "checkbox",
             help: t("adminLeave.types.help.requiresReason"),
+          },
+          /*
+            `allows_combination` has existed since 039700, whose header said the
+            next change to it "should be a data change, not a migration" — and
+            then it was never put on a screen, so 041800 had to be written to flip
+            Sick Leave back. This field is what makes that sentence true.
+          */
+          {
+            name: "allows_combination",
+            label: t("adminLeave.types.field.combinable"),
+            kind: "checkbox",
+            help: t("adminLeave.types.help.combinable"),
           },
           {
             name: "max_consecutive_days",

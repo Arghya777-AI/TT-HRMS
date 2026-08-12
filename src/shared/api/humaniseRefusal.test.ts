@@ -6,7 +6,11 @@
  * nothing, because the real message is the one that has to match.
  */
 import { describe, expect, it } from "vitest";
-import { humaniseRefusal, REFUSAL_REWRITE_COUNT } from "./humaniseRefusal";
+import {
+  humaniseRefusal,
+  isUnexplainedConstraint,
+  REFUSAL_REWRITE_COUNT,
+} from "./humaniseRefusal";
 
 describe("humaniseRefusal", () => {
   it("has a table to consult", () => {
@@ -73,7 +77,45 @@ describe("humaniseRefusal", () => {
     expect(humaniseRefusal(raw)).toBe(raw);
   });
 
+  it("names the rule behind a duplicate resignation", () => {
+    /*
+      A partial UNIQUE index, not a CHECK: Postgres reports the index name. The
+      rule it enforces is "one open resignation at a time", and the useful half
+      of the answer is what to do — withdraw the first.
+    */
+    const raw =
+      'duplicate key value violates unique constraint "uq_resign__one_open"';
+    const said = humaniseRefusal(raw);
+    expect(said).not.toContain("uq_resign__");
+    expect(said.toLowerCase()).toContain("withdraw");
+  });
+
   it("survives an empty message", () => {
     expect(humaniseRefusal("   ")).toBe("");
+  });
+
+  it("names the rule behind a bare CHECK", () => {
+    /*
+      The refusal from the screenshot: a resignation dated inside the notice
+      period. Postgres says only which constraint failed, and the employee was
+      shown "(code 23514)".
+    */
+    const raw =
+      'new row for relation "resignations" violates check constraint "ck_resign__notice_or_waiver"';
+    const said = humaniseRefusal(raw);
+    expect(said).not.toContain("ck_resign__");
+    expect(said.toLowerCase()).toContain("notice period");
+  });
+
+  it("leaves an unknown constraint alone rather than guessing", () => {
+    const raw = 'new row for relation "x" violates check constraint "ck_something_new"';
+    expect(humaniseRefusal(raw)).toBe(raw);
+    expect(isUnexplainedConstraint(raw)).toBe(true);
+  });
+
+  it("knows when a constraint IS explained", () => {
+    const raw =
+      'new row for relation "asset_requests" violates check constraint "ck_asr__quantity"';
+    expect(isUnexplainedConstraint(raw)).toBe(false);
   });
 });

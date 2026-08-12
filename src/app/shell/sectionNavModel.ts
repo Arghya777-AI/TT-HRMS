@@ -31,6 +31,54 @@ export const SECTION_NAV_LABEL: Readonly<Record<string, MessageKey>> = {
   "admin-leave": "admin.sectionNav.leave",
   "admin-documents": "admin.sectionNav.documents",
   "admin-settings": "admin.sectionNav.settings",
+
+  /*
+    ── THE SEVEN THAT WERE MISSED ─────────────────────────────────────────────
+    Reported as "I am not getting allocations page in admin sidebar", from
+    /admin/assets/master — the one asset screen the rail links to.
+
+    The list above was written from the six sections the client named at the time,
+    which made it a record of one conversation rather than a rule. Every section
+    NOT on it kept the original defect: the rail carries one row per section, so
+    the section's other screens had no tab and no rail row, and were reachable only
+    by ⌘K or by typing the URL. That is fifty screens, including every asset screen
+    but the master, every approval screen but the inbox, and every audit screen.
+
+    ⌘K does reach them, and `reachability.test.ts` asserts that it does — but
+    searching requires knowing the page exists. Browsing is how somebody finds out
+    that it does, and browsing is what was missing.
+
+    `admin-kiosk` stays off deliberately (see below). Nothing else does now, and
+    `sectionNav.test.ts` asserts the rule rather than this list, so a section added
+    tomorrow cannot repeat it.
+  */
+  "admin-home": "admin.sectionNav.home",
+  "admin-people": "admin.sectionNav.people",
+  "admin-attendance": "admin.sectionNav.attendance",
+  "admin-comms": "admin.sectionNav.comms",
+  "admin-assets": "admin.sectionNav.assets",
+  "admin-workflow": "admin.sectionNav.workflow",
+  "admin-audit": "admin.sectionNav.audit",
+
+  /*
+    ── AND THE EMPLOYEE SIDE, WHICH THE NEW TEST FOUND ────────────────────────
+    The rule was written for the admin half and immediately failed on seven more
+    sections. Two of those were fine and are exempt in the test; these five were
+    not:
+
+      · `/me/settings` — the hub that links notification preferences and activity
+        — had NO rail row and NO inbound link from any page. Only `/me/settings/
+        security` was in the rail, and it does not link back to its own hub.
+      · `/me/regularizations` was linked from exactly one page: the "new
+        regularization" screen, which you reach through it. A cycle with no door.
+      · The seven apply forms hung off the launcher alone, so moving from a travel
+        requisition to an asset request meant going back to /me/apply first.
+  */
+  apply: "me.sectionNav.apply",
+  attendance: "me.sectionNav.attendance",
+  leave: "me.sectionNav.leave",
+  settings: "me.sectionNav.settings",
+  ai: "me.sectionNav.ai",
 };
 
 /** A section has a strip only if it is listed above. */

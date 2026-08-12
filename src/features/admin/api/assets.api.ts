@@ -28,7 +28,7 @@
  * so the admin retries the status update rather than losing the custody record.
  */
 import { z } from "zod";
-import { nowInstantIso, nowIstDate } from "@/lib/datetime";
+import { nowInstantIso } from "@/lib/datetime";
 import {
   dbDateNullable,
   dbInt,
@@ -46,6 +46,7 @@ import {
   isNotNull,
   isNull,
   isTrue,
+  rpcAudited,
   selectCount,
   selectMany,
   updateRow,
@@ -479,12 +480,12 @@ export function updateAsset(input: UpdateAssetInput, reason: string): Promise<As
   );
 }
 
-/** ALC-YYYYMMDD-XXXX — unique enough for a human-readable handover number. */
-function newAllocationNumber(): string {
-  const date = nowIstDate().replace(/-/g, "");
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `ALC-${date}-${rand}`;
-}
+/*
+  `newAllocationNumber` is gone with 042500: the reference is minted by
+  `generate_allocation_number()` under an advisory lock, like every other
+  reference in this schema. A browser generating one with Math.random() could
+  collide on the UNIQUE index and produced references with no order.
+*/
 
 export interface IssueAssetInput {
   readonly assetId: string;
@@ -492,43 +493,61 @@ export interface IssueAssetInput {
   /** YYYY-MM-DD; omit for an open-ended issue (uniform, access card). */
   readonly expectedReturnDate?: string;
   readonly notes?: string;
+  /** The `asset_requests` row this fulfils, when the issue came from one. */
+  readonly assetRequestId?: string;
 }
 
+/** The definer RPC from migration 042500. See `issueAsset` for why. */
+export const ISSUE_ASSET_FN = "issue_asset";
+
 /**
- * Hand an in-stock asset to an employee. Allocation row first (source of
- * truth), then the register's status + custodian — one request id ties both
- * statements together in audit_log. See the file header for why this pair is
- * not one transaction.
+ * Hand an in-stock asset to an employee.
+ *
+ * ── THIS USED TO BE TWO WRITES AND A GUESSED REFERENCE ──────────────────────
+ *
+ * The previous implementation inserted the allocation, then updated the asset —
+ * with a comment admitting the pair is not one transaction, because "PostgREST
+ * has no cross-table transaction and no server function does both". A closed tab
+ * between the two left a register saying the unit was in stock while somebody was
+ * holding it.
+ *
+ * It also minted `allocation_number` in the BROWSER as `ALC-<date>-<4 random
+ * chars>`, using Math.random(). Two people issuing at once could collide on the
+ * UNIQUE index, and the reference carried no order — ALC-20260812-K3QP tells
+ * nobody which was issued first.
+ *
+ * Migration 042500 supplies the server function the old comment said did not
+ * exist. It does all three writes in one statement — allocation, asset status,
+ * and closing the `asset_request` that asked for it — mints the reference with
+ * an advisory lock the way every other reference in this schema is minted, and
+ * refuses a unit that is not in stock with a sentence Stores can read.
  */
 export async function issueAsset(input: IssueAssetInput, reason: string): Promise<Allocation> {
-  const requestId = crypto.randomUUID();
-  const allocation = await insertRow(
-    ALLOCATIONS_TABLE,
+  const row = await rpcAudited(
+    ISSUE_ASSET_FN,
     {
-      asset_id: input.assetId,
-      employee_id: input.employeeId,
-      allocation_number: newAllocationNumber(),
-      quantity: 1,
-      status: "allocated",
-      allocated_at: nowInstantIso(),
-      ...(input.expectedReturnDate !== undefined && input.expectedReturnDate !== ""
-        ? { expected_return_date: input.expectedReturnDate }
-        : {}),
-      ...(input.notes !== undefined && input.notes.trim() !== ""
-        ? { handover_notes: input.notes.trim() }
-        : {}),
+      p_asset_id: input.assetId,
+      p_employee_id: input.employeeId,
+      p_expected_return_date:
+        input.expectedReturnDate !== undefined && input.expectedReturnDate !== ""
+          ? input.expectedReturnDate
+          : null,
+      /* The request this closes, when the issue came from one. Absent for the
+         uniform handed over on somebody's first day, which nobody requested. */
+      p_asset_request_id: input.assetRequestId ?? null,
+      p_notes: input.notes !== undefined && input.notes.trim() !== "" ? input.notes.trim() : null,
     },
     allocationSchema,
-    { reason, requestId, columns: ALLOCATION_COLUMNS },
+    { reason },
   );
-  await updateRow(
-    ASSETS_TABLE,
-    [eq("id", input.assetId)],
-    { status: "allocated", custodian_employee_id: input.employeeId },
-    assetSchema,
-    { reason, requestId, columns: ASSET_COLUMNS },
-  );
-  return allocation;
+  /* `rpcAudited` returns rows; a definer function returning one composite gives
+     exactly one. An empty array means the function returned NULL, which it does
+     not — but reading `[0]` without checking is how a screen renders undefined. */
+  const issued = row[0];
+  if (issued === undefined) {
+    throw new Error("The asset was not issued. Check that it is still in stock.");
+  }
+  return issued;
 }
 
 export interface RequestRecallInput {

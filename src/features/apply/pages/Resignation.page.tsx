@@ -54,10 +54,17 @@ import { useState } from "react";
 import { type MessageKey, t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { resignationReasonValues, type ResignationReason } from "../api/simple-requests.api";
-import { useSubmitResignation } from "../hooks/useApply";
+import {
+  useOpenResignation,
+  useSubmitResignation,
+  useWithdrawResignation,
+} from "../hooks/useApply";
+import { cn } from "@/lib/utils";
 import { dash, formatNumber } from "@/lib/format";
 import { addIstDays, fmtCivilDateWeekday, fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { REQUEST_CODE_RESIGNATION, type LifecycleEvent } from "../api/apply-forms.api";
@@ -168,10 +175,63 @@ export default function ResignationPage() {
   const [reason, setReason] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const send = useSubmitResignation();
+  /*
+    ONE OPEN RESIGNATION AT A TIME. `uq_resign__one_open` is a partial unique
+    index over draft/pending/in_progress, so a second filing comes back as 23505
+    — a duplicate-key message naming an index, which is not something anybody can
+    act on. Reading the open row first means the form never offers the second
+    filing at all, and can say what to do instead: withdraw the first.
+  */
+  const openResignation = useOpenResignation();
+  const withdraw = useWithdrawResignation();
+  const alreadyFiled = openResignation.data ?? null;
+  /*
+    THE SANCTIONED WAY TO BE SHORT. `ck_resign__notice_or_waiver` permits a last
+    working day inside the notice period only when the waiver is asked for, and
+    `ck_resign__waiver_reason` then demands a sentence. Without this on the form,
+    the only route to an early exit was a refusal nobody could act on.
+
+    Asking is not receiving: the flag records a request, and HR decides. The copy
+    says so, because a checkbox that reads as permission is worse than no
+    checkbox.
+  */
+  const [waiver, setWaiver] = useState(false);
+  const [waiverReason, setWaiverReason] = useState("");
   const attempt = useSubmitAttempt();
+
+  /*
+    The earliest last working day the database will accept: today plus the notice
+    period from the employment record. The screen already shows the number; this
+    turns it into the date, which is the thing being typed.
+  */
+  const earliestLastDay = noticeDays === null ? today : addIstDays(today, noticeDays);
 
   const resignBlockers: string[] = [];
   if (lastDay < today) resignBlockers.push(t("apply.resign.blocked.past"));
+  /*
+    THE NOTICE RULE, ASKED BEFORE IT IS REFUSED.
+
+    `ck_resign__notice_or_waiver` is a bare CHECK — not a trigger — so it comes
+    back as "new row … violates check constraint" with no sentence anybody can
+    act on. The form knows the same arithmetic the constraint does: the earliest
+    permitted last working day is today + the notice period on the employment
+    record. Refusing here means the constraint never fires, and the person is told
+    the DATE rather than the constraint's name.
+
+    `addIstDays`, not date maths in the browser's timezone: the constraint
+    compares against `submitted_on`, which the server stamps as the IST civil day.
+  */
+  if (waiver && waiverReason.trim().length < 10) {
+    resignBlockers.push(t("apply.resign.blocked.waiverReason"));
+  }
+  if (!waiver && noticeDays !== null && lastDay >= today && lastDay < earliestLastDay) {
+    resignBlockers.push(
+      t("apply.resign.blocked.notice.short", {
+        days: formatNumber(noticeDays),
+        date: fmtCivilDateWeekday(earliestLastDay),
+      }),
+    );
+  }
   if (reason.trim().length < 10) resignBlockers.push(t("apply.resign.blocked.reason"));
   if (noticeDays === null) resignBlockers.push(t("apply.resign.blocked.notice"));
 
@@ -199,7 +259,63 @@ export default function ResignationPage() {
           <Notice tone="success">{t("apply.resign.done")}</Notice>
         ) : null}
 
-        <section className="rounded-lg border bg-card p-4" aria-labelledby="resign-form">
+        {alreadyFiled !== null ? (
+          <section className="rounded-lg border border-warning/50 bg-warning/5 p-4">
+            <h2 className="font-display text-lg font-semibold">
+              {t("apply.resign.already.title")}
+            </h2>
+            <p className="mt-1 text-sm">
+              {t("apply.resign.already.body", {
+                reference: alreadyFiled.resignation_number,
+                date: fmtCivilDateWeekday(alreadyFiled.intended_last_working_day),
+              })}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("apply.resign.already.hint")}
+            </p>
+
+            {withdraw.isError ? (
+              <div className="mt-3">
+                <Notice tone="error">{mutationUserMessage(withdraw.error)}</Notice>
+              </div>
+            ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={withdraw.isPending}
+                onClick={() => {
+                  withdraw.mutate(alreadyFiled.id, {
+                    onSuccess: () => {
+                      confirmSubmitted(t("apply.resign.withdrawn"), {
+                        reference: alreadyFiled.resignation_number,
+                        detail: t("apply.resign.withdrawn.next"),
+                      });
+                    },
+                  });
+                }}
+              >
+                {withdraw.isPending
+                  ? t("apply.resign.withdrawing")
+                  : t("apply.resign.withdraw")}
+              </Button>
+              <Button asChild variant="ghost">
+                <Link to="/me/approvals">{t("apply.resign.already.track")}</Link>
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        <section
+          className={cn(
+            "rounded-lg border bg-card p-4",
+            /* Dimmed and inert while one is standing — the section stays visible
+               so the rules on it can still be read. */
+            alreadyFiled !== null && "pointer-events-none opacity-50",
+          )}
+          aria-hidden={alreadyFiled !== null}
+          aria-labelledby="resign-form"
+        >
           <h2 id="resign-form" className="font-display text-lg font-semibold">
             {t("apply.resign.form.title")}
           </h2>
@@ -211,7 +327,12 @@ export default function ResignationPage() {
               <Input
                 id="rg-last"
                 type="date"
-                min={today}
+                /* The earliest the CHECK permits, so the picker cannot offer a
+                   date that would be refused. With a waiver asked for the floor
+                   drops to today, which is exactly what the constraint does. The
+                   blocker still catches a typed one — `min` is advisory in every
+                   browser. */
+                min={waiver ? today : earliestLastDay}
                 className="mt-1.5 h-11"
                 value={lastDay}
                 onChange={(e) => setLastDay(e.target.value)}
@@ -219,6 +340,44 @@ export default function ResignationPage() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("apply.resign.field.lastDay.hint", { days: String(noticeDays ?? 30) })}
               </p>
+
+              <div className="mt-3 rounded-md border bg-muted/30 p-3">
+                <label className="flex items-start gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 rounded border-input"
+                    checked={waiver}
+                    onChange={(e) => {
+                      setWaiver(e.target.checked);
+                      if (!e.target.checked) setWaiverReason("");
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium">{t("apply.resign.waiver.ask")}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {t("apply.resign.waiver.hint")}
+                    </span>
+                  </span>
+                </label>
+
+                {waiver ? (
+                  <div className="mt-2">
+                    <Label htmlFor="rg-waiver">
+                      {t("apply.resign.waiver.reason")}
+                      <Required />
+                    </Label>
+                    <textarea
+                      id="rg-waiver"
+                      rows={2}
+                      maxLength={1000}
+                      className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={waiverReason}
+                      onChange={(e) => setWaiverReason(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div>
               <Label htmlFor="rg-why">{t("apply.resign.field.category")}</Label>
@@ -264,6 +423,7 @@ export default function ResignationPage() {
             disabled={send.isPending}
             {...blockerButtonProps(attempt, resignBlockers, "resign-blockers")}
             onClick={() => {
+              if (alreadyFiled !== null) return;
               if (!attempt.press(resignBlockers)) return;
               if (noticeDays === null) return;
               send.mutate(
@@ -278,8 +438,21 @@ export default function ResignationPage() {
                   intendedLastWorkingDay: lastDay,
                   reasonCategory: category,
                   reason,
+                  isNoticeWaiverRequested: waiver,
+                  waiverReason,
                 },
-                { onSuccess: (r) => { setSent(r.requestId); setReason(""); } },
+                {
+                  onSuccess: (r) => {
+                    attempt.reset();
+                    setSent(r.requestId);
+                    setReason("");
+                    setWaiver(false);
+                    setWaiverReason("");
+                    confirmSubmitted(t("apply.resign.toast"), {
+                      detail: t("apply.resign.toast.next"),
+                    });
+                  },
+                },
               );
             }}
           >

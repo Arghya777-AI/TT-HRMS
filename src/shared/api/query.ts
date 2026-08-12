@@ -929,6 +929,16 @@ export function mutationUserMessage(e: unknown): string {
     const rule = ruleRejectionMessage(e);
     if (rule !== null) return humaniseRefusal(rule);
     /*
+      A BARE CHECK, which `ruleRejectionMessage` refuses to show — rightly, since
+      "violates check constraint ck_resign__notice_or_waiver" is an identifier,
+      not a sentence. But the identifier NAMES the rule, and when `humaniseRefusal`
+      knows that name it can say what the rule is. Only then: an unrecognised
+      constraint still falls through to the generic sentence rather than showing
+      an employee a schema object.
+    */
+    const named = humaniseRefusal(e.message);
+    if (named !== e.message.trim()) return named;
+    /*
       The SQLSTATE, when there is one. Whoever is asked to "report it" can only
       report what they were shown, and three very different faults share this one
       sentence.

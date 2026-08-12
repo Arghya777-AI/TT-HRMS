@@ -52,6 +52,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { ASSET_REQUEST_MAX_QUANTITY } from "../api/simple-requests.api";
@@ -352,7 +353,18 @@ export default function AssetRequestPage() {
                   isReplacement,
                   replacesAssetId: replacesId === "" ? null : replacesId,
                 },
-                { onSuccess: (r) => { attempt.reset(); setSent(r.requestId); setReason(""); } },
+                {
+                  onSuccess: (r) => {
+                    attempt.reset();
+                    setSent(r.requestId);
+                    setReason("");
+                    /* The banner is at the top of the page and the button is at
+                       the bottom; the toast is what the person actually sees. */
+                    confirmSubmitted(t("apply.asset.done"), {
+                      detail: t("apply.asset.toast.next"),
+                    });
+                  },
+                },
               );
             }}
           >

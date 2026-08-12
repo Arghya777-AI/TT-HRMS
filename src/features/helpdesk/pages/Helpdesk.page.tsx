@@ -57,6 +57,7 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/features/admin/components/Notice";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { type MessageKey, t } from "@/shared/i18n/en";
@@ -387,9 +388,16 @@ export default function HelpdeskPage() {
               { desk, priority, subject, description: detail },
               {
                 onSuccess: (row) => {
+                  ticketAttempt.reset();
                   setTicketSent(row.ticket_number);
                   setSubject("");
                   setDetail("");
+                  /* The reference the desk and the requester will both quote.
+                     Minted by trg_hdt__number, never by this browser. */
+                  confirmSubmitted(t("helpdesk.new.title"), {
+                    reference: row.ticket_number,
+                    detail: t("helpdesk.new.toast.next"),
+                  });
                 },
               },
             );
@@ -542,7 +550,16 @@ export default function HelpdeskPage() {
                 periodFrom: periodic && periodFrom !== "" ? periodFrom : null,
                 periodTo: periodic && periodTo !== "" ? periodTo : null,
               },
-              { onSuccess: (r) => { setDocSent(r.requestId); setNote(""); } },
+              {
+                onSuccess: (r) => {
+                  docAttempt.reset();
+                  setDocSent(r.requestId);
+                  setNote("");
+                  confirmSubmitted(t("helpdesk.doc.done"), {
+                    detail: t("helpdesk.doc.toast.next"),
+                  });
+                },
+              },
             );
           }}
         >

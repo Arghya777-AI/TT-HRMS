@@ -293,6 +293,57 @@ export function countMyRequests(
 }
 
 /**
+ * Who is holding each of these requests, by approval-request id.
+ *
+ * Every screen that lists a person's own requests wants this and none of them
+ * carried it: `leave_requests.current_approver_id` exists but is written only by
+ * the demo seed, so on live data it is NULL on every row. The live answer is
+ * `approval_requests.current_approver_ids`, which the raise triggers fill.
+ *
+ * Names come from `v_employee_directory` — the allowlist view of code, name and
+ * designation — so showing "With Suraj Kumar" cannot leak a column the employee
+ * may not read. An id with no directory entry is dropped rather than printed.
+ */
+export async function fetchApproversByRequestIds(
+  approvalRequestIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<Map<string, DirectoryEntry[]>> {
+  const out = new Map<string, DirectoryEntry[]>();
+  const ids = [...new Set(approvalRequestIds)];
+  if (ids.length === 0) return out;
+
+  const rows = await selectMany(
+    APPROVAL_REQUESTS_TABLE,
+    z.object({ id: dbUuid, current_approver_ids: z.array(dbUuid) }),
+    {
+      columns: "id, current_approver_ids",
+      filters: [inList("id", ids)],
+      limit: ids.length,
+      ...(signal ? { signal } : {}),
+    },
+  );
+
+  const employeeIds = [...new Set(rows.flatMap((r) => r.current_approver_ids))];
+  if (employeeIds.length === 0) return out;
+
+  const people = await selectMany(EMPLOYEE_DIRECTORY_VIEW, directoryEntrySchema, {
+    columns: "id, employee_code, display_name, designation_name",
+    filters: [inList("id", employeeIds)],
+    limit: employeeIds.length,
+    ...(signal ? { signal } : {}),
+  });
+  const byId = new Map(people.map((person) => [person.id, person]));
+
+  for (const row of rows) {
+    const named = row.current_approver_ids
+      .map((id) => byId.get(id))
+      .filter((person): person is DirectoryEntry => person !== undefined);
+    out.set(row.id, named);
+  }
+  return out;
+}
+
+/**
  * The subset of an approval summary we are willing to render: a plain string
  * under a known key. `summary` is `jsonb` written by whichever detail table
  * raised the request, so anything else is shown as the request title instead of

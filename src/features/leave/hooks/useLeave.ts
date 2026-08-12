@@ -7,6 +7,10 @@
  */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import {
+  fetchApproversByRequestIds,
+  type DirectoryEntry,
+} from "@/features/apply/api/apply.api";
 import { shouldRetryQuery, type Cursor, type Page } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import {
@@ -211,6 +215,25 @@ export function useCompOffCredits(): UseQueryResult<CompOffCredit[], Error> {
     queryKey: qk.compOff.credits(employeeId ?? NO_EMPLOYEE),
     queryFn: ({ signal }) => fetchCompOffCredits(requireEmployeeId(employeeId), signal),
     enabled: employeeId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Who currently holds each of these leave requests.
+ *
+ * Keyed by the ids on screen, so it refetches when the list does and never asks
+ * about a request the person is not looking at. Skipped entirely when nothing on
+ * the page has reached the workflow engine yet.
+ */
+export function useLeaveApprovers(
+  approvalRequestIds: readonly string[],
+): UseQueryResult<Map<string, DirectoryEntry[]>, Error> {
+  const ids = [...approvalRequestIds].sort();
+  return useQuery({
+    queryKey: qk.leave.list({ entity: "approvers", ids: ids.join(",") }),
+    queryFn: ({ signal }) => fetchApproversByRequestIds(ids, signal),
+    enabled: ids.length > 0,
     retry: shouldRetryQuery,
   });
 }

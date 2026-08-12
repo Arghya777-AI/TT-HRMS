@@ -8408,6 +8408,8 @@ export const en = catalogue({
   "admin.wf.inbox.escalatedAt": "Escalated {at}",
   "admin.wf.inbox.waiting.you": "You can decide this",
   "admin.wf.inbox.waiting.none": "No approver resolved",
+  // Settled: waiting on nobody because it is finished, not because routing failed.
+  "admin.wf.inbox.waiting.done": "Nobody — it is decided",
   "admin.wf.inbox.waiting.others": "{n} other approver(s)",
   "admin.wf.inbox.filter.type": "Request type",
   "admin.wf.inbox.filter.anyType": "Any type",
@@ -10370,8 +10372,18 @@ export const en = catalogue({
   "assets.chip.overdue": "Overdue",
   "assets.chip.recalled": "Recalled",
   "assets.chip.unconfirmed": "Not confirmed",
-  "assets.confirm.gap.title": "Confirmation is recorded by Stores, not here",
-  "assets.confirm.gap.hint": "You can see what is outstanding, but the system gives you no way to stamp it yourself. Tell Stores you have the item and they will record it against the allocation.",
+  /*
+    The two `gap` keys said confirmation could only be recorded by Stores, which
+    was true until 042700 added `acknowledge_asset`. Replaced rather than reworded:
+    the sentence to write now is what confirming means, not who is allowed to.
+  */
+  "assets.confirm.what.title": "Confirm anything you have actually received",
+  "assets.confirm.what.hint": "Stores has recorded handing these over. Confirming is your own word that the item reached you, and it is what closes the handover. If something on this list never arrived, tell Stores instead of confirming it.",
+  "assets.action.confirm": "I received this",
+  "assets.confirm.reason": "Confirming that this asset reached me.",
+  "assets.confirm.done": "{item} confirmed",
+  "assets.confirm.done.detail": "The handover is closed and your custody starts from today.",
+  "assets.confirm.failed": "That confirmation was not recorded",
   "assets.list.title": "Custody",
   "assets.empty.all.title": "You are not holding anything",
   "assets.empty.all.hint": "Uniform, tools and keys appear here the moment Stores issues them to you.",

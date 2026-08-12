@@ -50,15 +50,38 @@ export function OpenRequestsGrid({ rows, approvers, emptyTitle, emptyHint }: Ope
       render: (row) => <span className="font-mono text-xs">{row.request_number}</span>,
     },
     {
+      /*
+        THE TITLE LEADS, the reason sits under it.
+
+        This column rendered `summaryText(summary) ?? title` — so whenever a
+        request HAD a reason, the title was hidden by it, and "Asset · Laptops
+        ×1" was replaced by "need it for site work". Both matter and neither
+        replaces the other: the title says WHAT was asked for and the summary says
+        why. Reported as "if anyone is making any request then try to show
+        important details in that row like assets name or any request,
+        reason/amount".
+      */
       key: "type",
       header: t("apply.col.type"),
-      render: (row) => dash(row.request_types?.name ?? null),
+      render: (row) => (
+        <span className="flex flex-col leading-tight">
+          <span className="font-medium">{row.title}</span>
+          <span className="text-xs text-muted-foreground">
+            {dash(row.request_types?.name ?? null)}
+          </span>
+        </span>
+      ),
     },
     {
       key: "summary",
       header: t("apply.col.summary"),
       hideBelow: "md",
-      render: (row) => summaryText(row.summary) ?? row.title,
+      render: (row) => {
+        const text = summaryText(row.summary);
+        return text === null ? dash(null) : (
+          <span className="line-clamp-2 text-sm text-muted-foreground">{text}</span>
+        );
+      },
     },
     {
       key: "amount",

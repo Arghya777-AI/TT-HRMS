@@ -419,4 +419,42 @@ export const keysClaims = {
   "register.filter.clear": "Clear",
   "grid.expand": "Show details",
   "grid.collapse": "Hide details",
+  "apply.resign.blocked.notice.short":
+    "Your notice period is {days} days, so the earliest last working day is {date}. Pick that or later, or speak to HR about a shorter notice.",
+  "apply.resign.waiver.ask": "I need to leave before my notice period ends",
+  "apply.resign.waiver.hint":
+    "This asks HR to waive part of your notice — it does not grant it. They decide, and your last working day stays what you put above until they do.",
+  "apply.resign.waiver.reason": "Why you cannot serve the full notice",
+  "apply.resign.blocked.waiverReason":
+    "Explain why you cannot serve the full notice, in at least ten characters.",
+  "form.submitted.withRef": "{title} — {reference}",
+  "leave.col.with": "With",
+  "leave.with.nobody": "Nobody yet",
+  "leave.with.decided": "—",
+  /*
+    The second line of each confirmation toast: WHO HAS IT NOW. "Submitted"
+    answers a question nobody has; "your manager sees it next" is what the person
+    wanted to know when they pressed the button.
+  */
+  "apply.asset.toast.next": "Your manager sees it first, then Stores.",
+  "apply.travel.toast.next": "Your manager sees it next.",
+  "apply.webpunch.toast": "Punch request sent",
+  "apply.webpunch.toast.next": "Your manager decides it.",
+  "helpdesk.doc.toast.next": "HR has it now.",
+  "helpdesk.new.toast.next": "The desk has it, and the clock has started.",
+  "apply.resign.toast": "Resignation filed",
+  "apply.resign.toast.next": "Your reporting manager sees it, then HR.",
+  "leave.app.toast": "Leave application sent",
+  "leave.app.toast.next": "You can follow it under Leave.",
+  // ── One resignation at a time (uq_resign__one_open) ────────────────────────
+  "apply.resign.already.title": "You have already filed your resignation",
+  "apply.resign.already.body":
+    "{reference}, with a last working day of {date}. It is waiting for a decision.",
+  "apply.resign.already.hint":
+    "You can only have one resignation open at a time. Withdraw this one if you want to change the date or the reason, then file again.",
+  "apply.resign.already.track": "See where it is",
+  "apply.resign.withdraw": "Withdraw it",
+  "apply.resign.withdrawing": "Withdrawing…",
+  "apply.resign.withdrawn": "Resignation withdrawn",
+  "apply.resign.withdrawn.next": "You can file a new one now.",
 } as const;

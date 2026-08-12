@@ -60,6 +60,7 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { t } from "@/shared/i18n/en";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtCivilDayMonthWeekday, nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
@@ -382,9 +383,38 @@ export default function LeaveApplicationPage() {
     })
       .then((result) => {
         setDone(result);
+        /*
+          THE WHOLE FORM GOES BACK TO BLANK, not just the allocation.
+
+          It used to clear `allocations` and `reason` and leave everything else,
+          so a filed one-day application left `totalDays` at 1 with nothing
+          allocated — and the panel immediately said "1 still to place" and
+          "Choose where the days should come from" about an application that had
+          just succeeded. Reported as exactly that.
+
+          The dates go back to today rather than to the dates just used: a form
+          still showing last week's range is an invitation to file it twice.
+        */
+        setTotalDays("");
         setAllocations([]);
+        setFromDate(nowIstDate());
+        setToDate(nowIstDate());
         setReason("");
+        setContact("");
+        setHandoverId("");
+        setHandoverNotes("");
+        setAddressAway("");
+        setMentioned([]);
         attempt.reset();
+        /*
+          One toast for the whole application, quoting the first request number.
+          A combined application files one request per type, and firing three
+          toasts for one act reads as three things having happened.
+        */
+        confirmSubmitted(t("leave.app.toast"), {
+          reference: result.filed[0]?.requestNumber ?? null,
+          detail: t("leave.app.toast.next"),
+        });
       })
       .catch((err: unknown) => setFailure(mutationUserMessage(err)))
       .finally(() => setBusy(false));

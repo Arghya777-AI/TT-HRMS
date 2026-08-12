@@ -20,12 +20,20 @@
  *    same policy) with the asset embedded — `assets__self__select` permits the
  *    join for exactly the assets already tied to me.
  *
- * WHAT IS NOT HERE, AND WHY NOTHING FAKES IT: acknowledging custody. 028 grants
- * the employee SELECT and INSERT on `asset_allocations` and nothing else — there
- * is no `asset_allocations__self__update` policy and no acknowledgement RPC in
- * any migration, so `acknowledged_at` cannot be stamped by the person holding
- * the asset. The screen shows the outstanding confirmations and says who can
- * record them.
+ * ACKNOWLEDGING CUSTODY, which used to be the gap this header described.
+ *
+ * The note here read: 028 grants the employee SELECT and INSERT on
+ * `asset_allocations` and nothing else — no `asset_allocations__self__update`
+ * policy and no RPC — so `acknowledged_at` could not be stamped by the person
+ * holding the asset. The screen counted outstanding confirmations that nobody in
+ * the system could ever record, which is how Testing Kumar's laptop came to read
+ * "Not confirmed" with no control anywhere that changed it.
+ *
+ * Migration 042700 adds `acknowledge_asset(allocation_id, note)`: one definer
+ * function writing exactly two columns, refusing somebody else's allocation and
+ * one never handed over. An UPDATE policy was the alternative and would have
+ * handed the holder every column the policy did not pin — `expected_return_date`,
+ * `returned_at`, `recovery_amount_paise`.
  */
 import { z } from "zod";
 import {
@@ -38,6 +46,8 @@ import {
   isNotNull,
   isNull,
   isTrue,
+  MutationError,
+  rpcAudited,
   selectCount,
   selectMany,
   type Filter,
@@ -180,5 +190,66 @@ export function fetchMyPipelineAllocations(
     order: [{ column: "requested_at", ascending: false }],
     limit: CUSTODY_ROW_CAP,
     ...(signal ? { signal } : {}),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Confirming receipt — the employee's own word that the item reached them
+// -----------------------------------------------------------------------------
+
+const ACKNOWLEDGE_FN = "acknowledge_asset";
+
+/**
+ * What 042700 returns: the allocation row, of which only these are read back.
+ *
+ * A narrow schema on purpose — the function returns `asset_allocations` in full,
+ * including `recovery_amount_paise` and the recall columns, and parsing what the
+ * screen does not use would tie this file to every future column added to that
+ * table.
+ */
+export const acknowledgedAllocationSchema = z.object({
+  id: dbUuid,
+  allocation_number: z.string(),
+  status: allocationStatusSchema,
+  acknowledged_at: dbTimestampNullable,
+});
+export type AcknowledgedAllocation = z.infer<typeof acknowledgedAllocationSchema>;
+
+export interface AcknowledgeAssetInput {
+  readonly allocationId: string;
+  /** Optional: anything worth recording about the state it arrived in. */
+  readonly note?: string;
+}
+
+/**
+ * Confirm an asset reached me.
+ *
+ * `rpcAudited` rather than `rpcOne` because the reason travels as `x-reason` and
+ * lands in the audit row — "who says they received the laptop, and when" is
+ * exactly the kind of claim that is worth being able to read back later.
+ */
+export function acknowledgeAsset(
+  input: AcknowledgeAssetInput,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<AcknowledgedAllocation> {
+  return rpcAudited(
+    ACKNOWLEDGE_FN,
+    {
+      p_allocation_id: input.allocationId,
+      p_note: input.note ?? null,
+    },
+    acknowledgedAllocationSchema,
+    { reason, ...(signal ? { signal } : {}) },
+  ).then((rows) => {
+    const row = rows[0];
+    if (row === undefined) {
+      throw new MutationError(
+        ACKNOWLEDGE_FN,
+        "not_found",
+        "The confirmation was not recorded — no allocation came back.",
+      );
+    }
+    return row;
   });
 }

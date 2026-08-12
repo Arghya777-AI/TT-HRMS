@@ -9,6 +9,8 @@
  * screen in a covered section appears in that section's strip, and every tab points
  * at a screen that actually exists.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "@/app/route-manifest";
 import { SECTION_NAV_LABEL, hasSectionNav, sectionRoutes } from "./sectionNavModel";
@@ -17,19 +19,95 @@ import { en } from "@/shared/i18n/en";
 
 const COVERED = Object.keys(SECTION_NAV_LABEL);
 
-describe("the six sections the client named all have a strip", () => {
-  for (const domain of [
-    "admin-org",
-    "admin-time",
-    "admin-payroll",
-    "admin-leave",
-    "admin-documents",
-    "admin-settings",
-  ]) {
-    it(`${domain} is covered`, () => {
-      expect(hasSectionNav(domain)).toBe(true);
+/**
+ * Sections allowed to have no generic strip, each for a stated reason.
+ *
+ * This list is the ONLY way out of the rule below, which is the point: skipping a
+ * section now requires writing down why, in a file somebody reviews.
+ */
+const EXEMPT: Readonly<Record<string, string>> = {
+  "admin-kiosk":
+    "has KioskSectionNav, whose tab order follows the enrolment workflow; two strips would render on one page",
+  profile:
+    "has ProfileTabs, mounted by the profile pages themselves; a second strip would sit directly above it",
+  team:
+    "seven of its eight screens are their own rail rows, so a strip would repeat the rail verbatim",
+};
+
+describe("every section with more than one screen has a strip", () => {
+  /*
+    THIS REPLACED A LIST OF SIX DOMAIN NAMES.
+
+    The old version asserted that the six sections the client had named were
+    covered. It passed for a year while seven other sections — assets, people,
+    attendance, communications, workflow, audit and the command centre — had none,
+    which is fifty screens with no tab. It could not have failed: it only ever
+    checked the six that already worked.
+
+    A test that lists what was fixed proves the fix happened once. This asserts the
+    RULE, so the next section inherits it without anybody remembering to.
+  */
+  const domains = [...new Set(ROUTES.map((r) => r.domain))];
+
+  for (const domain of domains) {
+    const clickable = ROUTES.filter((r) => r.domain === domain && !r.path.includes(":"));
+    // One screen needs no strip: there is nowhere else in the section to go.
+    if (clickable.length < 2) continue;
+    if (Object.prototype.hasOwnProperty.call(EXEMPT, domain)) continue;
+
+    it(`${domain} (${String(clickable.length)} screens) is covered`, () => {
+      expect(
+        hasSectionNav(domain),
+        `${domain} has ${String(clickable.length)} screens and no tab strip, so ` +
+          `${String(clickable.length - 1)} of them can only be reached by ⌘K or by typing ` +
+          `the URL. Add it to SECTION_NAV_LABEL, or to EXEMPT with a reason.`,
+      ).toBe(true);
     });
   }
+
+  it("covers something — a manifest that stopped parsing would empty this file", () => {
+    expect(domains.length).toBeGreaterThan(10);
+  });
+});
+
+describe("a section with ONE screen is in the rail, since it gets no strip", () => {
+  /*
+    The gap in the rule above, found by reading its own output: a section with a
+    single screen is skipped — correctly, because a one-tab strip is furniture —
+    and that skip was silently also excusing it from having any entrance at all.
+
+    `/me/documents` was exactly that. The rail row labelled "Documents" pointed at
+    `/me/profile/documents`, a different screen in a different section, so the page
+    holding everything issued to and signed by the employee had no door. It is a
+    single-screen section, so the strip rule skipped it, and it is not `:code`
+    parameterised, so nothing else objected.
+  */
+  const RAIL = readFileSync(join(process.cwd(), "src/app/shell/nav-model.ts"), "utf8");
+
+  const singles = [...new Set(ROUTES.map((r) => r.domain))]
+    .map((domain) => ({
+      domain,
+      routes: ROUTES.filter((r) => r.domain === domain && !r.path.includes(":")),
+    }))
+    .filter((s) => s.routes.length === 1);
+
+  for (const { domain, routes } of singles) {
+    const only = routes[0];
+    if (only === undefined) continue;
+
+    it(`${domain}: ${only.path} has a rail row`, () => {
+      expect(
+        RAIL.includes(`"${only.path}"`),
+        `${only.path} is the only screen in its section, so it gets no tab strip, and ` +
+          `it has no rail row either — nothing in the app leads to it. Add a NavItem ` +
+          `in nav-model.ts pointing at it.`,
+      ).toBe(true);
+    });
+  }
+
+  it("found some to check", () => {
+    expect(singles.length).toBeGreaterThan(3);
+  });
 });
 
 describe("every screen in a covered section is reachable from that section", () => {

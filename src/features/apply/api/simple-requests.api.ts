@@ -32,7 +32,16 @@
  * the string encoding, so ₹1,234.56 cannot arrive as 123455.99999.
  */
 import { z } from "zod";
-import { dbDateNullable, dbIntNullable, dbTimestamp, dbUuid, eq, rpcOne, selectMany } from "@/shared/api/query";
+import {
+  dbDateNullable,
+  dbIntNullable,
+  dbTimestamp,
+  dbUuid,
+  eq,
+  inList,
+  rpcOne,
+  selectMany,
+} from "@/shared/api/query";
 import { insertOne, updateOne } from "@/shared/api/write";
 import { approvalStatusSchema } from "./apply.api";
 import { CREATE_APPROVAL_REQUEST_FN } from "./apply-requests.api";
@@ -159,6 +168,17 @@ export interface SubmitResignationInput {
   readonly intendedLastWorkingDay: string;
   readonly reasonCategory: ResignationReason;
   readonly reason: string;
+  /**
+   * Asking to leave before the notice period is up.
+   *
+   * `ck_resign__notice_or_waiver` permits an early last working day ONLY when
+   * this is set — it is the sanctioned way to be short, and it does not grant
+   * anything: HR still decides. Without it the row is refused outright, which is
+   * what employees were hitting with no way forward.
+   */
+  readonly isNoticeWaiverRequested: boolean;
+  /** Required by `ck_resign__waiver_reason` whenever the waiver is asked for. */
+  readonly waiverReason: string;
 }
 
 export function submitResignation(
@@ -174,6 +194,12 @@ export function submitResignation(
       intended_last_working_day: input.intendedLastWorkingDay,
       reason_category: input.reasonCategory,
       reason: input.reason.trim(),
+      is_notice_waiver_requested: input.isNoticeWaiverRequested,
+      /* NULL, not "", when no waiver is asked for: the CHECK tests for a
+         non-blank string and an empty one would fail it while looking set. */
+      waiver_reason: input.isNoticeWaiverRequested
+        ? (input.waiverReason.trim() === "" ? null : input.waiverReason.trim())
+        : null,
       status: "pending",
     },
     requestCode: REQUEST_CODE_RESIGNATION,
@@ -184,10 +210,65 @@ export function submitResignation(
       reason_category: input.reasonCategory,
       intended_last_working_day: input.intendedLastWorkingDay,
       notice_period_days: input.noticePeriodDays,
+      notice_waiver_requested: input.isNoticeWaiverRequested,
     },
     amountRupees: null,
     signal,
   });
+}
+
+/** Resignations that still count against `uq_resign__one_open`. */
+export const OPEN_RESIGNATION_STATUSES = ["draft", "pending", "in_progress"] as const;
+
+/**
+ * The one resignation blocking another, if there is one.
+ *
+ * `uq_resign__one_open` is a partial unique index over exactly these three
+ * statuses, so this asks the same question the index does. Withdrawn, rejected
+ * and cancelled rows are outside the predicate — somebody who withdraws can
+ * genuinely file again, and the screen must not pretend otherwise.
+ */
+export async function fetchOpenResignation(
+  employeeId: string,
+  signal?: AbortSignal,
+): Promise<ResignationRow | null> {
+  const rows = await selectMany(RESIGNATIONS_TABLE, resignationRowSchema, {
+    columns: RESIGNATION_COLUMNS,
+    filters: [
+      eq("employee_id", employeeId),
+      inList("status", [...OPEN_RESIGNATION_STATUSES]),
+    ],
+    order: [{ column: "created_at", ascending: false }],
+    limit: 1,
+    ...(signal ? { signal } : {}),
+  });
+  return rows[0] ?? null;
+}
+
+/**
+ * Take it back.
+ *
+ * `resign__self__update` permits the employee to move their own row from
+ * draft/pending to `withdrawn`, which is the sanctioned undo — the row survives
+ * as a record that it happened and was taken back, rather than vanishing. Once
+ * withdrawn it leaves `uq_resign__one_open`'s predicate, so a fresh resignation
+ * can be filed immediately.
+ *
+ * A row already decided is refused by the policy's USING clause, not by this
+ * function: a manager approving while the employee withdraws is a race the
+ * database settles, and whoever loses is told.
+ */
+export function withdrawResignation(
+  resignationId: string,
+  signal?: AbortSignal,
+): Promise<ResignationRow> {
+  return updateOne(
+    RESIGNATIONS_TABLE,
+    resignationRowSchema,
+    { status: "withdrawn" },
+    { id: resignationId },
+    { columns: RESIGNATION_COLUMNS, ...(signal ? { signal } : {}) },
+  );
 }
 
 // -----------------------------------------------------------------------------

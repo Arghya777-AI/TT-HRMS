@@ -38,6 +38,7 @@ import { type MessageKey, t } from "@/shared/i18n/en";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import {
@@ -230,7 +231,16 @@ export default function WebPunchRequestPage() {
                   direction,
                   reason,
                 },
-                { onSuccess: (r) => { setSubmitted(r.requestId); setReason(""); } },
+                {
+                  onSuccess: (r) => {
+                    attempt.reset();
+                    setSubmitted(r.requestId);
+                    setReason("");
+                    confirmSubmitted(t("apply.webpunch.toast"), {
+                      detail: t("apply.webpunch.toast.next"),
+                    });
+                  },
+                },
               );
             }}
           >

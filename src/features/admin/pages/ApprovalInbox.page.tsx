@@ -57,6 +57,7 @@ import { dash, formatDays, formatNumber } from "@/lib/format";
 import { formatINR } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { summaryText } from "@/features/apply/api/apply.api";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -73,6 +74,7 @@ import {
   approvalStatusValues,
   isInboxSlice,
   readSummaryFacts,
+  SETTLED_APPROVAL_STATUSES,
   type ApprovalDecision,
   type ApprovalDecisionResult,
   type ApprovalPriority,
@@ -262,8 +264,31 @@ export default function ApprovalInboxPage() {
     return isSuperAdmin || breachedIds.has(row.id);
   };
 
+  /*
+    A SETTLED REQUEST IS NOT A DECISION WAITING TO BE TAKEN.
+
+    Reported: "if 2/2 is already done then why is showing again approve that is
+    already approved inside settled filter". Exactly right — the Settled slice
+    listed an approved asset request with Approve and Reject on it and "You can
+    decide this" in the Waiting-on column.
+
+    The cause is that this predicate asked only WHO the viewer is. A super
+    administrator satisfies `isOverride` for every row in the table, including the
+    ones the engine finished with weeks ago, so the buttons rendered on all of
+    them. `act_on_approval` would have refused — the state check lives in the
+    database, where it belongs — but only after the reason dialog had been filled
+    in, which makes the screen a liar rather than a guard.
+
+    So the state comes first: nobody decides a request that is already decided,
+    however senior they are.
+  */
+  /* `status` is a plain string on the row schema; the constant is typed narrower,
+     so the widening keeps the comparison honest without asserting the value. */
+  const isSettled = (row: ApprovalRequestRow): boolean =>
+    (SETTLED_APPROVAL_STATUSES as readonly string[]).includes(row.status);
+
   const canDecide = (row: ApprovalRequestRow): boolean =>
-    isNamedApprover(row) || isOverride(row);
+    !isSettled(row) && (isNamedApprover(row) || isOverride(row));
 
   const columns: DataGridColumn<ApprovalRequestRow>[] = [
     {
@@ -271,12 +296,24 @@ export default function ApprovalInboxPage() {
       header: t("admin.wf.inbox.col.request"),
       width: "16rem",
       sortable: true,
-      render: (row) => (
-        <span className="flex flex-col leading-tight">
-          <span className="font-medium">{row.title}</span>
-          <span className="num text-xs text-muted-foreground">{row.request_number}</span>
-        </span>
-      ),
+      /*
+        Title, then the sentence the requester wrote, then the reference. An
+        administrator deciding forty requests should not have to open each one to
+        learn what it is — `summary` is on the row already and was simply not
+        being rendered.
+      */
+      render: (row) => {
+        const why = summaryText(row.summary);
+        return (
+          <span className="flex flex-col leading-tight">
+            <span className="font-medium">{row.title}</span>
+            {why !== null ? (
+              <span className="line-clamp-1 text-xs text-muted-foreground">{why}</span>
+            ) : null}
+            <span className="num text-xs text-muted-foreground">{row.request_number}</span>
+          </span>
+        );
+      },
     },
     {
       key: "request_type_id",
@@ -638,6 +675,16 @@ function WaitingOn({ row, mine }: { row: ApprovalRequestRow; mine: boolean }) {
   if (mine) {
     return (
       <span className="text-sm font-medium text-primary">{t("admin.wf.inbox.waiting.you")}</span>
+    );
+  }
+  /*
+    A settled request is waiting on nobody, and saying "Nobody yet" about it —
+    which is what the empty-array branch below says — reads as a routing failure
+    rather than as a finished job. The word is "Nobody", without the "yet".
+  */
+  if ((SETTLED_APPROVAL_STATUSES as readonly string[]).includes(row.status)) {
+    return (
+      <span className="text-sm text-muted-foreground">{t("admin.wf.inbox.waiting.done")}</span>
     );
   }
   const n = row.current_approver_ids.length;

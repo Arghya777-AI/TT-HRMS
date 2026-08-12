@@ -19,12 +19,15 @@ import {
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
 import {
+  fetchOpenResignation,
   submitAssetRequest,
   submitDocumentRequest,
   submitResignation,
   submitTravelRequisition,
+  withdrawResignation,
   type SubmitAssetRequestInput,
   type SubmitDocumentRequestInput,
+  type ResignationRow,
   type SubmitResignationInput,
   type SubmitTravelInput,
 } from "../api/simple-requests.api";
@@ -64,14 +67,21 @@ import {
   type SubmittedClaim,
 } from "../api/claim-submit.api";
 import {
+  acknowledgeAsset,
   fetchMyCustody,
   fetchMyCustodyCounts,
   fetchMyPipelineAllocations,
+  type AcknowledgeAssetInput,
+  type AcknowledgedAllocation,
   type CustodyRow,
   type CustodyView,
   type MyCustodyCounts,
   type PipelineAllocation,
 } from "@/features/assets/api/my-assets.api";
+import {
+  useAuditedMutation,
+  type AuditedMutationResult,
+} from "@/shared/hooks/useAuditedMutation";
 
 /** The request types HR has switched on — the launcher tiles. */
 export function useRequestTypes(): UseQueryResult<RequestType[], Error> {
@@ -236,6 +246,26 @@ export function useMyCustodyCounts(): UseQueryResult<MyCustodyCounts, Error> {
     queryFn: ({ signal }) => fetchMyCustodyCounts(requireEmployeeId(employeeId), signal),
     enabled: employeeId !== null,
     retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Confirm an asset reached me.
+ *
+ * Invalidates the whole assets domain rather than patching the row: confirming
+ * moves the allocation from `allocated` to `acknowledged`, which changes the
+ * "To confirm" tile, the row's own badge and the custody list all at once. A
+ * hand-patched row would leave the tile counting a confirmation that no longer
+ * exists — the 7-vs-8 disagreement this codebase keeps designing out.
+ */
+export function useAcknowledgeAsset(): AuditedMutationResult<
+  AcknowledgedAllocation,
+  AcknowledgeAssetInput
+> {
+  return useAuditedMutation<AcknowledgedAllocation, AcknowledgeAssetInput>({
+    mutationFn: (input, reason) => acknowledgeAsset(input, reason),
+    invalidate: [qk.assets.all],
+    defaultReason: "Confirming that this asset reached me.",
   });
 }
 
@@ -419,5 +449,35 @@ export function useApprovalTrail(
     queryFn: ({ signal }) => fetchApprovalTrail(approvalRequestId ?? "", signal),
     enabled: approvalRequestId !== null,
     retry: shouldRetryQuery,
+  });
+}
+
+/** The resignation currently blocking another, if there is one. */
+export function useOpenResignation(): UseQueryResult<ResignationRow | null, Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: [...qk.apply.list({ entity: "open-resignation" }), employeeId ?? NO_EMPLOYEE],
+    queryFn: ({ signal }) => fetchOpenResignation(requireEmployeeId(employeeId), signal),
+    enabled: employeeId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Withdraw a resignation.
+ *
+ * Invalidates the apply domain so the form flips back from "you have one open"
+ * to a blank form in the same render — the whole point of withdrawing is being
+ * able to file again.
+ */
+export function useWithdrawResignation(): UseMutationResult<ResignationRow, Error, string> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (resignationId: string) => withdrawResignation(resignationId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
   });
 }

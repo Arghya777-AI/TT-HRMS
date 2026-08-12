@@ -782,6 +782,25 @@ export interface ApprovalDecisionInput {
  */
 const SERVER_APPLIED_DETAIL_TABLES: readonly string[] = ["reimbursement_claims"];
 
+/**
+ * Detail tables the CLIENT still applies. Everything else the server does.
+ *
+ * This list is the inverse of the one above and it is the honest shape now.
+ * Migration 042600 replaced the per-table triggers with one generic projector on
+ * `approval_requests`, so any detail table the engine can point at is written
+ * inside the same transaction as the decision — including the eleven that had
+ * nothing at all, which is what produced
+ *
+ *   "ASSET_REQUEST-000024 decided and the decision is on the trail, but this
+ *    request type has no client-side path to update its own record".
+ *
+ * `leave_requests` is the exception and stays here: `decideLeaveRequest` has
+ * applied it for months, it posts to `leave_ledger` through the leave table's own
+ * trigger, and 042600 deliberately excluded it rather than move the one working
+ * path in the same release as the ten broken ones.
+ */
+const CLIENT_APPLIED_DETAIL_TABLES: readonly string[] = [LEAVE_REQUESTS_TABLE];
+
 export interface ApprovalDecisionResult {
   readonly approval: ActOnApprovalResult;
   /** True when the leave request itself was moved to approved/rejected. */
@@ -897,7 +916,24 @@ export async function decideApproval(
     finishing a chain on its own, and a client-side apply step would silently not
     run for most of them. So the honest answer here is "applied", not "no path".
   */
-  if (input.detailTable !== null && SERVER_APPLIED_DETAIL_TABLES.includes(input.detailTable)) {
+  /*
+    042600 INVERTED THIS TEST.
+
+    It used to ask "is this one of the tables a trigger happens to cover?" and
+    answer `no_apply_path` for the other eleven. Now a detail table is applied by
+    the server unless the client owns it, because the trigger is generic — so the
+    question is the narrower one, and the honest answer for a request type nobody
+    has thought about is "applied", not "nothing happened".
+
+    `detailTable === null` still reaches the banner below, and that case is real
+    rather than a gap: a request type with no detail row at all IS complete when
+    the trail records the decision. There is nothing else to write.
+  */
+  if (
+    input.detailTable !== null &&
+    (SERVER_APPLIED_DETAIL_TABLES.includes(input.detailTable) ||
+      !CLIENT_APPLIED_DETAIL_TABLES.includes(input.detailTable))
+  ) {
     return { approval, appliedToDetail: true, notAppliedReason: null, applyError: null };
   }
 

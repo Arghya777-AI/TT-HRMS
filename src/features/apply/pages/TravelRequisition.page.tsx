@@ -53,6 +53,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { rupeesToPaise } from "../api/claim-submit.api";
@@ -258,7 +259,16 @@ export default function TravelRequisitionPage() {
               sendTr.mutate(
                 { fromLocation: fromLoc, toLocation: toLoc, fromDate, toDate, purpose,
                   estimatedCostRupees: cost, advanceRupees: advance },
-                { onSuccess: (r) => { setSent(r.requestId); setPurpose(""); } },
+                {
+                  onSuccess: (r) => {
+                    attempt.reset();
+                    setSent(r.requestId);
+                    setPurpose("");
+                    confirmSubmitted(t("apply.travel.done"), {
+                      detail: t("apply.travel.toast.next"),
+                    });
+                  },
+                },
               );
             }}
           >

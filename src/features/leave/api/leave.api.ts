@@ -388,6 +388,9 @@ export const leaveRequestSchema = z.object({
   contact_during_leave: z.string().nullable(),
   address_during_leave: z.string().nullable(),
   handover_to_employee_id: dbUuidNullable,
+  /* The workflow row this leave belongs to. `current_approver_id` on THIS table
+     is written only by the demo seed; the live answer is on approval_requests. */
+  approval_request_id: dbUuidNullable,
   handover_notes: z.string().nullable(),
   status: leaveRequestStatusSchema,
   current_approver_id: dbUuidNullable,
@@ -408,6 +411,7 @@ const LEAVE_REQUEST_COLUMNS =
   "id, request_number, employee_id, leave_type_id, from_date, to_date, total_days, paid_days, " +
   "unpaid_days, portion, reason, contact_during_leave, address_during_leave, " +
   "handover_to_employee_id, handover_notes, status, current_approver_id, approved_days, " +
+  "approval_request_id, " +
   "decided_at, decision_comment, cancelled_at, cancellation_reason, supporting_document_id, " +
   "is_backdated, created_at, leave_type:leave_types(code, name, colour_hex)";
 

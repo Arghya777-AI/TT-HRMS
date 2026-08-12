@@ -33,6 +33,45 @@
  * The rules themselves stay in the database. This is translation, never policy.
  */
 
+/**
+ * Bare CHECK constraints, by name.
+ *
+ * A trigger's `RAISE EXCEPTION` writes a sentence; a CHECK writes
+ *
+ *     new row for relation "resignations" violates check constraint
+ *     "ck_resign__notice_or_waiver"
+ *
+ * which is the same refusal with the explanation removed. `PG_CONSTRAINT_PROSE`
+ * in write.ts correctly refuses to show that to an employee — and the result was
+ * "The change could not be saved … (code 23514)", which is honest and useless.
+ *
+ * A constraint NAME is stable, unique and meaningful, so it is the one part of
+ * that message worth reading. Each entry turns one into the rule it enforces.
+ * Names not listed here still fall through to the generic sentence: a wrong guess
+ * about which rule fired would be worse than saying nothing.
+ */
+const CHECK_CONSTRAINTS: Readonly<Record<string, string>> = {
+  ck_resign__notice_or_waiver:
+    "Your last working day is inside your notice period. Pick a later date, or ask HR about a shorter notice.",
+  ck_resign__reason_present: "Say why you are resigning.",
+  /* A partial UNIQUE index, not a CHECK — see the unique-violation rewrite
+     below, which catches it by index name in the 23505 message. */
+  ck_resign__waiver_reason: "A shorter notice needs a reason for the waiver.",
+  ck_lr__reason_length: "That reason is too long — keep it under 2000 characters.",
+  ck_asr__reason: "Say why you need it, in at least ten characters.",
+  ck_asr__quantity: "Ask for between 1 and 20.",
+  ck_asr__replacement_pair:
+    "Tick “this replaces something I already have” before naming the item it replaces.",
+  ck_hdt__subject: "The summary needs to be between 5 and 200 characters.",
+  ck_hdt__description: "Describe the problem in at least ten characters.",
+  ck_dr__payslip_needs_period: "A payslip request has to say which month it is for.",
+  ck_dr__other_needs_note: "Choosing “something else” needs a note saying what you need.",
+  ck_ll__adjustment_reason: "A manual leave adjustment needs a reason of at least ten characters.",
+  ck_ar__employee_reason: "Explain the correction in at least fifteen characters.",
+  ck_ar__date_not_future: "You cannot regularize a day that has not happened yet.",
+  ck_lrd__day_value: "Leave goes in half-day steps.",
+};
+
 /** One known refusal and the sentence a person can act on. */
 interface Rewrite {
   readonly match: RegExp;
@@ -103,6 +142,22 @@ const REWRITES: readonly Rewrite[] = [
     say: () => "You cannot decide your own request — it has to go to somebody else.",
   },
   {
+    /*
+      A duplicate on a named index. Postgres says "duplicate key value violates
+      unique constraint \"uq_resign__one_open\"", which is an index name; the rule
+      it enforces is one open resignation per person. Matched here rather than in
+      the CHECK table because the wording differs.
+    */
+    match: /duplicate key value violates unique constraint "uq_resign__one_open"/i,
+    say: () =>
+      "You already have a resignation waiting for a decision. Withdraw it first if you want to change the date or the reason.",
+  },
+  {
+    match: /duplicate key value violates unique constraint "uq_ar__one_open_per_day"/i,
+    say: () =>
+      "You have already asked for that day to be corrected, and it is still waiting for a decision.",
+  },
+  {
     match: /is append-only/i,
     say: () =>
       "This record cannot be changed once written. Add a correcting entry instead of editing this one.",
@@ -127,7 +182,26 @@ export function humaniseRefusal(serverMessage: string): string {
     const found = message.match(rewrite.match);
     if (found !== null) return rewrite.say(found);
   }
+  /*
+    A bare CHECK, which carries its constraint name and nothing else. Tried after
+    the sentence rewrites because a trigger's own words always beat a lookup.
+  */
+  const named = message.match(/violates check constraint "([a-z0-9_]+)"/i);
+  const known = named === null ? undefined : CHECK_CONSTRAINTS[named[1] ?? ""];
+  if (known !== undefined) return known;
   return message;
+}
+
+/**
+ * True when the message is a bare constraint violation this file cannot name.
+ *
+ * `mutationUserMessage` asks so it can fall back to its generic sentence rather
+ * than showing an employee a constraint identifier. Kept here, beside the table,
+ * so adding an entry above is the only edit needed to fix one.
+ */
+export function isUnexplainedConstraint(message: string): boolean {
+  const named = message.match(/violates check constraint "([a-z0-9_]+)"/i);
+  return named !== null && CHECK_CONSTRAINTS[named[1] ?? ""] === undefined;
 }
 
 /** Exported for the test only — the count is what proves the table is wired. */

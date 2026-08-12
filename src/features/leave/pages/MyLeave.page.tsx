@@ -22,7 +22,9 @@ import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import type { Cursor } from "@/shared/api/query";
-import { useLeaveBalances, useLeaveRequests } from "../hooks/useLeave";
+import { useLeaveBalances, useLeaveRequests ,
+  useLeaveApprovers,
+} from "../hooks/useLeave";
 import { useLeaveTypeRules, useMyLeaveContext, useWithdrawLeave } from "../hooks/useLeaveApply";
 import { isProbationLocked, type LeaveTypeRule } from "../api/leave-apply.api";
 import type { LeaveBalance, LeaveRequest, LeaveRequestStatus } from "../api/leave.api";
@@ -49,6 +51,17 @@ export default function MyLeavePage() {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [history, setHistory] = useState<(Cursor | null)[]>([]);
   const requests = useLeaveRequests({ statuses: LISTED_STATUSES, pageSize: 20, cursor });
+
+  /* Only the requests on THIS page, so the lookup follows the pagination and
+     never asks about a row nobody is looking at. */
+  const approvalIds = useMemo(
+    () =>
+      (requests.data?.rows ?? [])
+        .map((r) => r.approval_request_id)
+        .filter((id): id is string => id !== null),
+    [requests.data],
+  );
+  const approvers = useLeaveApprovers(approvalIds);
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const withdraw = useWithdrawLeave();
@@ -122,6 +135,42 @@ export default function MyLeavePage() {
       key: "status",
       header: t("leave.col.status"),
       render: (row) => <StatusChip status={row.status} map={LEAVE_STATUS_MAP} />,
+    },
+    {
+      /*
+        WHO IS HOLDING IT. The status chip says "With your approver", which is a
+        state and not a person — "I already told u that for each request show who
+        is handling that request but here we can't see".
+
+        `leave_requests.current_approver_id` looks like the answer and is not: it
+        is written only by the demo seed, so on live data it is NULL on every row.
+        The live answer is `approval_requests.current_approver_ids`, which the
+        raise trigger fills, resolved to names through the directory allowlist.
+      */
+      key: "with",
+      header: t("leave.col.with"),
+      width: "12rem",
+      hideBelow: "md",
+      render: (row) => {
+        if (row.approval_request_id === null) {
+          /* Settled requests have nobody holding them, which is not a gap. One
+             still open with no workflow row is — and it should look like one. */
+          return row.decided_at !== null ? (
+            dash(null)
+          ) : (
+            <Badge variant="warning">{t("leave.with.nobody")}</Badge>
+          );
+        }
+        const people = approvers.data?.get(row.approval_request_id) ?? [];
+        if (people.length === 0) {
+          return row.decided_at !== null ? (
+            dash(null)
+          ) : (
+            <Badge variant="warning">{t("leave.with.nobody")}</Badge>
+          );
+        }
+        return <span>{people.map((person) => person.display_name).join(", ")}</span>;
+      },
     },
     {
       key: "created_at",

@@ -13,15 +13,20 @@
  * a tile and its own list cannot disagree. Nothing is summed or dated in the
  * browser.
  *
- * THE ONE THING THIS SCREEN CANNOT DO, AND SAYS SO: confirm receipt. 028 grants
- * the employee SELECT and INSERT on `asset_allocations` and nothing more — there
- * is no self UPDATE policy and no acknowledgement RPC in any migration, so
- * `acknowledged_at` can only be stamped by Stores under the admin policy. The
- * "To confirm" section therefore lists what is outstanding and names who records
- * it, instead of offering a button that would fail with a 42501.
+ * CONFIRMING RECEIPT, which this screen could not do until 042700.
+ *
+ * The note here read: 028 grants the employee SELECT and INSERT on
+ * `asset_allocations` and nothing more, so `acknowledged_at` could only be
+ * stamped by Stores — and the "To confirm" tile counted rows that nobody in the
+ * system could clear. It was honest about the gap and the gap was still a gap.
+ *
+ * `acknowledge_asset` closes it, and the Confirm button appears only on a row
+ * that the function will accept: `allocated`, not yet acknowledged, mine. A
+ * button whose server call is knowably going to fail is worse than no button.
  *
  * @route /me/assets
  */
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { BadgeCheck, Package, PackageCheck, RotateCcw, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -43,10 +48,12 @@ import {
   type PipelineAllocation,
 } from "../api/my-assets.api";
 import {
+  useAcknowledgeAsset,
   useMyCustody,
   useMyCustodyCounts,
   useMyPipelineAllocations,
 } from "@/features/apply/hooks/useApply";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 
 /** `asset_allocation_status` — only the states `v_asset_custody` admits. */
 const CUSTODY_STATUS_MAP: Record<string, StatusChipEntry> = {
@@ -102,6 +109,15 @@ export default function MyAssetsPage() {
   const counts = useMyCustodyCounts();
   const rows = useMyCustody(view);
   const pipeline = useMyPipelineAllocations();
+
+  /*
+    Which row is mid-confirmation, so only ITS button goes quiet. `isPending` on
+    the mutation is one flag for the whole page and would disable every button on
+    every row — on a list of four uniform items that reads as though the wrong one
+    was pressed.
+  */
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const acknowledge = useAcknowledgeAsset();
 
   function selectView(next: CustodyView) {
     const updated = new URLSearchParams(params);
@@ -218,13 +234,49 @@ export default function MyAssetsPage() {
       key: "acknowledged_at",
       header: t("assets.col.confirmed"),
       width: "13rem",
-      hideBelow: "lg",
-      render: (row) =>
-        row.acknowledged_at === null ? (
-          <Badge variant="warning">{t("assets.chip.unconfirmed")}</Badge>
-        ) : (
-          fmtDateTime(row.acknowledged_at)
-        ),
+      /*
+        NOT `hideBelow`, which it used to be. While this was an unactionable badge
+        it was fair to drop it on a narrow screen; now it carries the only control
+        on the row, and a control that disappears on a phone is not a control —
+        most of the venue's staff open this on a phone.
+      */
+      render: (row) => {
+        if (row.acknowledged_at !== null) return fmtDateTime(row.acknowledged_at);
+        /*
+          Only `allocated` can be confirmed — 042700 refuses anything else, and
+          offering a button that the server will refuse is the thing this screen's
+          header used to apologise for.
+        */
+        if (row.status !== "allocated") {
+          return <Badge variant="warning">{t("assets.chip.unconfirmed")}</Badge>;
+        }
+        return (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={confirming === row.allocation_id}
+            onClick={() => {
+              setConfirming(row.allocation_id);
+              acknowledge
+                .saveAsync({ allocationId: row.allocation_id }, t("assets.confirm.reason"))
+                .then((saved) => {
+                  confirmSubmitted(t("assets.confirm.done", { item: row.asset_name }), {
+                    reference: saved.allocation_number,
+                    detail: t("assets.confirm.done.detail"),
+                  });
+                })
+                /* The message is rendered below; this stops an unhandled rejection. */
+                .catch(() => undefined)
+                .finally(() => {
+                  setConfirming(null);
+                });
+            }}
+          >
+            <BadgeCheck className="mr-1.5 size-3.5" aria-hidden />
+            {t("assets.action.confirm")}
+          </Button>
+        );
+      },
     },
   ];
 
@@ -304,10 +356,23 @@ export default function MyAssetsPage() {
           </ul>
         </StateBoundary>
 
+        {/*
+          This used to be a notice explaining that confirming receipt was not
+          possible and naming Stores as the only party who could record it. 042700
+          made it possible, so the notice now says what confirming MEANS rather
+          than apologising for its absence.
+        */}
         {view === "confirm" ? (
           <Notice tone="info">
-            <p className="font-medium">{t("assets.confirm.gap.title")}</p>
-            <p className="mt-1">{t("assets.confirm.gap.hint")}</p>
+            <p className="font-medium">{t("assets.confirm.what.title")}</p>
+            <p className="mt-1">{t("assets.confirm.what.hint")}</p>
+          </Notice>
+        ) : null}
+
+        {acknowledge.userMessage !== null ? (
+          <Notice tone="error">
+            <p className="font-medium">{t("assets.confirm.failed")}</p>
+            <p className="mt-1">{acknowledge.userMessage}</p>
           </Notice>
         ) : null}
 

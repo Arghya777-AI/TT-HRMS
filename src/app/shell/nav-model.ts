@@ -114,7 +114,17 @@ const ME_ITEMS: readonly NavItem[] = [
   { labelKey: "shell.nav.profile", to: "/me/profile", icon: UserRound, cap: "me.view", badge: "profile.incomplete" },
   { labelKey: "shell.nav.apply", to: "/me/apply", icon: ClipboardList, cap: "me.view" },
   { labelKey: "shell.nav.approvals", to: "/me/approvals", icon: Inbox, cap: "me.view", badge: "approvals.mine" },
-  { labelKey: "shell.nav.documents", to: "/me/profile/documents", icon: FileText, cap: "me.view", badge: "documents.unacked" },
+  /*
+    `/me/documents`, not `/me/profile/documents`.
+
+    The rail row labelled "Documents" pointed at the PROFILE sub-screen, which is
+    where you upload a document to your employee record. `/me/documents` — the one
+    that shows everything issued to you, your uploads and what you have signed —
+    had no rail row and no inbound link from any page, so nothing in the app led to
+    it. The profile screen keeps its own way in through `ProfileTabs`, so this
+    repoint costs it nothing and gives the orphan a door.
+  */
+  { labelKey: "shell.nav.documents", to: "/me/documents", icon: FileText, cap: "me.view", badge: "documents.unacked" },
   { labelKey: "shell.nav.assets", to: "/me/assets", icon: Package, cap: "me.view", badge: "assets.handover" },
   { labelKey: "shell.nav.policies", to: "/me/policies", icon: ScrollText, cap: "me.view" },
   { labelKey: "shell.nav.helpdesk", to: "/me/helpdesk", icon: LifeBuoy, cap: "me.view", badge: "helpdesk.unread" },

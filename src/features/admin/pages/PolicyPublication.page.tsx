@@ -36,7 +36,7 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { FileCheck2, ScrollText } from "lucide-react";
+import { FileCheck2, FileUp, ScrollText, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
@@ -49,13 +49,22 @@ import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
+import { PublishPolicySheet } from "../components/PublishPolicySheet";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { SelectField, TextField } from "../components/Field";
 import {
   useAckDocumentTypes,
   usePolicyDocumentCount,
+  useActiveEmployeeCount,
+  usePolicyAckStatus,
   usePolicyDocuments,
 } from "../hooks/useCommsAdmin";
-import type { AckDocumentType, PolicyDocument, PolicyFilters } from "../api/comms.api";
+import type {
+  AckDocumentType,
+  PolicyAckStatus,
+  PolicyDocument,
+  PolicyFilters,
+} from "../api/comms.api";
 
 /** `ck_documents__subject_kind` — the kinds a policy register cares about. */
 const SUBJECT_KINDS: readonly { value: string; label: string }[] = [
@@ -80,6 +89,13 @@ const DOC_STATUS_MAP = {
 };
 
 export default function PolicyPublicationPage() {
+  const [publishing, setPublishing] = useState(false);
+  /*
+    The document whose audience is being chosen, or null when publishing a new
+    one. One sheet serves both because the second half of publishing — audience,
+    deadline, signature — is identical either way.
+  */
+  const [circulating, setCirculating] = useState<PolicyDocument | null>(null);
   const [subjectKind, setSubjectKind] = useState("policy");
   const [documentTypeId, setDocumentTypeId] = useState("");
   const [ackRequiredOnly, setAckRequiredOnly] = useState(false);
@@ -105,6 +121,20 @@ export default function PolicyPublicationPage() {
   // Server counts, independent of whatever the register is filtered to.
   const policyCount = usePolicyDocumentCount({ subjectKind: "policy" });
   const ackCount = usePolicyDocumentCount({ ackRequiredOnly: true });
+
+  /*
+    Circulation state per document, from the view that already counts it. One map
+    rather than a lookup per row, so a register of 200 policies does not do 200
+    linear scans while rendering.
+  */
+  const ackStatus = usePolicyAckStatus();
+  /* The denominator: how many people COULD hold this, not how many do. */
+  const headcount = useActiveEmployeeCount();
+  const ackByDocument = useMemo(() => {
+    const map = new Map<string, PolicyAckStatus>();
+    for (const row of ackStatus.data ?? []) map.set(row.document_id, row);
+    return map;
+  }, [ackStatus.data]);
 
   const typeNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -200,18 +230,75 @@ export default function PolicyPublicationPage() {
     {
       key: "requires_acknowledgement",
       header: t("admin.comms.pol.col.ack"),
-      width: "11rem",
-      render: (row) =>
-        row.requires_acknowledgement ? (
-          <span className="flex flex-col leading-tight">
-            <Badge variant="warning">{t("admin.comms.pol.needsAck")}</Badge>
-            <span className="mt-1 text-xs text-muted-foreground">
-              {fmtCivilDate(row.acknowledgement_due_on)}
+      width: "15rem",
+      /*
+        WAS A BADGE READING "Acknowledgement" AND A DATE, AND MEANT NOTHING.
+
+        Asked, correctly: "who is acknowledge circulate here?? i did not get
+        meaning of acknowledge here". The badge was `requires_acknowledgement` —
+        a schema flag saying this document is the KIND that needs acknowledging —
+        next to `acknowledgement_due_on`. Both true, neither an answer to the
+        question anybody has in front of a policy register, which is: has this
+        gone out, and how many people have signed it?
+
+        `v_policy_acknowledgement_status` has counted exactly that since 037 and
+        no screen read it. Three states now, and they are distinguishable at a
+        glance because they are the three decisions HR makes here.
+      */
+      render: (row) => {
+        const status = ackByDocument.get(row.id);
+        const assigned = status?.assigned ?? 0;
+
+        if (assigned === 0) {
+          return (
+            <span className="flex flex-col leading-tight">
+              <Badge variant="neutral">{t("admin.comms.pol.notCirculated")}</Badge>
+              <span className="mt-1 text-xs text-muted-foreground">
+                {t("admin.comms.pol.notCirculatedHint")}
+              </span>
             </span>
+          );
+        }
+
+        const done = status?.acknowledged ?? 0;
+        const overdue = status?.overdue ?? 0;
+        /*
+          THE LINE THAT ANSWERS "why can the employee only see one".
+
+          Two of the three policies here were assigned by the demo seed to every
+          employee who existed AT THE TIME IT RAN — fifteen of them. The venue has
+          grown to ninety-odd since, and everybody who joined after has never been
+          given those documents. "6 of 15 signed" was true and read as circulated.
+          Saying how many people are NOT holding it is the fact that makes the
+          Circulate again button obviously the next thing to press.
+        */
+        const total = headcount.data ?? null;
+        const missing = total !== null && total > assigned ? total - assigned : 0;
+        return (
+          <span className="flex flex-col leading-tight">
+            <Badge variant={done >= assigned ? "success" : "warning"}>
+              {t("admin.comms.pol.ackProgress", {
+                done: formatNumber(done),
+                total: formatNumber(assigned),
+              })}
+            </Badge>
+            <span className="mt-1 text-xs text-muted-foreground">
+              {overdue > 0
+                ? t("admin.comms.pol.ackOverdue", { n: formatNumber(overdue) })
+                : status?.earliest_open_due_on != null
+                  ? t("admin.comms.pol.ackDue", {
+                      date: fmtCivilDate(status.earliest_open_due_on),
+                    })
+                  : t("admin.comms.pol.ackAllDone")}
+            </span>
+            {missing > 0 ? (
+              <span className="mt-0.5 text-xs text-warning">
+                {t("admin.comms.pol.ackMissing", { n: formatNumber(missing) })}
+              </span>
+            ) : null}
           </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">{t("admin.comms.pol.noAck")}</span>
-        ),
+        );
+      },
     },
     {
       key: "issue_date",
@@ -227,6 +314,50 @@ export default function PolicyPublicationPage() {
       hideBelow: "lg",
       render: (row) => <span className="text-xs">{fmtDateTime(row.uploaded_at)}</span>,
     },
+    {
+      key: "open",
+      header: t("admin.comms.pol.col.open"),
+      width: "8rem",
+      /*
+        Asked for: "add a button to see pdf that is circulated". HR is about to
+        send a document to ninety people and could not look at it first — the
+        register listed a title and a size and nothing openable.
+
+        `DocumentOpenButtons` already does this everywhere else: it calls the
+        `document-access` edge function, which logs the access BEFORE the URL
+        exists and hands back a signed link that expires. Download is off here
+        because the question on this screen is "is this the right file", not
+        "keep a copy".
+      */
+      render: (row) => (
+        <DocumentOpenButtons
+          documentId={row.id}
+          title={row.title}
+          variant="text"
+          allowDownload={false}
+        />
+      ),
+    },
+    {
+      key: "circulate",
+      header: t("admin.comms.pol.col.circulate"),
+      width: "9rem",
+      /*
+        On every policy row, not only unassigned ones. Re-circulating is how a
+        joiner gets a policy everybody else already has, and `publish_policy`
+        skips anybody who already holds an assignment — so the repeat is safe and
+        is the normal way to use it.
+      */
+      render: (row) => {
+        const sent = (ackByDocument.get(row.id)?.assigned ?? 0) > 0;
+        return (
+          <Button size="sm" variant="outline" onClick={() => setCirculating(row)}>
+            <Send className="mr-1.5 size-3.5" aria-hidden />
+            {sent ? t("admin.comms.pol.circ.again") : t("admin.comms.pol.circ.cta")}
+          </Button>
+        );
+      },
+    },
   ];
 
   return (
@@ -239,6 +370,23 @@ export default function PolicyPublicationPage() {
             ? t("admin.comms.pol.subtitle", { n: formatNumber(total.data) })
             : t("admin.comms.pol.subtitlePlain")
         }
+        actions={
+          <Button onClick={() => setPublishing(true)}>
+            <FileUp className="mr-2 size-4" aria-hidden />
+            {t("admin.comms.pol.pub.cta")}
+          </Button>
+        }
+      />
+
+      <PublishPolicySheet open={publishing} onOpenChange={setPublishing} types={typeRows} />
+
+      <PublishPolicySheet
+        open={circulating !== null}
+        onOpenChange={(next) => {
+          if (!next) setCirculating(null);
+        }}
+        types={typeRows}
+        existing={circulating}
       />
 
       <div className="mb-6">

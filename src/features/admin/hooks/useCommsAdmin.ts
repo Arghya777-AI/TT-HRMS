@@ -44,6 +44,7 @@ import {
   countCommunicationEvents,
   countCommunications,
   countNotifications,
+  countActiveEmployees,
   countPolicyDocuments,
   createAnnouncement,
   deleteAnnouncement,
@@ -58,6 +59,8 @@ import {
   fetchPolicyAckStatus,
   fetchPolicyDocuments,
   previewBroadcast,
+  publishPolicy,
+  uploadPolicyDocument,
   publishAnnouncement,
   restoreAnnouncement,
   sendBroadcast,
@@ -79,6 +82,10 @@ import {
   type NotificationRow,
   type PolicyAckStatus,
   type PolicyDocument,
+  type PublishPolicyInput,
+  type PublishResult,
+  type UploadedPolicy,
+  type UploadPolicyInput,
   type PolicyFilters,
   type SendRequest,
   type SendResult,
@@ -356,6 +363,16 @@ export function useBroadcastSend(): UseMutationResult<SendResult, Error, Broadca
 // Acknowledgement compliance
 // -----------------------------------------------------------------------------
 
+/** How many active employees exist — the audience a policy is measured against. */
+export function useActiveEmployeeCount(): UseQueryResult<number, Error> {
+  return useQuery({
+    queryKey: commsKey("active-employee-count"),
+    queryFn: ({ signal }) => countActiveEmployees(signal),
+    staleTime: 5 * 60 * 1000,
+    retry: shouldRetryQuery,
+  });
+}
+
 export function usePolicyAckStatus(): UseQueryResult<PolicyAckStatus[], Error> {
   return useQuery({
     queryKey: commsKey("policy-ack-status"),
@@ -415,6 +432,36 @@ export function usePolicyDocumentCount(f: PolicyFilters): UseQueryResult<number,
     queryKey: commsKey("policy-documents", { ...policyKeyParams(f), view: "count" }),
     queryFn: ({ signal }) => countPolicyDocuments(f, signal),
     retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Upload a policy file and register the document. Does not circulate it.
+ *
+ * Two mutations rather than one because they fail differently and the screen has
+ * to say which happened: an upload that succeeds and a circulation that is
+ * refused leaves a real document that simply has no audience yet, and telling HR
+ * "publishing failed" would send them to upload the same file again.
+ */
+export function useUploadPolicyDocument(): AuditedMutationResult<UploadedPolicy, UploadPolicyInput> {
+  return useAuditedMutation<UploadedPolicy, UploadPolicyInput>({
+    mutationFn: (input, reason) => uploadPolicyDocument(input, reason),
+    invalidate: [COMMS_PREFIX],
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+  });
+}
+
+/** Circulate an uploaded policy to its audience, with or without a signature. */
+export function usePublishPolicy(): AuditedMutationResult<PublishResult, PublishPolicyInput> {
+  return useAuditedMutation<PublishResult, PublishPolicyInput>({
+    mutationFn: (input, reason) => publishPolicy(input, reason),
+    /*
+      The whole comms area AND the employee-facing keys: publishing writes an
+      assignment row for every employee, which changes what each of them sees on
+      /me/policies and what the acknowledgement-compliance screen counts.
+    */
+    invalidate: [COMMS_PREFIX, qk.policies.all],
+    minReasonLength: SENSITIVE_REASON_LENGTH,
   });
 }
 

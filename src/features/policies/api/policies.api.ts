@@ -29,11 +29,11 @@ import {
   dbUuid,
   eq,
   inList,
+  rpcAudited,
   selectMany,
   selectOne,
 } from "@/shared/api/query";
 import { supabase } from "@/lib/supabase";
-import { nowInstantIso } from "@/lib/datetime";
 import {
   DOCUMENTS_TABLE,
   DOCUMENT_ACKS_TABLE,
@@ -133,7 +133,7 @@ export async function fetchPolicyList(
             "id, document_type_id, employee_id, title, file_name, mime_type, file_size_bytes, " +
             "page_count, current_version, status, issue_date, expiry_date, uploaded_by, " +
             "uploaded_at, reviewed_at, review_comment, is_system_generated, " +
-            "requires_acknowledgement, acknowledgement_due_on, " +
+            "requires_acknowledgement, requires_esign, acknowledgement_due_on, " +
             "document_types(code, name, category, requires_expiry)",
           filters: [eq("employee_id", employeeId), inList("document_type_id", typeIds)],
           order: [{ column: "issue_date", ascending: false, nullsFirst: false }],
@@ -238,7 +238,7 @@ export async function fetchPolicyDetail(
           "id, document_type_id, employee_id, title, file_name, mime_type, file_size_bytes, " +
           "page_count, current_version, status, issue_date, expiry_date, uploaded_by, " +
           "uploaded_at, reviewed_at, review_comment, is_system_generated, " +
-          "requires_acknowledgement, acknowledgement_due_on, " +
+          "requires_acknowledgement, requires_esign, acknowledgement_due_on, " +
           "document_types(code, name, category, requires_expiry)",
         ...(signal ? { signal } : {}),
       },
@@ -263,56 +263,89 @@ export interface AcknowledgePolicyInput {
   /** Highest scroll depth reached, 0–100, as the reader measured it. */
   readonly scrollPct: number;
   /** Seconds the reader was actually on the page. */
-  readSeconds: number;
+  readonly readSeconds: number;
   /** The EXACT sentence shown next to the checkbox. Stored verbatim. */
   readonly text: string;
+  /**
+   * The employee's own name, typed, when the document demands a signature.
+   * Checked SERVER-SIDE against their employee record — passing the wrong name,
+   * or none, is refused there rather than here.
+   */
+  readonly signatureName?: string | null;
 }
+
+export const acknowledgedSchema = z.object({
+  id: dbUuid,
+  status: z.string(),
+  acknowledged_at: z.string().nullable(),
+});
+export type Acknowledged = z.infer<typeof acknowledgedSchema>;
+
+export const ACKNOWLEDGE_FN = "acknowledge_document";
+export const PROGRESS_FN = "record_document_progress";
 
 /**
  * Record the acknowledgement.
  *
- * Two server-side facts shape this call:
- *  1. `document_acknowledgements_ack_guard` re-checks the scroll and dwell gates,
- *     so a spoofed client cannot record uninformed consent — it raises
- *     `check_violation`.
- *  2. Migration 025 grants UPDATE but defines only a SELECT policy for self, so
- *     the UPDATE can legitimately match ZERO rows. PostgREST reports that as
- *     success with an empty body, which would leave the employee believing they
- *     had acknowledged a policy they had not. `.select()` + an emptiness check
- *     turns that silence into an honest `no_permission`.
+ * WAS A DIRECT UPDATE, AND COULD NEVER HAVE WORKED. Migration 025 defines only
+ * SELECT policies on `document_acknowledgements`; its own comment says the
+ * acknowledge action "goes through a SECURITY DEFINER RPC per §4.4", and that
+ * RPC was never written. The previous version of this function detected the
+ * refusal honestly — PostgREST reports a zero-row UPDATE as success with an
+ * empty body — and reported it as `no_permission`, which is what an employee saw
+ * every time they pressed the button.
+ *
+ * 042800 wrote the RPC. Two gates still live in the database and neither moved:
+ * `document_acknowledgements_ack_guard` refuses a skim, and the function itself
+ * refuses somebody else's assignment and a signature that is not their name.
  */
-export async function acknowledgePolicy(input: AcknowledgePolicyInput): Promise<void> {
+export async function acknowledgePolicy(input: AcknowledgePolicyInput): Promise<Acknowledged> {
   const scrollPct = Math.min(100, Math.max(0, Math.round(input.scrollPct)));
-  const { data, error } = await supabase
-    .from(DOCUMENT_ACKS_TABLE)
-    .update({
-      status: "acknowledged",
-      acknowledged_at: nowInstantIso(),
-      acknowledgement_text: input.text,
-      scroll_completion_pct: scrollPct,
-      total_read_seconds: Math.max(0, Math.floor(input.readSeconds)),
-    })
-    .eq("id", input.ackId)
-    .select("id");
-
-  if (error) {
+  const rows = await rpcAudited(
+    ACKNOWLEDGE_FN,
+    {
+      p_ack_id: input.ackId,
+      p_statement: input.text,
+      p_signature_name: input.signatureName ?? null,
+      p_scroll_pct: scrollPct,
+      p_read_seconds: Math.max(0, Math.floor(input.readSeconds)),
+    },
+    acknowledgedSchema,
+    { reason: "Acknowledging a policy assigned to me." },
+  );
+  const row = rows[0];
+  if (row === undefined) {
     throw new QueryError(
-      DOCUMENT_ACKS_TABLE,
-      error.code === "42501"
-        ? "no_permission"
-        : error.code === "23514"
-          ? "conflict"
-          : "unknown",
-      error.message,
-      { code: error.code ?? null, details: error.details ?? null, hint: error.hint ?? null, cause: error },
+      ACKNOWLEDGE_FN,
+      "unknown",
+      "The acknowledgement was not recorded — the server returned no row.",
     );
   }
+  return row;
+}
 
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new QueryError(
-      DOCUMENT_ACKS_TABLE,
-      "no_permission",
-      "The acknowledgement was not recorded: no row was updated. Self-acknowledgement needs an UPDATE policy on document_acknowledgements (migration 025 defines SELECT only).",
-    );
+/**
+ * Report how far the reader has got, so HR can tell "never opened" from
+ * "opened three times and has not signed".
+ *
+ * Deliberately quiet: a progress ping that fails must never interrupt somebody
+ * reading a policy, and the acknowledgement itself carries its own final figures,
+ * so nothing is lost if this call does not land.
+ */
+export async function recordPolicyProgress(
+  ackId: string,
+  scrollPct: number,
+  readSeconds: number,
+  opened = false,
+): Promise<void> {
+  try {
+    await supabase.rpc(PROGRESS_FN, {
+      p_ack_id: ackId,
+      p_scroll_pct: Math.min(100, Math.max(0, Math.round(scrollPct))),
+      p_read_seconds: Math.max(0, Math.floor(readSeconds)),
+      p_opened: opened,
+    });
+  } catch {
+    // See the note above: reading is not interrupted by a telemetry failure.
   }
 }

@@ -25,7 +25,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, FileWarning, Info, ScrollText } from "lucide-react";
+import { ArrowLeft, FileText, FileWarning, Info, ScrollText } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,8 +35,13 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { t } from "@/shared/i18n/en";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash } from "@/lib/format";
+import { openDocument } from "@/features/docs/api/documentAccess.api";
 import { cn } from "@/lib/utils";
-import { ACK_SCROLL_GATE_PCT, ackDwellSeconds } from "../api/policies.api";
+import {
+  ACK_SCROLL_GATE_PCT,
+  ackDwellSeconds,
+  recordPolicyProgress,
+} from "../api/policies.api";
 import { useAcknowledgePolicy, usePolicyDetail } from "../hooks/usePolicies";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -105,6 +110,19 @@ export default function PolicyReaderPage() {
   const dwellSeconds = useVisibleDwellSeconds();
   const { ref, pct, onScroll } = useMaxScrollPercent();
   const [agreed, setAgreed] = useState(false);
+  /*
+    The typed signature, only asked for where the document demands one. Held here
+    rather than derived from the profile: the point of a signature is that the
+    person produces it, so a pre-filled box would be a signature nobody typed.
+  */
+  const [signature, setSignature] = useState("");
+  /*
+    Whether this person has actually opened the file. Seeded from the server's
+    `first_opened_at` so it survives a reload, and set when they press Open.
+  */
+  const [openedLocally, setOpenedLocally] = useState(false);
+  const [openingFile, setOpeningFile] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   const doc = detail.data?.document ?? null;
   const ack = detail.data?.ack ?? null;
@@ -113,14 +131,36 @@ export default function PolicyReaderPage() {
 
   const scrollMet = pct >= ACK_SCROLL_GATE_PCT;
   const dwellMet = dwellSeconds >= gateSeconds;
-  const gateMet = scrollMet && dwellMet;
+  /*
+    OPENING THE FILE IS PART OF THE GATE.
+
+    Asked for: "employee should open that document then only he can sign". It is
+    also the only one of the three conditions that means anything on its own —
+    scroll and dwell measure a page ABOUT the policy, while this measures the
+    policy. `first_opened_at` comes from the server, so closing the tab and
+    coming back does not ask for it again.
+  */
+  const opened = openedLocally || (ack?.first_opened_at ?? null) !== null;
+  const gateMet = scrollMet && dwellMet && opened;
   const alreadyAcked = ack?.acknowledged_at !== null && ack !== null;
   const ackText = t("policies.reader.ack");
+  /* `documents.requires_esign`, per document (042800) — not the type's flag. */
+  const needsSignature = (doc?.requires_esign ?? ack?.documents?.requires_esign) === true;
+  const signatureGiven = signature.trim().length >= 3;
 
   function onAcknowledge() {
     if (ack === null || !gateMet || !agreed) return;
+    if (needsSignature && !signatureGiven) return;
     acknowledge.mutate(
-      { ackId: ack.id, scrollPct: pct, readSeconds: dwellSeconds, text: ackText },
+      {
+        ackId: ack.id,
+        scrollPct: pct,
+        readSeconds: dwellSeconds,
+        text: ackText,
+        /* Sent only when asked for. The server compares it with the employee's
+           own name and refuses anything else, so this box cannot be a shortcut. */
+        signatureName: needsSignature ? signature.trim() : null,
+      },
       {
         onSuccess: () => toast.success(t("policies.reader.ackDone")),
         onError: (error) =>
@@ -224,10 +264,69 @@ export default function PolicyReaderPage() {
             />
           </dl>
 
-          <p className="mt-5 flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            {t("policies.reader.body.unavailable")}
-          </p>
+          {/*
+            THE DOCUMENT ITSELF, WHICH THIS SCREEN USED TO SAY IT COULD NOT SHOW.
+
+            The notice here read "Secure file viewing is not switched on yet, so
+            the text cannot be shown" — written when nothing could mint a signed
+            URL. `document-access` does exactly that and every other document
+            screen already uses it: it logs the access BEFORE the URL exists and
+            returns a link that expires.
+
+            The consequence of the old wording was worse than a missing feature.
+            Reading progress was measured against the SUMMARY — so scrolling a
+            page that did not contain the policy reached "Read 100%", and an
+            employee could sign a document they had never once opened. The
+            evidence said they had read it. They had not.
+          */}
+          <div className="mt-5 rounded-md border bg-muted/40 px-3 py-3">
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              {opened
+                ? t("policies.reader.file.opened")
+                : t("policies.reader.file.mustOpen")}
+            </p>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant={opened ? "outline" : "default"}
+                disabled={documentId === null || openingFile}
+                onClick={() => {
+                  if (documentId === null) return;
+                  setOpeningFile(true);
+                  setOpenError(null);
+                  openDocument(documentId, "view")
+                    .then(() => {
+                      setOpenedLocally(true);
+                      /*
+                        Recorded server-side too, so HR can tell "never opened"
+                        from "opened and has not signed" — and so the fact
+                        survives a reload rather than living in this component.
+                      */
+                      if (ack !== null) {
+                        void recordPolicyProgress(ack.id, pct, dwellSeconds, true);
+                      }
+                    })
+                    .catch((e: unknown) => {
+                      setOpenError(e instanceof Error ? e.message : t("policies.reader.file.failed"));
+                    })
+                    .finally(() => {
+                      setOpeningFile(false);
+                    });
+                }}
+              >
+                <FileText className="mr-2 size-4" aria-hidden />
+                {openingFile
+                  ? t("policies.reader.file.opening")
+                  : opened
+                    ? t("policies.reader.file.again")
+                    : t("policies.reader.file.open")}
+              </Button>
+            </div>
+            {openError !== null ? (
+              <p className="mt-2 text-sm text-destructive">{openError}</p>
+            ) : null}
+          </div>
 
           {doc === null && ack !== null ? (
             <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm">
@@ -259,12 +358,21 @@ export default function PolicyReaderPage() {
                   gateMet ? "text-success" : "text-muted-foreground",
                 )}
               >
+                {/*
+                  Name the condition that is actually outstanding. "Read 90% and
+                  stay 24 seconds" is unhelpful to somebody who has done both and
+                  is being held by a third rule the sentence never mentioned —
+                  which is what happened the moment opening the file joined the
+                  gate.
+                */}
                 {gateMet
                   ? t("policies.reader.gateMet")
-                  : t("policies.reader.gate", {
-                      pct: ACK_SCROLL_GATE_PCT,
-                      seconds: gateSeconds,
-                    })}
+                  : !opened
+                    ? t("policies.reader.gate.notOpened")
+                    : t("policies.reader.gate", {
+                        pct: ACK_SCROLL_GATE_PCT,
+                        seconds: gateSeconds,
+                      })}
               </p>
 
               <label
@@ -283,15 +391,46 @@ export default function PolicyReaderPage() {
                 <span>{ackText}</span>
               </label>
 
+              {needsSignature ? (
+                <div className="mt-4 rounded-lg border bg-muted/30 p-3">
+                  <label
+                    htmlFor="policy-signature"
+                    className="block text-sm font-medium text-foreground"
+                  >
+                    {t("policies.reader.sign.label")}
+                  </label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t("policies.reader.sign.hint")}
+                  </p>
+                  <input
+                    id="policy-signature"
+                    type="text"
+                    value={signature}
+                    disabled={!gateMet}
+                    onChange={(e) => setSignature(e.target.value)}
+                    autoComplete="off"
+                    placeholder={t("policies.reader.sign.placeholder")}
+                    className="mt-2 h-10 w-full max-w-sm rounded-md border bg-background px-3 font-display text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              ) : null}
+
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <Button
                   type="button"
-                  disabled={!gateMet || !agreed || acknowledge.isPending}
+                  disabled={
+                    !gateMet ||
+                    !agreed ||
+                    (needsSignature && !signatureGiven) ||
+                    acknowledge.isPending
+                  }
                   onClick={onAcknowledge}
                 >
                   {acknowledge.isPending
                     ? t("policies.reader.acking")
-                    : t("policies.reader.ackSubmit")}
+                    : needsSignature
+                      ? t("policies.reader.signSubmit")
+                      : t("policies.reader.ackSubmit")}
                 </Button>
                 {ack.due_on !== null ? (
                   <span className="text-xs text-muted-foreground">

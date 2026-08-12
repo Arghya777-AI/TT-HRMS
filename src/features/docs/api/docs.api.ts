@@ -96,6 +96,8 @@ export const documentSchema = z.object({
   review_comment: z.string().nullable(),
   is_system_generated: z.boolean(),
   requires_acknowledgement: z.boolean(),
+  /** 042800; defaulted so column lists written before it still parse. */
+  requires_esign: z.boolean().default(false),
   acknowledgement_due_on: dbDateNullable,
   document_types: documentTypeRefSchema.nullable(),
 });
@@ -173,6 +175,12 @@ export const documentAckSchema = z.object({
       current_version: dbInt,
       page_count: z.number().int().nullable(),
       issue_date: dbDateNullable,
+      /*
+        042800. `.default(false)` rather than plain `boolean` so a caller whose
+        column list predates the column still parses — an employee's own document
+        list has no use for it and should not have to select it to keep working.
+      */
+      requires_esign: z.boolean().default(false),
       document_types: documentTypeRefSchema.nullable(),
     })
     .nullable(),
@@ -183,7 +191,7 @@ export type DocumentAck = z.infer<typeof documentAckSchema>;
 export const DOCUMENT_ACK_COLUMNS =
   "id, document_id, employee_id, assigned_at, due_on, first_opened_at, open_count, " +
   "total_read_seconds, scroll_completion_pct, acknowledged_at, acknowledgement_text, status, " +
-  "documents(id, title, current_version, page_count, issue_date, " +
+  "documents(id, title, current_version, page_count, issue_date, requires_esign, " +
   "document_types(code, name, category, requires_expiry))";
 
 /** Every acknowledgement assigned to the caller, newest assignment first. */

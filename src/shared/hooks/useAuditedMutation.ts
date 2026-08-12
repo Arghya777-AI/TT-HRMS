@@ -110,6 +110,31 @@ export function useAuditedMutation<TData, TInput>(
       onSuccess?.(data, vars.input, (vars.reason ?? defaultReason ?? "").trim());
     },
     onError: (error, vars) => {
+      /*
+        THE RAW ERROR, IN THE CONSOLE, IN DEVELOPMENT.
+
+        A policy upload failed three times in a row showing only "The change could
+        not be saved" — and each attempt to widen `userMessage` guessed at which
+        branch was rendering it, because the error object itself was never
+        visible anywhere. Two rounds of patching the SENTENCE went by before
+        anybody could see the FAULT.
+
+        A user-facing sentence is deliberately narrow: it must not print SQL, a
+        constraint name, or a storage path. The console has no such duty and is
+        where the person fixing it is already looking. Dev only — a production
+        console must not carry payload detail, and `import.meta.env.DEV` is
+        compiled out of the production bundle entirely.
+      */
+      if (import.meta.env.DEV) {
+        const e = error as { message?: string; code?: unknown; details?: unknown; hint?: unknown };
+        console.error("[write failed]", {
+          message: e.message,
+          code: e.code ?? null,
+          details: e.details ?? null,
+          hint: e.hint ?? null,
+          error,
+        });
+      }
       onError?.(error, vars.input);
     },
     // A refused write is refused for a reason the user has to act on; retrying

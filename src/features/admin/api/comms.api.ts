@@ -59,8 +59,12 @@ import {
   softDelete,
   updateRow,
   insertRow,
+  MutationError,
+  QueryError,
+  rpcAudited,
   type Filter,
 } from "@/shared/api/query";
+import { supabase } from "@/lib/supabase";
 import { invokeEdgeFn } from "@/shared/api/invoke";
 import { istRangeInstantBounds, nowInstantIso } from "@/lib/datetime";
 import { featureFlagSchema, type FeatureFlag } from "./system.api";
@@ -1002,4 +1006,228 @@ export function fetchHelpdeskFlag(signal?: AbortSignal): Promise<FeatureFlag[]> 
     limit: 1,
     ...(signal ? { signal } : {}),
   });
+}
+
+// -----------------------------------------------------------------------------
+// Publishing a policy — the upload this screen used to say it could not do
+// -----------------------------------------------------------------------------
+//
+// The header of `PolicyPublication.page.tsx` described itself as "the REGISTER
+// plus the map of the path", explicitly not an uploader, because file upload
+// "writes to a private Storage bucket and is minted by the document surface, not
+// by this console". That was an accurate description of a screen where HR could
+// read a list of zero policies and do nothing about it.
+//
+// Two steps, in this order, for the same reason `attachEmployeeDocument` uses it:
+// BYTES FIRST. `documents.storage_path` is NOT NULL, so a metadata row pointing
+// at an object that was never written is a worse artefact than an object no row
+// points at. If the insert is refused the object is removed and the ORIGINAL
+// error is rethrown.
+//
+// Then `publish_policy` assigns it. That half is a server RPC because it is a
+// fan-out across every active employee in scope and must not half-happen — see
+// migration 042800.
+
+/** Same bucket as every other document; policies live under their own prefix. */
+export const POLICY_BUCKET = "documents";
+
+export interface UploadPolicyInput {
+  readonly companyId: string;
+  readonly documentTypeId: string;
+  readonly title: string;
+  readonly file: File;
+  /** `documents.issue_date` — when the policy takes effect. */
+  readonly effectiveFrom: string | null;
+  /** Pages, when the uploader knows: the dwell gate is 8 seconds per page. */
+  readonly pageCount: number | null;
+  readonly actorProfileId: string;
+}
+
+export const uploadedPolicySchema = z.object({
+  id: dbUuid,
+  title: z.string(),
+  storage_path: z.string(),
+});
+export type UploadedPolicy = z.infer<typeof uploadedPolicySchema>;
+
+/**
+ * SHA-256 of the file, or a sentence saying why it cannot be computed.
+ *
+ * `crypto.subtle` EXISTS ONLY IN A SECURE CONTEXT. Over plain http on a LAN
+ * address — which is how this app is reached from a phone on the venue wifi, and
+ * how the kiosk is set up — the whole `SubtleCrypto` interface is `undefined`,
+ * and `crypto.subtle.digest` throws a raw `TypeError` before the upload is even
+ * attempted. `localhost` is exempt, which is why this can pass on a developer
+ * machine and fail for everybody else.
+ *
+ * The failure was invisible: a raw TypeError is not a `QueryError`, so it fell to
+ * the last line of `mutationUserMessage` and became "The change could not be
+ * saved. Try again." — advice that could never work, on a fault retrying cannot
+ * touch. `query.ts` already carries `safeUuid()` for exactly this reason on the
+ * request-id path; the checksum had no such guard.
+ *
+ * There is no fallback hash, and inventing one would be worse than refusing:
+ * `documents.checksum_sha256` is NOT NULL under
+ * `CHECK (checksum_sha256 ~ '^[0-9a-f]{64}$')`, so a placeholder would either be
+ * rejected by the database or, worse, accepted as a real digest of a file it
+ * does not describe.
+ */
+async function policyChecksum(file: File): Promise<string> {
+  const subtle = typeof crypto !== "undefined" ? crypto.subtle : undefined;
+  if (subtle === undefined || typeof subtle.digest !== "function") {
+    throw new MutationError(
+      DOCUMENTS_TABLE,
+      "invalid_request",
+      "This page is not on a secure connection, so the browser will not fingerprint the file — and a policy is stored with its checksum. Open the app over https, or from localhost, and upload again.",
+    );
+  }
+  const digest = await subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * A unique object name. `crypto.randomUUID` is secure-context-only for the same
+ * reason as above; this path is never reached without a checksum, so the guard
+ * is belt-and-braces rather than a second failure mode.
+ */
+function policyObjectId(): string {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e12).toString(36)}`;
+}
+
+/** Upload the file and register the policy document. Does NOT circulate it. */
+export async function uploadPolicyDocument(
+  input: UploadPolicyInput,
+  reason: string,
+): Promise<UploadedPolicy> {
+  const checksum = await policyChecksum(input.file);
+  const dot = input.file.name.lastIndexOf(".");
+  const ext =
+    dot > 0 ? input.file.name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, "") : "bin";
+  const path = `company/policy/${policyObjectId()}.${ext}`;
+  const mime = input.file.type === "" ? "application/octet-stream" : input.file.type;
+
+  const uploaded = await supabase.storage.from(POLICY_BUCKET).upload(path, input.file, {
+    contentType: mime,
+    upsert: false,
+  });
+  if (uploaded.error) {
+    throw new QueryError(`storage/${POLICY_BUCKET}`, "no_permission", uploaded.error.message, {
+      cause: uploaded.error,
+    });
+  }
+
+  try {
+    // insertRow(table, VALUES, schema, opts) — values before the schema.
+    return await insertRow(
+      DOCUMENTS_TABLE,
+      {
+        document_type_id: input.documentTypeId,
+        company_id: input.companyId,
+        // No employee: a policy belongs to the company, which is exactly why
+        // `documents__self__select` could never show it and 042800 adds a
+        // policy-specific read policy.
+        subject_kind: "policy",
+        employee_id: null,
+        title: input.title.trim(),
+        file_name: input.file.name,
+        storage_bucket: POLICY_BUCKET,
+        storage_path: path,
+        mime_type: mime,
+        file_size_bytes: input.file.size,
+        checksum_sha256: checksum,
+        current_version: 1,
+        page_count: input.pageCount,
+        issue_date: input.effectiveFrom,
+        // HR uploading IS the approval; there is nobody above HR to review a policy.
+        status: "approved",
+        uploaded_by: input.actorProfileId,
+        reviewed_by: input.actorProfileId,
+        reviewed_at: nowInstantIso(),
+        virus_scan_status: "pending",
+        is_system_generated: false,
+        is_confidential: false,
+        /* Both set by `publish_policy`, which is the act that circulates it —
+           an uploaded-but-unpublished policy is a draft nobody owes anything on. */
+        requires_acknowledgement: false,
+        requires_esign: false,
+      },
+      uploadedPolicySchema,
+      { reason, columns: "id, title, storage_path" },
+    );
+  } catch (error) {
+    try {
+      await supabase.storage.from(POLICY_BUCKET).remove([path]);
+    } catch {
+      // Swallowed: the caller is rethrowing the real failure and a cleanup error
+      // would replace a useful message with a misleading one.
+    }
+    throw error;
+  }
+}
+
+export const PUBLISH_POLICY_FN = "publish_policy";
+
+export type PolicyAudience = "everyone" | "department";
+
+export interface PublishPolicyInput {
+  readonly documentId: string;
+  readonly audience: PolicyAudience;
+  readonly departmentId: string | null;
+  readonly dueOn: string | null;
+  readonly requireSignature: boolean;
+}
+
+export const publishResultSchema = z.object({
+  assigned: dbInt,
+  already: dbInt,
+  due_on: dbDateNullable,
+});
+export type PublishResult = z.infer<typeof publishResultSchema>;
+
+/** Circulate an uploaded policy to its audience. */
+export async function publishPolicy(
+  input: PublishPolicyInput,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<PublishResult> {
+  const rows = await rpcAudited(
+    PUBLISH_POLICY_FN,
+    {
+      p_document_id: input.documentId,
+      p_audience: input.audience,
+      p_department_id: input.departmentId,
+      p_due_on: input.dueOn,
+      p_require_sign: input.requireSignature,
+    },
+    publishResultSchema,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) {
+    throw new MutationError(
+      PUBLISH_POLICY_FN,
+      "not_found",
+      "The policy was not circulated — the server returned no result.",
+    );
+  }
+  return row;
+}
+
+/**
+ * Active employees right now — the denominator a policy audience is measured
+ * against.
+ *
+ * Needed because "6 of 15 signed" reads as circulated when only 15 of 92 people
+ * were ever given the document. The seeded policies were assigned to every
+ * employee who existed WHEN THE SEED RAN, and the venue has grown since; the
+ * register could not show that gap without knowing the current headcount.
+ */
+export function countActiveEmployees(signal?: AbortSignal): Promise<number> {
+  return selectCount(
+    "employees",
+    [isNull("deleted_at"), eq("employment_status", "active")],
+    { ...(signal ? { signal } : {}) },
+  );
 }

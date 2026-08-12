@@ -811,6 +811,34 @@ export class MutationError extends QueryError {
       const server = serverSentence(this.message);
       if (server !== null) return `${base} ${server}`;
     }
+    /*
+      AN UNCLASSIFIED FAILURE IS THE CASE THAT MOST NEEDS ITS DETAIL, AND WAS THE
+      ONE THROWING IT AWAY.
+
+      Reported while a policy would not circulate: the box read "The change could
+      not be saved. Try again, and report it if it keeps failing." and nothing
+      else. The error object had a message, a SQLSTATE, details and a hint on it
+      the whole time — every one discarded here, so neither the person pressing
+      the button nor anybody they reported it to could learn anything, and
+      "report it" asked them to report a sentence with no content.
+
+      `check_violation` and `locked` have appended the server's own wording since
+      this class was written, on the argument that those strings were written for
+      a person to read. The argument is STRONGER for `unknown`: a classified
+      refusal at least names its kind, while this one is the residue — the
+      failures nobody anticipated, where the raw text is the only evidence there
+      is. `serverSentence` still suppresses the shapes that are not sentences
+      (constraint identifiers, `reason_required:` prefixes), and the SQLSTATE is
+      added when there is one, because three very different faults share this
+      message and the code is what separates them.
+    */
+    if (this.mutationKind === "unknown") {
+      const server = serverSentence(this.message);
+      const code = typeof this.code === "string" && this.code.trim() !== "" ? this.code : null;
+      if (server !== null && code !== null) return `${base} ${server} (code ${code})`;
+      if (server !== null) return `${base} ${server}`;
+      if (code !== null) return t("write.error.unknownWithCode", { code });
+    }
     return base;
   }
 
@@ -947,6 +975,22 @@ export function mutationUserMessage(e: unknown): string {
     if (typeof code === "string" && code.trim() !== "") {
       return t("write.error.unknownWithCode", { code });
     }
+    /*
+      A FAILURE WITH NO SQLSTATE STILL HAS WORDS, AND THEY WERE BEING DROPPED.
+
+      This is the same defect as the one fixed on `MutationError.userMessage`,
+      one branch along, and it is the branch that Storage failures land in:
+      `uploadPolicyDocument` throws `QueryError` carrying the bucket's own message
+      ("Bucket not found", "new row violates row-level security policy for table
+      objects") with no `code`, because Storage is not Postgres and does not
+      supply one. Every one of those sentences names the fault exactly, and all
+      of them arrived here to be replaced by "Try again".
+
+      `serverSentence` still filters out the shapes that are not sentences, so a
+      constraint identifier does not reach an employee this way.
+    */
+    const said = serverSentence(e.message);
+    if (said !== null) return `${t("write.error.unknown")} ${said}`;
     return t("write.error.unknown");
   }
   /*
@@ -973,6 +1017,32 @@ export function mutationUserMessage(e: unknown): string {
     if (typeof title === "string" && title.trim() !== "") return ensureStop(title);
     return t("write.error.unknown");
   }
+  /*
+    ── THE HOLE THAT HID A BUG THROUGH THREE ROUNDS OF FIXING IT ──────────────
+
+    Everything above handles a STRUCTURED failure: a Postgres refusal, a Storage
+    refusal, an edge-function problem document. This last line caught everything
+    else — every plain `Error` and `TypeError` thrown inside a mutation function
+    before the request is even built — and replaced it with a sentence containing
+    no facts.
+
+    That is not a rare path. `mutationFn` is ordinary application code: it hashes
+    a file, reads `crypto.subtle`, builds a path, calls a helper. Any throw in
+    there arrives here as a bare `Error`, never having passed through
+    `fromThrownMutation` (which only wraps failures raised INSIDE `runMutation`).
+
+    A policy upload failed four times in a row on exactly this line. Each attempt
+    to diagnose it widened one of the branches ABOVE — because those are the ones
+    that look like error handling — while the actual error object sat here with a
+    message that named the fault, and was discarded. The screen said "Try again",
+    which was the one thing that could not work.
+
+    A client-side JavaScript message carries no SQL, no constraint name and no
+    row data — it says things like "crypto.subtle is undefined" or "Cannot read
+    properties of null". It is safe to show and it is the only evidence there is.
+  */
+  const raw = e instanceof Error ? e.message.trim() : typeof e === "string" ? e.trim() : "";
+  if (raw !== "") return `${t("write.error.unknown")} ${ensureStop(raw)}`;
   return t("write.error.unknown");
 }
 
@@ -1062,13 +1132,67 @@ export interface AuditedWriteOptions {
 }
 
 /** Attach the audit context headers to exactly this request. */
+/**
+ * A reason that can survive an HTTP header.
+ *
+ * ── THE BUG THIS EXISTS FOR ────────────────────────────────────────────────
+ *
+ * Publishing a policy failed with:
+ *
+ *     Failed to execute 'set' on 'Headers': String contains non ISO-8859-1
+ *     code point.
+ *
+ * `x-reason` carries the audit reason, and an HTTP header value may only contain
+ * Latin-1. The reason was
+ *
+ *     Publishing the policy “for testing” for acknowledgement.
+ *
+ * whose curly quotes are U+201C/U+201D. `setHeader` threw BEFORE the request was
+ * built, so nothing reached the network and the failure looked like a server
+ * refusal for a week.
+ *
+ * This is not one screen's problem. Every audited write in the application puts
+ * a human sentence in this header, and a reason typed with a rupee sign, an
+ * em-dash, an apostrophe from a phone keyboard, or anything in an Indian script
+ * would have broken the same way — silently, in whatever module happened to
+ * contain it. The guard belongs here, once, where every write passes.
+ *
+ * ── WHAT IT DOES TO THE TEXT ───────────────────────────────────────────────
+ *
+ * Typographic punctuation is transliterated to its ASCII equivalent, which loses
+ * nothing a reader cares about. Anything still outside Latin-1 is
+ * percent-encoded per character rather than dropped, because the audit log is
+ * evidence: an unreadable %E2%82%B9 can be decoded later, while a silently
+ * deleted character cannot be recovered and nobody would know it was gone.
+ */
+export function headerSafeReason(reason: string): string {
+  const folded = reason
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u2007\u202F]/g, " ");
+  /*
+    The `u` flag is load-bearing. Without it `replace` walks UTF-16 code UNITS,
+    so an emoji is handed to `encodeURIComponent` one surrogate half at a time
+    and it throws "URI malformed" — turning a decorated reason into a crashed
+    write, which is the exact failure this function exists to prevent. Caught by
+    the test below, not by review.
+  */
+  // The range starts at 0x20 rather than 0x00 so the pattern carries no control
+  // character of its own; a control character in a reason has no business in a
+  // header either, and encoding it is the same safe outcome.
+  return folded.replace(/[^\u0020-\u00FF]/gu, (ch) => encodeURIComponent(ch));
+}
+
 function withAuditHeaders(
   builder: MutationBuilder,
   reason: string,
   requestId: string | undefined,
 ): MutationBuilder {
-  // 'x-reason' → app.reason (pre-request hook, migration 005).
-  let b = builder.setHeader("x-reason", reason);
+  // 'x-reason' → app.reason (pre-request hook, migration 005). Latin-1 only:
+  // see `headerSafeReason` — an unencodable character used to throw here.
+  let b = builder.setHeader("x-reason", headerSafeReason(reason));
   // 'x-request-id' → app.request_id → audit_log.request_id. Must be a UUID:
   // the hook casts it, and a non-uuid would abort the whole transaction.
   const id = requestId ?? safeUuid();

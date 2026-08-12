@@ -16,6 +16,7 @@ import {
   fetchPolicyDetail,
   fetchPolicyList,
   type AcknowledgePolicyInput,
+  type Acknowledged,
   type PolicyDetail,
   type PolicyList,
 } from "../api/policies.api";
@@ -52,7 +53,7 @@ export function usePolicyDetail(documentId: string | null): UseQueryResult<Polic
  * invalidated (the list badge, the reader and E-12's action list all move), plus
  * the approvals inbox and the documents "Signed" tab.
  */
-export function useAcknowledgePolicy(): UseMutationResult<void, Error, AcknowledgePolicyInput> {
+export function useAcknowledgePolicy(): UseMutationResult<Acknowledged, Error, AcknowledgePolicyInput> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: AcknowledgePolicyInput) => acknowledgePolicy(input),

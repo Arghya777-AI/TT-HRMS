@@ -692,9 +692,29 @@ export const en = catalogue({
   "policies.reader.gateMet": "You can acknowledge this policy now.",
   "policies.reader.ack": "I have read and understood this policy",
   "policies.reader.ackSubmit": "Acknowledge",
+  // 042800 — shown only where `documents.requires_esign` is set.
+  "policies.reader.signSubmit": "Sign and acknowledge",
+  "policies.reader.sign.label": "Sign this policy",
+  "policies.reader.sign.hint":
+    "Type your own name as it appears on your employee record. It is checked on the server, and stored with the moment you signed.",
+  "policies.reader.sign.placeholder": "Your full name",
   "policies.reader.acked": "Acknowledged {when}",
-  "policies.reader.body.unavailable":
-    "This policy is stored as a file. Secure file viewing is not switched on yet, so the text cannot be shown here — your reading progress is still tracked against the summary below.",
+  /*
+    `body.unavailable` said secure file viewing was "not switched on yet" and that
+    progress was tracked "against the summary below" — which meant scrolling a
+    page that did not contain the policy reached 100%, and somebody could sign a
+    document they had never opened. The file opens now, and opening it is part of
+    the gate.
+  */
+  "policies.reader.file.mustOpen":
+    "This policy is a file. Open it and read it — you cannot acknowledge it until you have.",
+  "policies.reader.file.opened":
+    "You have opened this policy. Reopen it any time before you sign.",
+  "policies.reader.file.open": "Open the policy",
+  "policies.reader.file.again": "Open it again",
+  "policies.reader.file.opening": "Opening…",
+  "policies.reader.file.failed": "The file could not be opened. Tell HR the policy has no file behind it.",
+  "policies.reader.gate.notOpened": "Open the policy first.",
   "policies.reader.ackFailed": "Your acknowledgement could not be recorded.",
   "policies.reader.ackDone": "Acknowledgement recorded.",
   "policies.reader.notFound.title": "That policy isn't available to you",
@@ -9184,7 +9204,13 @@ export const en = catalogue({
   "admin.comms.pol.kpi.policies": "Policy documents",
   "admin.comms.pol.kpi.policiesHint": "Documents whose subject is a policy.",
   "admin.comms.pol.kpi.ackRequired": "Acknowledgement required",
-  "admin.comms.pol.kpi.ackRequiredHint": "Documents that ask for a signature.",
+  /*
+    Said "Documents that ask for a signature" while counting
+    `requires_acknowledgement`, which is not a signature — signing is
+    `requires_esign`, and until 042800 no document could carry it. Two different
+    obligations under one word is what made the register hard to read.
+  */
+  "admin.comms.pol.kpi.ackRequiredHint": "Documents somebody has to read and confirm.",
   "admin.comms.pol.kpi.types": "Types that demand one",
   "admin.comms.pol.kpi.typesHint":
     "Document types carrying an acknowledgement deadline — a count of the rulebook rows listed below, not a separate server total.",
@@ -9249,8 +9275,85 @@ export const en = catalogue({
   "admin.comms.pol.link.broadcasts": "Broadcasts",
   "admin.comms.pol.link.acks": "Acknowledgement Compliance",
   "admin.comms.pol.link.announcements": "Announcements",
+  /*
+    The gap notice said uploading "belongs to the document surface" and that a
+    policy-mode send had nothing to circulate. Migration 042800 and the publish
+    sheet closed both, so the sentence describes what the button does now.
+  */
   "admin.comms.pol.gapNotice":
-    "Not built here, on purpose: uploading a file writes to a private Storage bucket and belongs to the document surface, and a policy-mode send needs a document id — with the vault empty there is nothing to circulate. Both are reported as gaps rather than stubbed.",
+    "Publishing puts the file in a private Storage bucket and assigns it to every active employee in the audience, inside one server call. Circulating it again later picks up joiners without disturbing anybody who has already acknowledged.",
+
+  // Publishing a policy — the sheet (042800)
+  "admin.comms.pol.pub.cta": "Publish a policy",
+  /*
+    Circulating an EXISTING document. Three approved policies were already in the
+    vault with no assignment rows — the register said 3 and every employee's
+    screen said none — so the register needed its own action rather than asking
+    HR to upload the same file again.
+  */
+  "admin.comms.pol.circ.cta": "Circulate",
+  "admin.comms.pol.circ.again": "Circulate again",
+  /*
+    The register's acknowledgement column used to render a badge reading
+    "Acknowledgement" beside a date — the schema flag `requires_acknowledgement`
+    and `acknowledgement_due_on`. Both true, neither an answer to "has this gone
+    out, and who has signed it". These say that instead, from the counts
+    `v_policy_acknowledgement_status` has kept since 037.
+  */
+  "admin.comms.pol.notCirculated": "Not circulated",
+  "admin.comms.pol.notCirculatedHint": "Nobody has been asked to read it yet.",
+  "admin.comms.pol.ackProgress": "{done} of {total} signed",
+  "admin.comms.pol.ackOverdue": "{n} past the deadline",
+  "admin.comms.pol.ackDue": "Next deadline {date}",
+  "admin.comms.pol.ackAllDone": "Everybody who was asked has signed.",
+  "admin.comms.pol.ackMissing": "{n} employees have never been given it",
+  "admin.comms.pol.circ.title": "Circulate this policy",
+  "admin.comms.pol.circ.description":
+    "“{title}” is already in the vault. Choose who has to acknowledge it and by when.",
+  "admin.comms.pol.col.circulate": "Circulate",
+  "admin.comms.pol.col.open": "The file",
+  "admin.comms.pol.pub.title": "Publish a policy",
+  "admin.comms.pol.pub.description":
+    "Upload the document, choose who it goes to, and say whether it has to be signed or only read.",
+  "admin.comms.pol.pub.working": "Publishing…",
+  "admin.comms.pol.pub.retryCirculate": "Circulate it",
+  "admin.comms.pol.pub.reason": "Publishing the policy “{title}” for acknowledgement.",
+  "admin.comms.pol.pub.done": "Published to {n} employee(s)",
+  "admin.comms.pol.pub.doneDetail": "It is on their Policies screen now, with the deadline shown.",
+  "admin.comms.pol.pub.doneAlready": "{n} already had it, and were left as they are.",
+  "admin.comms.pol.pub.blockers": "This policy cannot be published yet",
+  "admin.comms.pol.pub.uploadedNotCirculated": "The file is uploaded — it was not circulated",
+  "admin.comms.pol.pub.uploadedNotCirculatedHint":
+    "The document is saved, so do not upload it again. Fix what the message below says and press Circulate it.",
+  "admin.comms.pol.pub.field.type": "Kind of document",
+  "admin.comms.pol.pub.field.typePlaceholder": "Company policy, SOP…",
+  "admin.comms.pol.pub.field.typeHint": "Only types that require an acknowledgement are listed.",
+  "admin.comms.pol.pub.field.title": "Title",
+  "admin.comms.pol.pub.field.titlePlaceholder": "Leave and attendance policy 2026",
+  "admin.comms.pol.pub.field.file": "The document",
+  "admin.comms.pol.pub.field.fileHint": "PDF, PNG or JPEG. It is stored privately and opened through a signed link that expires.",
+  "admin.comms.pol.pub.field.effective": "Effective from",
+  "admin.comms.pol.pub.field.effectiveHint": "When the policy takes effect. Optional.",
+  "admin.comms.pol.pub.field.due": "Acknowledge by",
+  "admin.comms.pol.pub.field.dueHint": "Leave blank to use the deadline on the document type.",
+  "admin.comms.pol.pub.field.pages": "Pages",
+  "admin.comms.pol.pub.field.pagesHint":
+    "Sets the reading time before anybody can acknowledge: {n} seconds a page. Leave blank for one page.",
+  "admin.comms.pol.pub.field.audience": "Who it goes to",
+  "admin.comms.pol.pub.field.audienceHint": "Active employees only, within your admin scope.",
+  "admin.comms.pol.pub.audience.everyone": "Everyone",
+  "admin.comms.pol.pub.audience.department": "One department",
+  "admin.comms.pol.pub.field.department": "Department",
+  "admin.comms.pol.pub.field.departmentPlaceholder": "Choose a department",
+  "admin.comms.pol.pub.field.sign": "This one has to be signed",
+  "admin.comms.pol.pub.field.signHint":
+    "The employee types their own name to sign it, and the server checks it against their record. Leave off when reading it is the whole obligation.",
+  "admin.comms.pol.pub.need.type": "Choose what kind of document this is.",
+  "admin.comms.pol.pub.need.title": "Give it a title of at least four characters.",
+  "admin.comms.pol.pub.need.file": "Choose the file to publish.",
+  "admin.comms.pol.pub.need.department": "Choose which department this policy is for.",
+  "admin.comms.pol.pub.need.company": "No company is set up, so there is nothing to publish against.",
+  "admin.comms.pol.pub.need.profile": "Your own profile could not be read, so the upload cannot be attributed.",
   "admin.comms.pol.footnote": "Every figure on this screen is a server count or a server column.",
   // §14 Help desk — /admin/comms/helpdesk (the desk's queue; migration 041500)
   "admin.comms.hd.title": "Help Desk",

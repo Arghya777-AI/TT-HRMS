@@ -17,28 +17,39 @@
  *     and the sweep in 049 lists `('public.roster_slots', …, 'public.events')`
  *     but is guarded on `to_regclass(ref_table) IS NOT NULL`, so it SKIPS.
  *
- * WHAT DOES NOT EXIST — and is therefore not invented anywhere in this module:
- *   1. `public.events`. No migration creates it. `/admin/org/events` ("Event
- *      Register") is a route in the manifest with no table behind it, so there
- *      are no event names, dates or venues to group by, and `event_id` is NULL
- *      on every seeded slot.
- *   2. A REQUIRED-headcount figure. Nothing in the schema states labour demand:
- *      grepping the migrations for `required_headcount`, `planned_headcount`,
- *      `min_staff` and `headcount_required` returns nothing. "Required" is not a
+ * WHAT USED NOT TO EXIST, AND NOW DOES (migration 043100):
+ *   1. `public.events`. For ninety migrations `/admin/org/events` was a route in
+ *      the manifest with no table behind it. The table exists now, the register
+ *      screen claims that route, and `fk_roster_slots__event` — registered in the
+ *      004900 deferred sweep against a relation nobody had built, and skipped
+ *      silently ever since — is finally attached.
+ *   2. A REQUIRED-headcount figure. `event_labour_demand.required_headcount`
+ *      states labour demand per event per department. Before 043100, grepping the
+ *      migrations for `required_headcount`, `planned_headcount`, `min_staff` and
+ *      `headcount_required` returned nothing at all, so "required" was not a
  *      column, a view or a function anywhere on this backend.
- *   3. A coverage view. There is no `v_event_coverage` / `v_roster_coverage`;
- *      the only `*_coverage` relation deployed is `v_enrolment_coverage`, which
- *      is the face-enrolment gap list and has nothing to do with staffing.
+ *   3. A coverage view. `v_event_coverage` joins the two and emits
+ *      `required_headcount`, `rostered_headcount` and `short_by` per event and
+ *      department. `events.api.ts` reads it; nothing recomputes the subtraction.
  *
- * Consequences held deliberately:
- *   * A shortfall (required − rostered) is NOT computed here or on the screen.
- *     With no required figure, any number in that column would be fiction, and a
- *     fabricated shortfall is worse than an empty one because it looks actionable.
+ * WHAT IS STILL TRUE, and is therefore still not invented here:
+ *   * NOTHING ATTACHES A SLOT TO A BOOKING. `roster_slots.event_id` has its
+ *     foreign key now but is NULL on every row, so an event's rostered headcount
+ *     is genuinely zero until somebody links the two. The view reports that zero
+ *     rather than guessing from dates — a slot on the same day as a wedding is
+ *     not evidence that it is FOR the wedding.
+ *   * PLANNED VERSUS PRESENT CANNOT BE JOINED. The engine writes
+ *     `attendance_days.roster_slot_id`, but `v_attendance_day_enriched` does not
+ *     project it and `roster_slots.attendance_day_id` is never written, so
+ *     neither side of that join is readable from a browser.
  *   * `roster_slots` carries no department column (department lives on the parent
  *     `rosters` row), and PostgREST cannot filter a child by a parent column
- *     through this query layer. So the slot count is offered for the whole
- *     company only; when a department filter is on, the screen shows "—" and says
- *     why rather than printing a company-wide number under a department heading.
+ *     through this query layer. So the slot count in THIS module is offered for
+ *     the whole company only; when a department filter is on, the screen shows
+ *     "—" and says why rather than printing a company-wide number under a
+ *     department heading. `v_event_coverage` does the parent join in SQL, which
+ *     is why per-department coverage is read from the view and not assembled
+ *     here.
  */
 import { z } from "zod";
 import {
@@ -52,6 +63,7 @@ import {
   isNull,
   isTrue,
   lte,
+  rpcAudited,
   selectCount,
   selectMany,
   type Filter,
@@ -59,10 +71,6 @@ import {
 
 export const ROSTERS_TABLE = "rosters";
 export const ROSTER_SLOTS_TABLE = "roster_slots";
-
-/** Named so the screen can say exactly what is missing, in one place. */
-export const MISSING_EVENTS_TABLE = "public.events";
-export const MISSING_COVERAGE_VIEW = "public.v_event_coverage";
 
 /** `ck_rosters__status` (migration 015). */
 export const rosterStatusValues = ["draft", "published", "locked"] as const;
@@ -154,4 +162,49 @@ export function countPublishedRosterSlots(
     ],
     { ...(signal ? { signal } : {}) },
   );
+}
+
+// -----------------------------------------------------------------------------
+// Publishing a week
+// -----------------------------------------------------------------------------
+
+export const PUBLISH_ROSTER_FN = "publish_roster";
+
+/**
+ * Move a draft week to published.
+ *
+ * Everything that decides whether this is allowed lives in the function, not
+ * here: an administrator may publish any week, a manager only one where EVERY
+ * slot belongs to one of their own reportees, and an empty week is refused
+ * outright. That last rule is the reason this is not a plain `updateRow` — a
+ * published roster is what the team reads to know when to come in, so publishing
+ * nothing would quietly tell everybody they are not needed for a week.
+ *
+ * The whole-roster ownership rule is also why the server side is a function
+ * rather than a widened RLS policy: RLS is evaluated per row, and row by row a
+ * manager could publish a week where only their own slots are theirs.
+ *
+ * Returns the roster as it now stands, so the caller renders the server's row
+ * rather than assuming the write took.
+ */
+export async function publishRoster(
+  rosterId: string,
+  reason: string,
+  note?: string | null,
+  signal?: AbortSignal,
+): Promise<Roster> {
+  const rows = await rpcAudited(
+    PUBLISH_ROSTER_FN,
+    {
+      p_roster_id: rosterId,
+      p_reason: note === undefined || note === null || note.trim() === "" ? null : note.trim(),
+    },
+    rosterSchema,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error("The roster was not returned after publishing.");
+  }
+  return row;
 }

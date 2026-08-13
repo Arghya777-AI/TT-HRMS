@@ -7,16 +7,21 @@
  * The manifest hint is "publish shifts against event requirements". Two of those
  * three things are not on this backend, and neither is faked:
  *
- *  * PUBLISHING. Migration 015 states plainly that slot writes go through the
- *    roster edge functions / RPCs ("P5 — no client write"). `supabase/functions/`
- *    contains no roster function, and no `publish_roster` / `upsert_roster` RPC
- *    exists in any migration — while `capabilities` does carry `roster.publish`
- *    for the manager role. The capability is modelled; the endpoint is missing. A
- *    console that wrote `rosters.status = 'published'` directly would also have to
- *    invent `published_by` and `published_at` from the browser's clock and would
- *    bypass the recompute the engine expects, so this screen stays a read console
- *    and names the missing endpoint.
- *  * EVENT REQUIREMENTS. `public.events` does not exist. `roster_slots.event_id`
+ *  * PUBLISHING IS OFFERED NOW, AND SLOT EDITING IS NOT. For most of this
+ *    screen's life neither was: migration 015 routed slot writes through roster
+ *    edge functions that were never deployed, and no `publish_roster` RPC existed
+ *    while `capabilities` already carried `roster.publish`. 043200 supplied the
+ *    function, so the button below calls it rather than writing
+ *    `rosters.status = 'published'` from a browser — which would have had to
+ *    invent `published_by` and `published_at` from the client clock.
+ *
+ *    Slot writes remain absent, deliberately. "Who may work which shift" involves
+ *    eligibility, rest gaps and overlapping bookings, and none of that is
+ *    modelled; a grid that let an admin drag anybody anywhere would be quicker to
+ *    build than to trust.
+ *  * EVENT REQUIREMENTS. `public.events` exists (043100) and is managed at
+ *    /admin/org/events, but nothing here attaches a slot to one yet.
+ *    `roster_slots.event_id`
  *    is a bare uuid whose FK the 049 sweep skips, NULL on every row.
  *
  * What IS real, and is therefore what this screen does:
@@ -63,11 +68,14 @@ import {
   useRosterSlots,
 } from "@/features/team/hooks/useRoster";
 import { Notice } from "../components/Notice";
+import { ReasonActionButton } from "../components/ReasonActionButton";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { SelectField } from "../components/Field";
 import { rosterStatusValues, type Roster, type RosterFilters } from "../api/coverage.api";
 import {
   usePublishedRosterSlotCount,
   useRosterCount,
+  usePublishRoster,
   useRosters,
 } from "../hooks/useAttendanceRecords";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
@@ -154,6 +162,7 @@ export default function RosterPlannerPage() {
   );
 
   const rosters = useRosters(rosterFilters);
+  const publish = usePublishRoster();
   const rosterTotal = useRosterCount(rosterFilters);
   /** Week-wide, company-wide: `roster_slots` has no department column, so this
    *  number is not asked for at all while a department filter is on. */
@@ -244,6 +253,33 @@ export default function RosterPlannerPage() {
       render: (r) => (
         <span className="num">{r.published_at === null ? dash(null) : fmtDateTime(r.published_at)}</span>
       ),
+    },
+    {
+      key: "publish",
+      header: t("admin.rosterp.col.publish"),
+      width: "10rem",
+      /*
+        Drawn on a DRAFT week only. `publish_roster` treats a second press as a
+        no-op and refuses a locked week, but a control that does nothing teaches
+        people to distrust controls — so it is simply absent where it would not
+        act.
+      */
+      render: (r) =>
+        r.status !== "draft" ? (
+          <span className="text-xs text-muted-foreground">{dash(null)}</span>
+        ) : (
+          <ReasonActionButton
+            label={t("team.roster.publish.cta")}
+            title={t("team.roster.publish.title", { week: fmtCivilDate(r.week_start_date) })}
+            description={t("admin.rosterp.publish.what")}
+            onConfirm={async (reason) => {
+              await publish.mutateAsync({ input: { rosterId: r.id }, reason });
+              confirmSubmitted(t("team.roster.publish.done"), {
+                detail: t("team.roster.publish.doneDetail"),
+              });
+            }}
+          />
+        ),
     },
     {
       key: "open",
@@ -419,8 +455,8 @@ export default function RosterPlannerPage() {
       </section>
 
       <div className="mt-4 space-y-2">
-        <Notice tone="warning">{t("admin.rosterp.gap.noWrite")}</Notice>
-        <Notice tone="info">{t("admin.rosterp.gap.noEvents")}</Notice>
+        <Notice tone="info">{t("admin.rosterp.gap.noSlotEdit")}</Notice>
+        <Notice tone="info">{t("admin.rosterp.gap.noEventLink")}</Notice>
         <Notice tone="info">{t("admin.rosterp.footnote")}</Notice>
       </div>
     </div>

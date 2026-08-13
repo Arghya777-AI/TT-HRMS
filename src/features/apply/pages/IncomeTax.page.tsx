@@ -52,6 +52,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { Money } from "@/shared/ui/Money";
 import { Notice } from "@/features/admin/components/Notice";
+import { TaxDeclarationForm } from "../components/TaxDeclarationForm";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
 import { dash, formatPercent } from "@/lib/format";
@@ -637,20 +638,21 @@ export default function IncomeTaxPage() {
           </StateBoundary>
         </section>
 
-        {/* ── The half that is NOT live: full declarations ────────────────── */}
+        {/*
+          ── The half that WAS declared not live, and always was ───────────────
+
+          Three bullets here said the table, the chain and the section fields did
+          not exist. Migration 041300 created all three; the notice predated it and
+          was never revisited, so a statutory feature sat in the database while
+          every employee was told it was missing — and payroll went on computing
+          TDS on the regime alone because nobody could file deductions.
+        */}
         <section aria-labelledby="tax-declaration">
           <h2 id="tax-declaration" className="mb-3 font-display text-lg font-semibold">
             {t("apply.tax.declaration.title")}
           </h2>
           <div className="space-y-3">
-            <Notice tone="warning">
-              <p className="font-medium">{t("apply.tax.declaration.gap.title")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li>{t("apply.tax.declaration.gap.table")}</li>
-                <li>{t("apply.tax.declaration.gap.chain")}</li>
-                <li>{t("apply.tax.declaration.gap.proofs")}</li>
-              </ul>
-            </Notice>
+            <TaxDeclarationForm financialYear={financialYear} regime={chosen ?? "new"} />
             <StateBoundary
               loading={declarationType.isLoading || declarationRouting.isLoading}
               error={declarationType.error ?? declarationRouting.error ?? undefined}

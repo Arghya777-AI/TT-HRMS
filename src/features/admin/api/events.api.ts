@@ -42,24 +42,30 @@
  * Every number is a `count=exact` from Postgres over the same predicate as the
  * list beside it. Nothing is summed or divided in the browser.
  */
+import { z } from "zod";
 import {
+  dbInt,
+  dbIntNullable,
+  dbTimestamp,
+  dbTimestampNullable,
+  dbUuid,
+  dbUuidNullable,
   eq,
   gte,
+  inList,
   isNotNull,
+  isNull,
   isTrue,
   lte,
   selectCount,
   selectMany,
   type Filter,
 } from "@/shared/api/query";
+import { insertOne } from "@/shared/api/write";
 import { compareCivilDates } from "@/lib/datetime";
 import { HOLIDAYS_TABLE, holidaySchema, type Holiday } from "./org.api";
 import { ROSTER_SLOTS_TABLE } from "./coverage.api";
 import { countRosterSlots } from "@/features/team/api/roster.api";
-
-/** Named once so the screen can say exactly what is missing, in one place. */
-export const MISSING_EVENTS_TABLE = "public.events";
-export const MISSING_EVENT_FK = "fk_roster_slots__event";
 
 /** A calendar year is ≤ 40 rows even with every restricted holiday listed. */
 export const EVENT_DAY_ROW_CAP = 100;
@@ -199,4 +205,203 @@ export function countEventTaggedSlots(signal?: AbortSignal): Promise<number> {
   return selectCount(ROSTER_SLOTS_TABLE, [isNotNull("event_id")], {
     ...(signal ? { signal } : {}),
   });
+}
+
+// -----------------------------------------------------------------------------
+// 3. The register itself — `public.events`, which now exists
+// -----------------------------------------------------------------------------
+//
+// Everything above this line was written when `public.events` did not exist, and
+// it is all still true and still used: the event-driven holiday calendar and the
+// per-date roster counts are what turn a booking into overtime, comp-off and
+// double pay. What changed is that there is now a booking to attach them to.
+//
+// Migration 043100 created `events`, `event_labour_demand` and `v_event_coverage`,
+// and attached `fk_roster_slots__event` — the constraint the 004900 sweep had been
+// silently skipping since it was registered against a table nobody had built.
+
+export const EVENTS_TABLE = "events";
+export const EVENT_LABOUR_DEMAND_TABLE = "event_labour_demand";
+export const EVENT_COVERAGE_VIEW = "v_event_coverage";
+
+/** `ck_events__status`, restated. */
+export const eventStatusValues = ["enquiry", "confirmed", "completed", "cancelled"] as const;
+export type EventStatus = (typeof eventStatusValues)[number];
+
+/** `ck_events__type`, restated. */
+export const eventTypeValues = [
+  "wedding",
+  "reception",
+  "corporate",
+  "conference",
+  "birthday",
+  "photoshoot",
+  "other",
+] as const;
+export type EventType = (typeof eventTypeValues)[number];
+
+/** The statuses that actually oblige the venue to staff something. */
+export const EVENT_LIVE_STATUSES: readonly EventStatus[] = ["enquiry", "confirmed"];
+
+export const eventSchema = z.object({
+  id: dbUuid,
+  event_code: z.string(),
+  title: z.string(),
+  client_name: z.string().nullable(),
+  event_type: z.string(),
+  location_id: dbUuidNullable,
+  guest_count_expected: dbIntNullable,
+  guest_count_actual: dbIntNullable,
+  call_time_at: dbTimestampNullable,
+  starts_at: dbTimestamp,
+  ends_at: dbTimestamp,
+  status: z.string(),
+  notes: z.string().nullable(),
+  created_at: dbTimestamp,
+});
+export type EventRow = z.infer<typeof eventSchema>;
+
+export const eventCoverageSchema = z.object({
+  event_id: dbUuid,
+  event_code: z.string(),
+  title: z.string(),
+  status: z.string(),
+  starts_at: dbTimestamp,
+  department_id: dbUuidNullable,
+  department_name: z.string().nullable(),
+  required_headcount: dbInt,
+  rostered_headcount: dbInt,
+  /* GREATEST(required - rostered, 0) in Postgres — never negative, and never
+     recomputed here. Over-rostering is not a shortfall. */
+  short_by: dbInt,
+});
+export type EventCoverageRow = z.infer<typeof eventCoverageSchema>;
+
+const EVENT_COLUMNS =
+  "id, event_code, title, client_name, event_type, location_id, guest_count_expected, " +
+  "guest_count_actual, call_time_at, starts_at, ends_at, status, notes, created_at";
+
+export interface EventFilters {
+  /** Inclusive instants bounding `starts_at`. */
+  readonly from?: string;
+  readonly to?: string;
+  readonly statuses?: readonly string[];
+  /** Cancelled bookings are hidden unless asked for — they staff nobody. */
+  readonly includeCancelled?: boolean;
+}
+
+/** The ONE predicate builder. Tiles and grid share it, so they cannot disagree. */
+export function eventFilters(f: EventFilters): Filter[] {
+  const filters: Filter[] = [isNull("deleted_at")];
+  if (f.from !== undefined) filters.push(gte("starts_at", f.from));
+  if (f.to !== undefined) filters.push(lte("starts_at", f.to));
+  if (f.statuses !== undefined && f.statuses.length > 0) {
+    filters.push(inList("status", f.statuses));
+  } else if (f.includeCancelled !== true) {
+    filters.push(inList("status", ["enquiry", "confirmed", "completed"]));
+  }
+  return filters;
+}
+
+/**
+ * The diary, soonest first.
+ *
+ * Ascending, unlike most registers in this product: an event register is read to
+ * find out what is coming, and burying next Saturday under last March's wedding
+ * would make the screen useless for the one job it has.
+ */
+export function fetchEvents(
+  f: EventFilters,
+  limit = 200,
+  signal?: AbortSignal,
+): Promise<EventRow[]> {
+  return selectMany(EVENTS_TABLE, eventSchema, {
+    columns: EVENT_COLUMNS,
+    filters: eventFilters(f),
+    order: [{ column: "starts_at", ascending: true }],
+    limit,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+export function countEvents(f: EventFilters, signal?: AbortSignal): Promise<number> {
+  return selectCount(EVENTS_TABLE, eventFilters(f), { ...(signal ? { signal } : {}) });
+}
+
+/**
+ * Rostered against required, per event and department.
+ *
+ * Read from `v_event_coverage` rather than joined here: the department lives on
+ * the PARENT roster, not on the slot, and attributing a slot to a department
+ * through the wrong side of that join is how a coverage figure ends up counting
+ * the whole venue against one department's requirement. One definition, in the
+ * database, for every screen that needs it.
+ */
+export function fetchEventCoverage(
+  f: EventFilters,
+  limit = 200,
+  signal?: AbortSignal,
+): Promise<EventCoverageRow[]> {
+  const filters: Filter[] = [];
+  if (f.from !== undefined) filters.push(gte("starts_at", f.from));
+  if (f.to !== undefined) filters.push(lte("starts_at", f.to));
+  if (f.includeCancelled !== true) {
+    filters.push(inList("status", ["enquiry", "confirmed", "completed"]));
+  }
+  return selectMany(EVENT_COVERAGE_VIEW, eventCoverageSchema, {
+    filters,
+    order: [{ column: "starts_at", ascending: true }],
+    limit,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+export interface CreateEventInput {
+  readonly companyId: string;
+  readonly eventCode: string;
+  readonly title: string;
+  readonly clientName: string | null;
+  readonly eventType: string;
+  readonly locationId: string | null;
+  readonly guestCountExpected: number | null;
+  readonly callTimeAt: string | null;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly status: string;
+  readonly notes: string | null;
+}
+
+/**
+ * Book an event.
+ *
+ * A plain insert, because `events__admin_write` is `FOR ALL` to an admin and
+ * every rule worth enforcing is a CHECK on the table — the span, the call time
+ * ordering, the guest counts, the status and type vocabularies. There is nothing
+ * left for an RPC to decide, and an RPC that only repeated the constraints would
+ * be a second place for them to drift.
+ *
+ * No `x-reason`: `events` is not in `audit.reason_required_tables`, and adding a
+ * mandatory sentence to booking a wedding would be friction with no reader. Who
+ * created it and when are stamped by `util.stamp_row` either way.
+ */
+export function createEvent(input: CreateEventInput, signal?: AbortSignal): Promise<EventRow> {
+  return insertOne(
+    EVENTS_TABLE,
+    eventSchema,
+    {
+      company_id: input.companyId,
+      event_code: input.eventCode.trim(),
+      title: input.title.trim(),
+      client_name: input.clientName === null ? null : input.clientName.trim(),
+      event_type: input.eventType,
+      location_id: input.locationId,
+      guest_count_expected: input.guestCountExpected,
+      call_time_at: input.callTimeAt,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      status: input.status,
+      notes: input.notes === null ? null : input.notes.trim(),
+    },
+    { columns: EVENT_COLUMNS, ...(signal ? { signal } : {}) },
+  );
 }

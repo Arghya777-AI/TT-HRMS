@@ -67,6 +67,20 @@ import {
   type SubmittedClaim,
 } from "../api/claim-submit.api";
 import {
+  fetchMyTaxDeclaration,
+  saveTaxDeclaration,
+  type SaveDeclarationInput,
+  type TaxDeclaration,
+} from "../api/tax-declaration.api";
+import {
+  fetchCertificationCatalogue,
+  fetchMyCertificationClaims,
+  submitCertificationClaim,
+  type CertificationCatalogueEntry,
+  type CertificationClaim,
+  type SubmitCertificationClaimInput,
+} from "../api/certification.api";
+import {
   acknowledgeAsset,
   fetchMyCustody,
   fetchMyCustodyCounts,
@@ -266,6 +280,47 @@ export function useAcknowledgeAsset(): AuditedMutationResult<
     mutationFn: (input, reason) => acknowledgeAsset(input, reason),
     invalidate: [qk.assets.all],
     defaultReason: "Confirming that this asset reached me.",
+  });
+}
+
+/**
+ * My investment declaration for one financial year.
+ *
+ * Enabled only with a financial year in hand: the table's unique index is
+ * (employee, financial_year), so asking without one would either miss the row or
+ * match the wrong year's.
+ */
+export function useMyTaxDeclaration(
+  financialYear: string | null,
+): UseQueryResult<TaxDeclaration | null, Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: qk.apply.detail(`tax-declaration:${employeeId ?? NO_EMPLOYEE}:${financialYear ?? ""}`),
+    queryFn: ({ signal }) =>
+      fetchMyTaxDeclaration(requireEmployeeId(employeeId), financialYear ?? "", signal),
+    enabled: employeeId !== null && financialYear !== null && financialYear !== "",
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Save or submit the declaration.
+ *
+ * Invalidates the apply domain AND the approvals keys: submitting flips the
+ * status to `pending`, and 042100's trigger raises the approval request in the
+ * same transaction — so the employee's own tracking list gains a row the moment
+ * this returns.
+ */
+export function useSaveTaxDeclaration(): AuditedMutationResult<
+  TaxDeclaration,
+  Omit<SaveDeclarationInput, "employeeId">
+> {
+  const employeeId = useEmployeeId();
+  return useAuditedMutation<TaxDeclaration, Omit<SaveDeclarationInput, "employeeId">>({
+    mutationFn: (input, reason) =>
+      saveTaxDeclaration({ ...input, employeeId: requireEmployeeId(employeeId) }, reason),
+    invalidate: [qk.apply.all, qk.approvals.all],
+    defaultReason: "Filing my investment declaration for the financial year.",
   });
 }
 
@@ -474,6 +529,62 @@ export function useWithdrawResignation(): UseMutationResult<ResignationRow, Erro
   const client = useQueryClient();
   return useMutation({
     mutationFn: (resignationId: string) => withdrawResignation(resignationId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.apply.all });
+      void client.invalidateQueries({ queryKey: qk.approvals.all });
+    },
+    retry: false,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Certification reimbursement (E-10.8)
+// -----------------------------------------------------------------------------
+
+/**
+ * The certifications the venue funds.
+ *
+ * Cached for ten minutes like the other reference reads — a catalogue changes
+ * when management decides it does, not between two page loads. An EMPTY list is
+ * a real answer, not a failure: it means nobody has listed an offer yet, and the
+ * screen still takes a claim, because `catalogue_id` is nullable.
+ */
+export function useCertificationCatalogue(): UseQueryResult<
+  CertificationCatalogueEntry[],
+  Error
+> {
+  return useQuery({
+    queryKey: qk.apply.list({ entity: "certification-catalogue" }),
+    queryFn: ({ signal }) => fetchCertificationCatalogue(signal),
+    retry: shouldRetryQuery,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** My own certification claims, newest first. */
+export function useMyCertificationClaims(): UseQueryResult<CertificationClaim[], Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: qk.apply.list({
+      entity: "my-certification-claims",
+      employeeId: employeeId ?? NO_EMPLOYEE,
+    }),
+    queryFn: ({ signal }) => fetchMyCertificationClaims(requireEmployeeId(employeeId), signal),
+    enabled: employeeId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+export function useSubmitCertificationClaim(): UseMutationResult<
+  { detailId: string; requestId: string },
+  Error,
+  Omit<SubmitCertificationClaimInput, "employeeId">
+> {
+  const client = useQueryClient();
+  const employeeId = useEmployeeId();
+  return useMutation({
+    mutationFn: (input: Omit<SubmitCertificationClaimInput, "employeeId">) =>
+      submitCertificationClaim({ ...input, employeeId: requireEmployeeId(employeeId) }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.apply.all });
       void client.invalidateQueries({ queryKey: qk.approvals.all });

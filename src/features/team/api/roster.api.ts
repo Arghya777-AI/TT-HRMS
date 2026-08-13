@@ -117,7 +117,7 @@ export const rosterSlotSchema = z.object({
   slot_date: dbDate,
   shift_id: dbUuidNullable,
   section_id: dbUuidNullable,
-  /** Always NULL on this backend — `public.events` does not exist (see header). */
+  /** NULL until a slot is attached to a booking — see the header. */
   event_id: dbUuidNullable,
   planned_start_at: dbTimestampNullable,
   planned_end_at: dbTimestampNullable,

@@ -51,9 +51,11 @@ import {
   countPublishedRosterSlots,
   countRosters,
   fetchRosters,
+  publishRoster,
   type Roster,
   type RosterFilters,
 } from "../api/coverage.api";
+import { useAuditedMutation, type AuditedMutationResult } from "@/shared/hooks/useAuditedMutation";
 
 export const DAY_RECORDS_PAGE_SIZE = 50;
 /** Hard cap on one read of the queue. The screen states it when it bites. */
@@ -348,5 +350,26 @@ export function usePublishedRosterSlotCount(
     queryFn: ({ signal }) => countPublishedRosterSlots(range, signal),
     enabled,
     retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Publish one draft week.
+ *
+ * `publish_roster` decides who may — an administrator, or the manager whose own
+ * people the whole week rosters. The reason sentence is required because this is
+ * the moment a plan becomes what the team is told to turn up for, and "who
+ * published Saturday, and why" is a question that gets asked afterwards.
+ */
+export function usePublishRoster(): AuditedMutationResult<
+  Roster,
+  { readonly rosterId: string; readonly note?: string | null }
+> {
+  return useAuditedMutation({
+    mutationFn: (input, reason) => publishRoster(input.rosterId, reason, input.note ?? null),
+    /* The week's headers AND the slot counts: `is_published` on the slots is
+       what the employee-facing screens read, so a tile that still says draft
+       after a successful publish would be the screen disagreeing with itself. */
+    invalidate: [qk.admin.all, qk.team.all],
   });
 }

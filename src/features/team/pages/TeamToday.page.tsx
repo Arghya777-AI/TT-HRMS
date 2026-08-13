@@ -357,6 +357,8 @@ export default function TeamTodayPage() {
           <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row sm:items-center">
             {inCount === undefined ? null : (
               <ProgressRing
+                /* How much of the board is in — the manager's actual question, now stated rather than eyeballed off an arc. */
+                showPercent
                 value={inCount}
                 total={boardCount}
                 centre={formatNumber(inCount)}

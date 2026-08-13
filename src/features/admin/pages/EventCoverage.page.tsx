@@ -4,30 +4,42 @@
  * cannot answer.
  *
  * THE SCREEN THE PRD ASKED FOR was "required vs rostered vs present headcount per
- * department per event". Verified against supabase/migrations, two thirds of that
- * sentence has no data behind it:
+ * department per event". For most of this screen's life two thirds of that
+ * sentence had no data behind it. Migration 043100 supplied the missing two
+ * thirds; the last third is still genuinely absent, and is still not faked.
  *
- *  1. `public.events` DOES NOT EXIST. No migration creates it; the 049 deferred-FK
- *     sweep lists `roster_slots.event_id → public.events` but is guarded on
- *     `to_regclass(...) IS NOT NULL` and therefore skips it. `event_id` is NULL on
- *     every slot. So there is no event to group by, name or date — and this screen
- *     groups by the department-week instead, which is what `rosters` actually is.
- *  2. THERE IS NO REQUIRED-HEADCOUNT FIGURE. `required_headcount`,
- *     `planned_headcount`, `min_staff` and `headcount_required` appear nowhere in
- *     the schema. "Required" is not a column, a view or a function, so the
- *     required tile stays empty with its reason and NO shortfall is computed —
- *     a fabricated shortfall is worse than a blank one because it looks actionable.
- *  3. PLANNED-VS-PRESENT CANNOT BE JOINED. The engine writes
- *     `attendance_days.roster_slot_id`, but `v_attendance_day_enriched` does not
- *     project that column, and `roster_slots.attendance_day_id` is never written by
- *     anything. Neither side of the join is readable from a browser, so
- *     "present against plan" is declared missing rather than approximated from
- *     dates (which would silently credit an unrostered person's punches).
+ * ── WHAT ARRIVED ────────────────────────────────────────────────────────────
  *
- * WHAT IS REAL, and is all this screen shows: `rosters` (one row per
- * department-week, with its publish state) and Postgres COUNTS over
- * `roster_slots`. The per-day strip is seven `count=exact` reads, one per date —
- * not one read divided seven ways — and the chart plots those counts unchanged.
+ *  1. `public.events` EXISTS. It did not, for ninety migrations: the 004900
+ *     deferred-FK sweep listed `roster_slots.event_id → public.events` and was
+ *     guarded on `to_regclass(...) IS NOT NULL`, so it skipped in silence every
+ *     time it ran. The register is at /admin/org/events.
+ *  2. A REQUIRED-HEADCOUNT FIGURE EXISTS. `event_labour_demand.required_headcount`
+ *     states demand per event per department. Before it, `required_headcount`,
+ *     `planned_headcount`, `min_staff` and `headcount_required` appeared nowhere
+ *     in the schema, so "required" was not a column, a view or a function.
+ *  3. `v_event_coverage` joins them and emits `short_by` as
+ *     GREATEST(required − rostered, 0) — never negative, because over-rostering is
+ *     not a shortfall. The table below reads that view; nothing here recomputes
+ *     the subtraction.
+ *
+ * ── WHAT IS STILL MISSING, AND IS STILL NOT DRAWN ───────────────────────────
+ *
+ *  * PLANNED-VS-PRESENT CANNOT BE JOINED. The engine writes
+ *    `attendance_days.roster_slot_id`, but `v_attendance_day_enriched` does not
+ *    project that column, and `roster_slots.attendance_day_id` is never written by
+ *    anything. Neither side of the join is readable from a browser, so "present
+ *    against plan" stays absent rather than being approximated from dates — which
+ *    would silently credit an unrostered person's punches.
+ *  * NOTHING ATTACHES A SLOT TO A BOOKING yet, so an event's rostered figure is
+ *    honestly zero until somebody links the two. A slot on the same day as a
+ *    wedding is not evidence that it is FOR the wedding.
+ *
+ * The department-week half of this screen is unchanged and was always real:
+ * `rosters` (one row per department-week, with its publish state) and Postgres
+ * COUNTS over `roster_slots`. The per-day strip is seven `count=exact` reads, one
+ * per date — not one read divided seven ways — and the chart plots those counts
+ * unchanged.
  *
  * @route /admin/attendance/coverage
  */
@@ -55,8 +67,6 @@ import { Notice } from "../components/Notice";
 import { SelectField } from "../components/Field";
 import { StackedBarsChart, type ChartPoint } from "../components/AnalyticsOpsCharts";
 import {
-  MISSING_COVERAGE_VIEW,
-  MISSING_EVENTS_TABLE,
   rosterStatusValues,
   type Roster,
   type RosterFilters,
@@ -67,6 +77,8 @@ import {
   useRosters,
 } from "../hooks/useAttendanceRecords";
 import { useRefOptions } from "../hooks/useMasters";
+import { useEventCoverage } from "../hooks/useEventRegister";
+import type { EventCoverageRow } from "../api/events.api";
 
 const ROSTER_STATUS_CHIP: Readonly<Record<string, StatusChipEntry>> = {
   draft: { label: t("team.roster.status.draft"), tone: "neutral" },
@@ -91,6 +103,66 @@ export default function EventCoveragePage() {
       ? istWeekStart(rawWeek)
       : istWeekStart(nowIstDate());
   const week = useMemo(() => istWeekRange(weekStart), [weekStart]);
+  /*
+    Bookings whose START falls in this week. `starts_at` is a timestamptz and the
+    week is a pair of IST civil dates, so the bounds are stamped with +05:30
+    explicitly — a bare date string would be read as UTC and quietly drop
+    everything booked before 05:30 on the Monday.
+  */
+  const eventCoverage = useEventCoverage(
+    useMemo(
+      () => ({ from: `${week.from}T00:00:00+05:30`, to: `${week.to}T23:59:59+05:30` }),
+      [week.from, week.to],
+    ),
+  );
+  /* A row with nothing required and nobody rostered says nothing; the view emits
+     one per event even where no demand has been recorded. */
+  const eventCoverageRows = (eventCoverage.data ?? []).filter(
+    (r) => r.required_headcount > 0 || r.rostered_headcount > 0,
+  );
+  const eventCoverageColumns: DataGridColumn<EventCoverageRow>[] = [
+    {
+      key: "title",
+      header: t("events.coverage.col.event"),
+      render: (row) => (
+        <div>
+          <p className="font-medium leading-snug">{row.title}</p>
+          <p className="font-mono text-xs text-muted-foreground">{row.event_code}</p>
+        </div>
+      ),
+    },
+    {
+      key: "department_name",
+      header: t("events.coverage.col.dept"),
+      render: (row) => row.department_name ?? t("events.coverage.noDept"),
+    },
+    {
+      key: "required_headcount",
+      header: t("events.coverage.col.required"),
+      align: "right",
+      width: "8rem",
+      render: (row) => formatNumber(row.required_headcount),
+    },
+    {
+      key: "rostered_headcount",
+      header: t("events.coverage.col.rostered"),
+      align: "right",
+      width: "8rem",
+      render: (row) => formatNumber(row.rostered_headcount),
+    },
+    {
+      key: "short_by",
+      header: t("events.coverage.col.short"),
+      align: "right",
+      width: "9rem",
+      render: (row) =>
+        row.short_by === 0 ? (
+          <span className="text-xs text-muted-foreground">{t("events.coverage.covered")}</span>
+        ) : (
+          <span className="num font-semibold text-destructive">{formatNumber(row.short_by)}</span>
+        ),
+    },
+  ];
   const days = useMemo(() => istWeekDates(weekStart), [weekStart]);
 
   const departmentId = params.get("dept") ?? "";
@@ -264,14 +336,38 @@ export default function EventCoveragePage() {
         actions={<WeekStepper weekStart={weekStart} onChange={(w) => setParam("w", w, ["r"])} />}
       />
 
-      <div className="mt-4">
-        <Notice tone="warning">
-          {t("admin.coverage.gap.noEvents", {
-            events: MISSING_EVENTS_TABLE,
-            view: MISSING_COVERAGE_VIEW,
-          })}
-        </Notice>
-      </div>
+      {/*
+        REQUIRED VERSUS ROSTERED, which this screen could not show for its whole
+        life. `public.events`, `event_labour_demand` and `v_event_coverage` all
+        arrived in 043100; the shortfall is the view's own GREATEST(required −
+        rostered, 0), never recomputed here.
+      */}
+      <section className="mt-4" aria-labelledby="cov-events">
+        <h2 id="cov-events" className="font-display text-lg font-semibold">
+          {t("events.coverage.title")}
+        </h2>
+        <p className="mb-3 text-sm text-muted-foreground">{t("admin.coverage.events.hint")}</p>
+        <StateBoundary
+          loading={eventCoverage.isLoading}
+          error={eventCoverage.error ?? undefined}
+          onRetry={() => void eventCoverage.refetch()}
+          isEmpty={eventCoverage.data !== undefined && eventCoverageRows.length === 0}
+          empty={
+            <EmptyState
+              icon={CalendarDays}
+              title={t("admin.coverage.events.empty.title")}
+              hint={t("admin.coverage.events.empty.hint")}
+            />
+          }
+          skeletonRows={3}
+        >
+          <DataGrid
+            rows={eventCoverageRows}
+            columns={eventCoverageColumns}
+            rowKey={(r) => `${r.event_id}:${r.department_id ?? "none"}`}
+          />
+        </StateBoundary>
+      </section>
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-3">
         <SelectField

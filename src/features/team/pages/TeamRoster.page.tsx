@@ -4,18 +4,28 @@
  *
  * What this screen is honest about, and why:
  *
- *  1. IT DOES NOT PUBLISH. The manifest hint says "plan and publish next week",
- *     and `capabilities` really does carry `roster.publish` for the manager role —
- *     but the endpoint it would call was never deployed. Migration 015 states slot
- *     writes go through the roster edge functions/RPCs; `supabase/functions/` has
- *     no roster function and no `publish_roster` RPC exists in any migration. So
- *     there is no publish control here, and the gap is named on screen rather than
- *     mocked with a button that would either do nothing or write straight to a
- *     table the attendance engine expects the server to own.
- *  2. IT DOES NOT SHOW EVENTS. `public.events` does not exist (the 049 FK sweep
- *     skips `roster_slots.event_id` for exactly that reason and `event_id` is NULL
- *     on every row), so "against event staffing needs" has no data behind it and
- *     no fictional booking is drawn.
+ *  1. IT PUBLISHES, AND NOTHING MORE. For most of this screen's life there was no
+ *     publish control and the gap was named here instead — `capabilities` carried
+ *     `roster.publish` for managers while no RPC existed to call. Migration 043200
+ *     added `publish_roster`, so the button below is real.
+ *
+ *     It moves a DRAFT week to PUBLISHED. It does not add, move or delete a slot:
+ *     "who may put whom on which shift" involves shift eligibility, rest rules and
+ *     overlapping bookings, and building the roster stays with an administrator
+ *     until those exist. A manager publishing a week they cannot yet edit is still
+ *     the useful half — the section head who knows the week is right is the one
+ *     who should release it.
+ *
+ *     Who may: an administrator, or a manager for whom EVERY slot on the week is
+ *     one of their own people. That is a whole-roster rule, which is why the server
+ *     side is a function and not a widened RLS policy — RLS runs per row, and row
+ *     by row a manager could release a week that is only partly theirs.
+ *  2. IT DOES NOT SHOW EVENTS — YET. `public.events` exists now (043100), along
+ *     with `fk_roster_slots__event`, so the reason this screen gave for years is
+ *     spent. What is still true is narrower: nothing yet ATTACHES a slot to a
+ *     booking, so `event_id` is NULL on every row and an overlay here would draw
+ *     an empty band. The register lives at /admin/org/events; attaching slots to
+ *     it belongs on the planner, beside the week it applies to.
  *  3. EVERY NUMBER IS A SERVER COUNT. Each tile is `count=exact` over the SAME
  *     predicate as the grid, so a tile and the week below it cannot disagree.
  *  4. A BLANK CELL IS THE ABSENCE OF A ROW. "Nobody rostered on Thursday" is not a
@@ -41,7 +51,9 @@ import { addIstDays, civilDayOffset, fmtCivilDate, fmtDateTime, nowIstDate } fro
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
-import { useRosters } from "@/features/admin/hooks/useAttendanceRecords";
+import { usePublishRoster, useRosters } from "@/features/admin/hooks/useAttendanceRecords";
+import { ReasonActionButton } from "@/features/admin/components/ReasonActionButton";
+import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import {
   isRosterSlotSlice,
   istWeekRange,
@@ -175,15 +187,30 @@ export default function TeamRosterPage() {
    * publisher profile existed yet), and a manager needs to see which.
    */
   const headers = useRosters({ from: weekStart, to: weekStart });
-  const myRosterIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const slot of slots.data ?? []) ids.add(slot.roster_id);
-    return ids;
+  /**
+   * Slots per roster header, not per week. A week can carry more than one header
+   * — `rosters` is one row per DEPARTMENT-week — so "how many slots am I about to
+   * release" has to be counted against the header being published, or the
+   * confirmation would quote somebody else's department back at the manager.
+   *
+   * This counts what THIS manager can see, which is the point: `publish_roster`
+   * refuses a week containing anybody who is not their reportee, so a number here
+   * that is smaller than the roster's true size is the same disagreement the
+   * server is about to raise, and raising it is correct.
+   */
+  const slotsByRoster = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const slot of slots.data ?? []) {
+      counts.set(slot.roster_id, (counts.get(slot.roster_id) ?? 0) + 1);
+    }
+    return counts;
   }, [slots.data]);
+  const myRosterIds = useMemo(() => new Set(slotsByRoster.keys()), [slotsByRoster]);
   const myHeaders = useMemo(
     () => (headers.data ?? []).filter((r) => myRosterIds.has(r.id)),
     [headers.data, myRosterIds],
   );
+  const publish = usePublishRoster();
 
   /**
    * Grid rows are PEOPLE — every reportee, in the name order
@@ -273,6 +300,41 @@ export default function TeamRosterPage() {
                         ? t("team.roster.headers.notPublished")
                         : t("team.roster.headers.publishedAt", { at: fmtDateTime(r.published_at) })}
                     </span>
+                    {/*
+                      Offered on a DRAFT week only. A published week publishes again
+                      as a no-op server-side, and a locked one is refused — but a
+                      button that does nothing is a button that teaches people to
+                      distrust buttons, so it is simply not drawn.
+
+                      No confirmation is demanded beyond the press. The reason is
+                      derived from the action, as everywhere else: an audit row
+                      reading "publish the roster for the week of 18 Aug" is more
+                      truthful than whatever a manager types at 6pm on a Friday.
+                    */}
+                    {r.status === "draft" ? (
+                      <span className="ml-auto">
+                        <ReasonActionButton
+                          surface="team roster"
+                          label={t("team.roster.publish.cta")}
+                          title={t("team.roster.publish.title", {
+                            week: fmtCivilDate(r.week_start_date),
+                          })}
+                          description={t("team.roster.publish.what", {
+                            n: formatNumber(slotsByRoster.get(r.id) ?? 0),
+                            week: fmtCivilDate(r.week_start_date),
+                          })}
+                          onConfirm={async (reason) => {
+                            await publish.mutateAsync({
+                              input: { rosterId: r.id },
+                              reason,
+                            });
+                            confirmSubmitted(t("team.roster.publish.done"), {
+                              detail: t("team.roster.publish.doneDetail"),
+                            });
+                          }}
+                        />
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -325,8 +387,8 @@ export default function TeamRosterPage() {
           </div>
 
           <div className="mt-4 space-y-2">
-            <Notice tone="warning">{t("team.roster.gap.noWrite")}</Notice>
-            <Notice tone="info">{t("team.roster.gap.noEvents")}</Notice>
+            <Notice tone="info">{t("team.roster.gap.noSlotEdit")}</Notice>
+            <Notice tone="info">{t("team.roster.gap.noEventLink")}</Notice>
             <Notice tone="info">{t("team.roster.footnote")}</Notice>
           </div>
         </>

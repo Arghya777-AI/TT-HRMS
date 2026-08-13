@@ -74,6 +74,14 @@ export function MonthStatusMix({ from, to }: MonthStatusMixProps) {
           title={t("attendance.mix.title")}
           height={14}
           format={(v) => t("attendance.mix.days", { n: formatNumber(v) })}
+          /*
+            Shares and a total are safe HERE and only here: `attendance_days.status`
+            is one value per day, so the segments really are the whole. MonthGlance
+            beside it must never show either — its columns overlap, and a percentage
+            of an overlapping sum is a number that means nothing.
+          */
+          showShare
+          totalCaption={t("attendance.mix.total", { n: formatNumber(total) })}
           segments={rows.map((row) => ({
             key: row.status,
             label: statusLabel(row.status),

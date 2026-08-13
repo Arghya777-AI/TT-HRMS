@@ -111,8 +111,17 @@ CREATE INDEX IF NOT EXISTS idx_events__starts   ON public.events (starts_at DESC
 CREATE INDEX IF NOT EXISTS idx_events__status   ON public.events (status) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_events__location ON public.events (location_id);
 
+/*
+  DROPPED FIRST. `CREATE TRIGGER` has no `IF NOT EXISTS`, and 043300 died on
+  exactly this — a second run of a file whose every other statement was
+  idempotent. A migration you cannot re-run is one you cannot resume after a
+  half-finished paste into a SQL editor, which is the situation that produces the
+  second run in the first place.
+*/
+DROP TRIGGER IF EXISTS trg_events__stamp ON public.events;
 CREATE TRIGGER trg_events__stamp BEFORE INSERT ON public.events
   FOR EACH ROW EXECUTE FUNCTION util.stamp_row();
+DROP TRIGGER IF EXISTS trg_events__touch ON public.events;
 CREATE TRIGGER trg_events__touch BEFORE UPDATE ON public.events
   FOR EACH ROW EXECUTE FUNCTION util.touch_row();
 
@@ -148,8 +157,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_eld__event_dept_role
   ON public.event_labour_demand (event_id, department_id, COALESCE(role_label, ''));
 CREATE INDEX IF NOT EXISTS idx_eld__event ON public.event_labour_demand (event_id);
 
+DROP TRIGGER IF EXISTS trg_eld__stamp ON public.event_labour_demand;
 CREATE TRIGGER trg_eld__stamp BEFORE INSERT ON public.event_labour_demand
   FOR EACH ROW EXECUTE FUNCTION util.stamp_row();
+DROP TRIGGER IF EXISTS trg_eld__touch ON public.event_labour_demand;
 CREATE TRIGGER trg_eld__touch BEFORE UPDATE ON public.event_labour_demand
   FOR EACH ROW EXECUTE FUNCTION util.touch_row();
 

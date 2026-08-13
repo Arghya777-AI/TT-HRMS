@@ -272,6 +272,52 @@ export const keysMeApply = {
     "No profile or statutory change of yours is undecided. An election you send above shows up here within seconds.",
 
   "apply.tax.declaration.title": "Full investment declaration",
+  /*
+    THE THREE GAP BULLETS ARE GONE, and they were wrong. Migration 041300 created
+    `income_tax_declarations` with all eleven section columns, a GENERATED total,
+    `proof_document_ids`, the self RLS policies AND the approval chain. The notice
+    predated it and was never revisited.
+  */
+  "apply.tax.decl.hint":
+    "Declare what you intend to claim this year. Amounts are DECLARED, not verified — HR checks them against your proofs and the Act when they approve, so nothing here is a limit on what you may enter.",
+  "apply.tax.decl.section.80c": "80C — PF, ELSS, insurance, tuition",
+  "apply.tax.decl.section.80ccd1b": "80CCD(1B) — NPS",
+  "apply.tax.decl.section.80d": "80D — health insurance",
+  "apply.tax.decl.section.80dd": "80DD — dependant with disability",
+  "apply.tax.decl.section.80ddb": "80DDB — specified illness",
+  "apply.tax.decl.section.80e": "80E — education loan interest",
+  "apply.tax.decl.section.80eeb": "80EEB — electric vehicle loan",
+  "apply.tax.decl.section.80g": "80G — donations",
+  "apply.tax.decl.section.80tta": "80TTA — savings interest",
+  "apply.tax.decl.section.24b": "24B — home loan interest",
+  "apply.tax.decl.section.hraRent": "HRA — rent paid this year",
+  "apply.tax.decl.landlordPan": "Landlord's PAN",
+  "apply.tax.decl.landlordPanHint":
+    "Required once the rent you claim passes ₹1,00,000 for the year — that rule is in the Act, not a setting here.",
+  "apply.tax.decl.otherHeading": "Income from elsewhere",
+  "apply.tax.decl.otherHint":
+    "These ADD to your taxable income rather than reducing it, which is why they sit apart from the deductions above.",
+  "apply.tax.decl.otherIncome": "Other income",
+  "apply.tax.decl.prevIncome": "Previous employer's income",
+  "apply.tax.decl.prevTds": "Previous employer's TDS",
+  "apply.tax.decl.note": "Anything HR should know",
+  "apply.tax.decl.mix": "What you have declared",
+  "apply.tax.decl.total": "{total} declared in total — added up by the database, not by this page.",
+  "apply.tax.decl.saveDraft": "Save as draft",
+  "apply.tax.decl.send": "Send to HR",
+  "apply.tax.decl.sending": "Sending…",
+  "apply.tax.decl.saved": "Draft saved",
+  "apply.tax.decl.savedDetail": "{total} declared so far. It is not with HR until you send it.",
+  "apply.tax.decl.sent": "Declaration sent to HR",
+  "apply.tax.decl.sentDetail": "You can follow it under Approvals. HR checks it against your proofs.",
+  "apply.tax.decl.reason.submit": "Filing my investment declaration for {fy}.",
+  "apply.tax.decl.reason.draft": "Saving a draft of my investment declaration for {fy}.",
+  "apply.tax.decl.blockers": "This declaration cannot be sent yet",
+  "apply.tax.decl.need.fy": "The financial year could not be read, so there is nothing to file against.",
+  "apply.tax.decl.need.something": "Declare at least one amount before sending it.",
+  "apply.tax.decl.need.pan": "Rent above ₹1,00,000 for the year needs your landlord's PAN.",
+  "apply.tax.decl.locked":
+    "This declaration is {status} and can no longer be edited. Ask HR if something needs to change.",
   "apply.tax.declaration.gap.title": "Declarations and proofs are not switched on yet",
   "apply.tax.declaration.gap.table":
     "The IT Declaration request type points at a table called income_tax_declarations, and no migration creates it — the name exists only inside a CHECK constraint and the seed row.",

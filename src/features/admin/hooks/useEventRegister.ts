@@ -6,13 +6,21 @@
  * `/admin/time/holidays` (which invalidates `qk.admin.orgAll()`) refreshes this
  * register too — the two screens read the same rows and must never disagree.
  *
- * Every hook here is a READ. There is no write hook because there is no
- * `public.events` table to write to (see the api module's header for the
- * evidence), and the holiday rows this screen renders are edited on
- * `/admin/time/holidays`, which already owns that prompt-and-audit flow.
+ * The hooks below the holiday ones read `public.events`, which migration 043100
+ * created — this file predates it and said, correctly at the time, that there was
+ * no table to write to. There is now, so there is a write hook.
+ *
+ * The holiday rows are still edited on `/admin/time/holidays`, which already owns
+ * that prompt-and-audit flow; nothing here duplicates it.
  */
 import { useMemo } from "react";
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import type { Holiday } from "../api/org.api";
@@ -24,7 +32,15 @@ import {
   countOptionalEventDays,
   fetchDemandByDate,
   fetchEventDays,
+  countEvents,
+  createEvent,
+  fetchEventCoverage,
+  fetchEvents,
+  type CreateEventInput,
+  type EventCoverageRow,
   type EventDayFilters,
+  type EventFilters,
+  type EventRow,
 } from "../api/events.api";
 
 /** Query keys must be plain data; `EventDayFilters` is an interface. */
@@ -117,5 +133,74 @@ export function useEventTaggedSlotCount(): UseQueryResult<number, Error> {
     queryKey: qk.admin.orgList("eventRegister", { part: "tagged-slots" }),
     queryFn: ({ signal }) => countEventTaggedSlots(signal),
     retry: shouldRetryQuery,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// The register itself — `public.events`
+// -----------------------------------------------------------------------------
+
+/** Query keys must be plain data; `EventFilters` is an interface. */
+function eventKey(f: EventFilters, part: string): Record<string, unknown> {
+  return {
+    part,
+    from: f.from ?? "",
+    to: f.to ?? "",
+    statuses: (f.statuses ?? []).join(","),
+    includeCancelled: f.includeCancelled === true,
+  };
+}
+
+/** The diary, soonest first. */
+export function useEvents(filters: EventFilters): UseQueryResult<EventRow[], Error> {
+  return useQuery({
+    queryKey: qk.admin.orgList("eventRegister", eventKey(filters, "events")),
+    queryFn: ({ signal }) => fetchEvents(filters, 200, signal),
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * The same predicate, counted by Postgres.
+ *
+ * Its own query rather than `events.data.length`, because the list is capped at
+ * 200 and a tile reading "200" beside a register that is actually holding 340
+ * bookings is the disagreement this codebase keeps designing out.
+ */
+export function useEventCount(filters: EventFilters): UseQueryResult<number, Error> {
+  return useQuery({
+    queryKey: qk.admin.orgList("eventRegister", eventKey(filters, "count")),
+    queryFn: ({ signal }) => countEvents(filters, signal),
+    retry: shouldRetryQuery,
+  });
+}
+
+/** Rostered against required, from `v_event_coverage`. */
+export function useEventCoverage(
+  filters: EventFilters,
+): UseQueryResult<EventCoverageRow[], Error> {
+  return useQuery({
+    queryKey: qk.admin.orgList("eventRegister", eventKey(filters, "coverage")),
+    queryFn: ({ signal }) => fetchEventCoverage(filters, 200, signal),
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Book an event.
+ *
+ * Invalidates the whole org branch rather than this screen's key: a new booking
+ * changes `v_event_coverage`, the roster planner's event picker and the coverage
+ * screen, and a register that is right while the screen beside it is stale is
+ * the same defect as a wrong number.
+ */
+export function useCreateEvent(): UseMutationResult<EventRow, Error, CreateEventInput> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateEventInput) => createEvent(input),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.admin.orgAll() });
+    },
+    retry: false,
   });
 }

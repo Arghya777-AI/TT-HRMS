@@ -21,6 +21,7 @@ import {
   BarChart,
   Cell,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -51,6 +52,16 @@ export interface TrendBarsProps {
   readonly className?: string;
   /** Show the value axis. Off by default: on a sparkline it is noise. */
   readonly showAxis?: boolean;
+  /**
+   * Draw a dashed reference line at this value, labelled.
+   *
+   * A run of bars says which days were bigger. It does not say whether ANY of
+   * them were normal, which is usually the question — a nine-hour Tuesday means
+   * one thing on a nine-hour contract and another on a six. The caller supplies
+   * the line because the caller knows what the right comparison is: a rostered
+   * shift length, a contracted average, a target. Nothing is averaged here.
+   */
+  readonly reference?: { readonly value: number; readonly label: string };
 }
 
 interface Datum extends TrendBar {
@@ -62,7 +73,11 @@ function ChartTooltip({
   active,
   payload,
   format,
-}: TooltipProps<number, string> & { format: (value: number) => string }) {
+  reference,
+}: TooltipProps<number, string> & {
+  format: (value: number) => string;
+  reference?: { readonly value: number; readonly label: string };
+}) {
   if (active !== true || payload === undefined || payload.length === 0) return null;
   const datum = payload[0]?.payload as Datum | undefined;
   if (datum === undefined) return null;
@@ -75,6 +90,19 @@ function ChartTooltip({
       {datum.caption !== undefined ? (
         <p className="mt-0.5 text-muted-foreground">{datum.caption}</p>
       ) : null}
+      {/*
+        The comparison, stated rather than left to the eye. "7h 20m" is a fact;
+        "40m under the rostered shift" is the fact somebody acts on, and it is
+        subtraction of two numbers the caller already supplied — no aggregate, no
+        average of its own.
+      */}
+      {reference !== undefined && datum.value !== null ? (
+        <p className="num mt-0.5 text-muted-foreground">
+          {datum.value === reference.value
+            ? reference.label
+            : `${format(Math.abs(datum.value - reference.value))} ${datum.value > reference.value ? "over" : "under"}`}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -86,6 +114,7 @@ export function TrendBars({
   height = 120,
   className,
   showAxis = false,
+  reference,
 }: TrendBarsProps) {
   const titleId = useId();
 
@@ -119,8 +148,22 @@ export function TrendBars({
           />
           <Tooltip
             cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
-            content={<ChartTooltip format={format} />}
+            content={<ChartTooltip format={format} reference={reference} />}
           />
+          {reference !== undefined ? (
+            <ReferenceLine
+              y={reference.value}
+              stroke="hsl(var(--muted-foreground))"
+              strokeDasharray="4 4"
+              strokeOpacity={0.7}
+              label={{
+                value: reference.label,
+                position: "insideTopRight",
+                fontSize: 9,
+                fill: "hsl(var(--muted-foreground))",
+              }}
+            />
+          ) : null}
           <Bar dataKey="plotted" radius={[3, 3, 0, 0]} {...animationProps()}>
             {data.map((datum) => (
               <Cell

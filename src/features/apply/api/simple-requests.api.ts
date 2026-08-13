@@ -15,7 +15,7 @@
  *   3. back-link the request id      point at it,
  *   4. read the request number     which only the server can mint.
  *
- * `raiseRequest` below is that sequence, once. Each of the three public
+ * `raiseSimpleRequest` below is that sequence, once. Each of the three public
  * functions supplies its own row and title and gets the same guarantees — and,
  * more importantly, the same FAILURE behaviour: if step 2 raises, the detail row
  * survives as a `pending` row its owner can see, rather than an approval request
@@ -63,8 +63,13 @@ const idSchema = z.object({ id: dbUuid });
  *
  * Returns the detail row's id and the approval request id. The caller decides
  * what to show; this decides nothing about presentation.
+ *
+ * Exported because it is the shape of EVERY request in this system, not a
+ * private detail of these three. `certification.api.ts` uses it verbatim — a
+ * sixth copy of the same four steps is a sixth place for one of them to be
+ * forgotten, and the step that gets forgotten is always the third.
  */
-async function raiseRequest(args: {
+export async function raiseSimpleRequest(args: {
   readonly table: string;
   readonly row: Record<string, unknown>;
   readonly requestCode: string;
@@ -185,7 +190,7 @@ export function submitResignation(
   input: SubmitResignationInput,
   signal?: AbortSignal,
 ): Promise<{ detailId: string; requestId: string }> {
-  return raiseRequest({
+  return raiseSimpleRequest({
     table: RESIGNATIONS_TABLE,
     // `resignation_number` omitted: trg_resign__number mints it.
     row: {
@@ -302,7 +307,7 @@ export function submitTravelRequisition(
     throw new Error("Amounts must be rupee figures with at most two decimals.");
   }
 
-  return raiseRequest({
+  return raiseSimpleRequest({
     table: TRAVEL_REQUISITIONS_TABLE,
     // `requisition_number` omitted: trg_tr__requisition_number mints it.
     row: {
@@ -375,7 +380,7 @@ export function submitDocumentRequest(
   signal?: AbortSignal,
 ): Promise<{ detailId: string; requestId: string }> {
   const addressedTo = input.addressedTo.trim();
-  return raiseRequest({
+  return raiseSimpleRequest({
     table: DOCUMENT_REQUESTS_TABLE,
     row: {
       employee_id: input.employeeId,
@@ -456,7 +461,7 @@ export function submitAssetRequest(
   input: SubmitAssetRequestInput,
   signal?: AbortSignal,
 ): Promise<{ detailId: string; requestId: string }> {
-  return raiseRequest({
+  return raiseSimpleRequest({
     table: ASSET_REQUESTS_TABLE,
     row: {
       employee_id: input.employeeId,

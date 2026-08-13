@@ -59,6 +59,8 @@ export function LeaveBalanceRings({ balances }: LeaveBalanceRingsProps) {
             {balance.leave_type_name}
           </p>
           <ProgressRing
+                /* A leave balance is the clearest ratio in the product; printing it saves the reader dividing availed by entitlement in their head. */
+                showPercent
             /* Taken against granted. Both columns, straight from the view. */
             value={balance.availed_days}
             total={balance.entitlement_days}

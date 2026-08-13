@@ -24,7 +24,9 @@
  *     Housekeeping") and `isDenseDay` compares them. No percentage is calculated
  *     or displayed, and the warning only appears when a department is selected,
  *     because an org-wide denominator would answer a different question.
- *  4. NO EVENT OVERLAY. The spec's confirmed-event band needs `public.events`,
+ *  4. NO EVENT OVERLAY. The spec's confirmed-event band reads `public.events`,
+ *     which exists now (043100) but is not yet drawn on this calendar.
+ *     Historically it needed `public.events`,
  *     which no migration creates (`coverage.api` documents the same gap). An
  *     invented band over a real calendar is exactly the class of defect this build
  *     removes, so the absence is stated instead.

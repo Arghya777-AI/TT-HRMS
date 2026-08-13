@@ -58,6 +58,15 @@ export interface ReasonActionButtonProps {
   /** Tooltip/aria hint when disabled — say WHY, never just grey it out. */
   disabledHint?: string | undefined;
   /**
+   * Where the action was taken from, for the derived reason.
+   *
+   * Defaults to "admin console" because that is where nearly every caller lives.
+   * A manager publishing a roster from /team/roster is NOT in the admin console,
+   * and an audit row saying they were would be a small lie in the one record
+   * whose whole job is not lying.
+   */
+  surface?: string;
+  /**
    * Ask the admin to TYPE a reason before this fires.
    *
    * Off by default: the reason is derived from `title`, which already names the
@@ -84,6 +93,7 @@ export function ReasonActionButton({
   size = "sm",
   disabled = false,
   disabledHint,
+  surface = "admin console",
   requireTypedReason = false,
   onConfirm,
 }: ReasonActionButtonProps) {
@@ -110,10 +120,10 @@ export function ReasonActionButton({
   const derivedReason = (() => {
     const who = employee?.displayName ?? null;
     const base = who === null
-      ? `admin console: ${title}`
-      : `admin console: ${title} — by ${who}`;
+      ? `${surface}: ${title}`
+      : `${surface}: ${title} — by ${who}`;
     // Belt and braces for a future title shorter than the DB floor.
-    return base.length >= 20 ? base : `${base} (recorded from the admin console)`;
+    return base.length >= 20 ? base : `${base} (recorded from the ${surface})`;
   })();
 
   /** Resolves `true` on success. The caller needs to know, to decide what to show. */

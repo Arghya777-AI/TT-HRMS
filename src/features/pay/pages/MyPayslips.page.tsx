@@ -24,6 +24,7 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
 import { Money } from "@/shared/ui/Money";
+import { NetPayTrend } from "../components/NetPayTrend";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -291,6 +292,15 @@ export default function MyPayslipsPage() {
           <h2 className="font-display text-lg font-semibold">{t("pay.list.heading")}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">{t("pay.list.note")}</p>
         </div>
+        {/*
+          The trend sits ABOVE the table, because it answers the question people
+          arrive with — "why was March lower" — and the table answers the one they
+          ask next. It renders nothing with fewer than two payslips.
+        */}
+        <div className="mb-4">
+          <NetPayTrend rows={visibleRows} periodKey={periodKey} masked={masked} />
+        </div>
+
         <StateBoundary
           loading={identity.resolving}
           error={identity.error ?? payslips.error}

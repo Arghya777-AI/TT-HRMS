@@ -127,3 +127,71 @@ describe("SplitBar", () => {
     expect(screen.getByRole("img", { name: /This month: Present 18/ })).toBeInTheDocument();
   });
 });
+
+describe("the informative additions", () => {
+  it("prints each segment's share only when asked", () => {
+    const segments = [
+      { key: "p", label: "Present", value: 18, tone: "present" as const },
+      { key: "l", label: "Leave", value: 2, tone: "leave" as const },
+    ];
+    const plain = render(<SplitBar title="Month" segments={segments} />);
+    expect(plain.container.textContent).not.toContain("90%");
+    plain.unmount();
+
+    const withShare = render(<SplitBar title="Month" segments={segments} showShare />);
+    // 18 of 20 — the number a reader would otherwise work out themselves.
+    expect(withShare.container.textContent).toContain("90%");
+    expect(withShare.container.textContent).toContain("10%");
+  });
+
+  it("puts the share in the hover label too", () => {
+    const { container } = render(
+      <SplitBar
+        title="Month"
+        showShare
+        segments={[
+          { key: "p", label: "Present", value: 3, tone: "present" },
+          { key: "a", label: "Absent", value: 1, tone: "absent" },
+        ]}
+      />,
+    );
+    const titles = [...container.querySelectorAll("[title]")].map((n) => n.getAttribute("title"));
+    expect(titles.some((x) => x?.includes("75%"))).toBe(true);
+  });
+
+  it("shows no total caption when every segment is zero", () => {
+    // A caption naming a whole of nothing is a claim about a shape that is absent.
+    const { container } = render(
+      <SplitBar
+        title="Month"
+        totalCaption="26 days recorded"
+        segments={[{ key: "p", label: "Present", value: 0, tone: "present" }]}
+      />,
+    );
+    expect(container.textContent).not.toContain("26 days recorded");
+  });
+
+  it("prints the ring's percentage, but not when there is no total", () => {
+    const withTotal = render(
+      <ProgressRing value={3} total={12} centre="3" caption="of 12" title="EL" showPercent />,
+    );
+    expect(withTotal.container.textContent).toContain("25%");
+    withTotal.unmount();
+
+    /* No denominator means no fraction — a "0%" here would be a claim about a
+       ratio nobody supplied, which is the same rule the arc follows. */
+    const without = render(
+      <ProgressRing value={3} total={null} centre="3" caption="taken" title="EL" showPercent />,
+    );
+    expect(without.container.textContent).not.toContain("%");
+  });
+
+  it("caps the ring's percentage at 100 rather than reporting an overdraft as a share", () => {
+    const { container } = render(
+      <ProgressRing value={12} total={10} centre="12" caption="of 10" title="SL" showPercent />,
+    );
+    // The caption still carries the real figures; the SHARE cannot exceed the whole.
+    expect(container.textContent).toContain("100%");
+    expect(container.textContent).toContain("of 10");
+  });
+});

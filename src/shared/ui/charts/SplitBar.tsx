@@ -28,6 +28,21 @@ export interface SplitBarProps {
   readonly format?: (value: number) => string;
   /** Show the labels beneath. Off inside a dense table row. */
   readonly legend?: boolean;
+  /**
+   * Put each segment's SHARE beside its figure in the legend.
+   *
+   * The share is the one number a stacked bar is showing and the only one a
+   * reader cannot get from the labels — "18 days" against a whole they have to
+   * add up themselves is half an answer. Off by default because inside a table
+   * cell there is no room for it.
+   */
+  readonly showShare?: boolean;
+  /**
+   * A line under the legend naming the whole, e.g. "of 26 days". Supplied by the
+   * caller because only the caller knows whether the segments ARE the whole — a
+   * bar of three of six buckets must not claim to be a total.
+   */
+  readonly totalCaption?: string;
   readonly height?: number;
   readonly className?: string;
 }
@@ -37,6 +52,8 @@ export function SplitBar({
   title,
   format = (v) => String(v),
   legend = true,
+  showShare = false,
+  totalCaption,
   height = 10,
   className,
 }: SplitBarProps) {
@@ -66,7 +83,11 @@ export function SplitBar({
                 key={segment.key}
                 /* `title` gives a native tooltip on hover with no JS and no
                    portal — inside a table cell that is the right trade. */
-                title={`${segment.label}: ${format(segment.value)}`}
+                title={
+                  showShare
+                    ? `${segment.label}: ${format(segment.value)} (${share(segment.value, total)})`
+                    : `${segment.label}: ${format(segment.value)}`
+                }
                 className="h-full first:rounded-l-full last:rounded-r-full hover:brightness-110"
                 style={{
                   width: `${String((segment.value / total) * 100)}%`,
@@ -89,10 +110,28 @@ export function SplitBar({
               />
               <span className="text-muted-foreground">{segment.label}</span>
               <span className="num font-medium">{format(segment.value)}</span>
+              {showShare ? (
+                <span className="num text-muted-foreground">{share(segment.value, total)}</span>
+              ) : null}
             </li>
           ))}
         </ul>
       ) : null}
+      {totalCaption !== undefined && usable.length > 0 ? (
+        <p className="mt-1.5 text-xs text-muted-foreground">{totalCaption}</p>
+      ) : null}
     </figure>
   );
+}
+
+/**
+ * One segment's share of the bar, to the nearest whole percent.
+ *
+ * Rounded for READING, and never anywhere near a decision: the figures beside it
+ * are the server's and are what anybody would act on. Rounding here cannot make
+ * two screens disagree because no other screen shows this number.
+ */
+function share(value: number, total: number): string {
+  if (total <= 0) return "—";
+  return `${String(Math.round((value / total) * 100))}%`;
 }

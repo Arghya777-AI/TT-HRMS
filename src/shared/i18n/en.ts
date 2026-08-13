@@ -57,6 +57,8 @@ import { keysRolesIst } from "./keys/roles-ist";
 import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
+import { keysCertification } from "./keys/certification";
+import { keysEvents } from "./keys/events";
 import { keysClaims } from "./keys/claims";
 import { keysDocumentOpen } from "./keys/document-open";
 import { keysPunchLocation } from "./keys/punch-location";
@@ -144,6 +146,8 @@ export const en = catalogue({
   ...keysAnalytics,
   ...keysAnalyticsPlanned,
   ...keysAnalyticsOverview,
+  ...keysCertification,
+  ...keysEvents,
   ...keysClaims,
   ...keysDocumentOpen,
   ...keysPunchLocation,
@@ -1561,6 +1565,7 @@ export const en = catalogue({
   "attendance.mix.title": "How the month divided",
   "attendance.mix.hint": "Every day that has a record, by what kind of day it was — {n} so far.",
   "attendance.mix.days": "{n} days",
+  "attendance.mix.total": "{n} days have a record so far this month.",
   "attendance.summary.missing.title": "Nothing recorded for {month}",
   "attendance.summary.missing.hint":
     "The engine has not written a single day for this month. If you worked, pick another month or raise a correction.",
@@ -1848,6 +1853,17 @@ export const en = catalogue({
     produced masked amounts, the assistant bubble and a URL footer — a screenshot
     of an application, not a document.
   */
+  /*
+    The net-pay trend on the payslip list. Every bar is `net_pay_paise` from one
+    payslip; the dashed line is `ytd_net_paise / months` from the newest row, and
+    it is the only derived figure on the chart — labelled as an average so nobody
+    reads it as something payroll stamped.
+  */
+  "pay.trend.title": "What reached your account",
+  "pay.trend.hint": "Net pay for each payslip in this year, oldest first.",
+  "pay.trend.average": "Average this year",
+  "pay.trend.paidOn": "Paid {date}",
+  "pay.trend.reversed": "This payslip was reversed — a correction, not a month's pay.",
   "pay.viewer.pdf.view": "View PDF",
   "pay.viewer.pdf.download": "Download",
   "pay.viewer.pdf.failed": "The payslip could not be generated. Try again, and tell HR if it keeps failing.",
@@ -10559,22 +10575,6 @@ export const en = catalogue({
   // §E-10.8 · /me/apply/certification -----------------------------------------
   "apply.cert.title": "Certification reimbursement",
   "apply.cert.subtitle": "Claim a certification the venue has agreed to fund.",
-  "apply.cert.gap.title": "This request does not exist in the system yet",
-  "apply.cert.gap.type": "There is no certification request type. HR has eighteen request types configured and none of them is this one.",
-  "apply.cert.gap.detail": "There is no server record for a certification claim to be stored in.",
-  "apply.cert.gap.chain": "There is no approval route, so even a new request type would have nobody to send it to.",
-  "apply.cert.gap.catalogue": "There is no approved catalogue of certifications, and no amount the venue has committed to per certification.",
-  "apply.cert.gap.head": "Expense claims recognise nine heads and none of them is training or certification, so this cannot ride on a local claim either.",
-  "apply.cert.appeared.title": "{name} is now configured",
-  "apply.cert.appeared.hint": "The request type exists, but this screen has no form for it yet and will not guess the fields. Ask HR to confirm what the request should collect.",
-  "apply.cert.alt.title": "What you can do today",
-  "apply.cert.alt.hint": "Claim the fee as a local claim under \"Something else\", describing the certification, or open a ticket so HR records the commitment first.",
-  "apply.cert.alt.cta": "Make a local claim",
-  "apply.cert.alt.ticket": "Ask HR",
-  "apply.cert.heads.title": "Claim heads that do exist",
-  "apply.cert.heads.hint": "The nine heads a local claim can be filed under. Nothing here covers a certification fee.",
-  "apply.cert.types.title": "Requests HR has switched on",
-  "apply.cert.types.hint": "Read from the server, so this list is what is genuinely available today.",
 
   // §E-11 · /me/assets --------------------------------------------------------
   "assets.title": "My assets",
@@ -10670,10 +10670,17 @@ export const en = catalogue({
     "Shift codes could not be read, so cells show a dash where the code belongs. The slots themselves are correct.",
   "team.roster.noTeam.title": "Nobody reports to you",
   "team.roster.noTeam.hint": "This screen fills itself the moment a reporting line points at you.",
-  "team.roster.gap.noWrite":
-    "Publishing is not offered here, and is not being faked. Migration 015 routes roster slot writes through a roster edge function, no such function is deployed, and no publish_roster RPC exists in any migration — even though the roster.publish capability is already modelled for managers. The endpoint has to be built server-side.",
-  "team.roster.gap.noEvents":
-    "Event staffing needs cannot be shown: public.events does not exist on this backend. Every slot's event_id is null and its foreign key is still waiting for the event register, so there is no booking to plan against.",
+  "team.roster.publish.cta": "Publish this week",
+  "team.roster.publish.title": "Publish the roster for the week of {week}",
+  "team.roster.publish.what":
+    "Releases {n} slot(s) for the week of {week} to the people on them. You can publish a week only when everyone on it reports to you; an administrator can publish any week.",
+  "team.roster.publish.done": "The week is published",
+  "team.roster.publish.doneDetail":
+    "Everybody on this roster can now see their own shifts for the week. Changes after this point are made by an administrator.",
+  "team.roster.gap.noSlotEdit":
+    "Shifts are added and moved by an administrator, not here. Publishing releases the week as it stands — who may work which shift depends on eligibility, rest gaps and overlapping bookings, and none of that is modelled yet, so this screen will not pretend to decide it.",
+  "team.roster.gap.noEventLink":
+    "Bookings are not shown against this week yet. The event register exists and holds the venue's diary, but nothing attaches a roster slot to a booking, so every slot's event is still empty — an overlay here would be a blank band rather than information.",
   "team.roster.footnote":
     "One row per person per date, exactly as the roster holds it. A weekly off is a slot row; an empty cell is the absence of a row, which no filter can count. Draft slots are visible to you because you manage the person — the employee sees only published ones.",
 
@@ -10760,10 +10767,13 @@ export const en = catalogue({
     "Department names could not be read; the rosters themselves are correct.",
   "admin.rosterp.partial.slotLabels":
     "Names or shift codes could not be read, so those cells show a dash. The slots are correct.",
-  "admin.rosterp.gap.noWrite":
-    "This is a read console. Migration 015 states roster slot writes go through the roster edge functions or RPCs; none is deployed, and there is no publish_roster function in any migration. Publishing from a browser would also have to invent published_by and published_at and would skip the recompute the engine expects, so it is not offered.",
-  "admin.rosterp.gap.noEvents":
-    "There are no event requirements to plan against: public.events does not exist, and roster_slots.event_id is null on every row with its foreign key still deferred.",
+  "admin.rosterp.col.publish": "Publish",
+  "admin.rosterp.publish.what":
+    "Releases this week to everybody rostered on it. An administrator can publish any week; a manager only one where every person on it reports to them.",
+  "admin.rosterp.gap.noSlotEdit":
+    "Shifts are not added or moved here. Publishing releases a week as it stands — who may work which shift depends on eligibility, rest gaps and overlapping bookings, and none of that is modelled yet, so this console will not pretend to decide it.",
+  "admin.rosterp.gap.noEventLink":
+    "Bookings are kept in the event register, but no roster slot is attached to one yet, so there is no per-event requirement to plan a week against here.",
   "admin.rosterp.footnote":
     "Rosters are listed by the week they BEGIN — a week starting on a Monday in one month covers days in the next, and widening that predicate would need server-side week arithmetic this table does not offer. Every count on this screen is a Postgres count over the same predicate as the list beside it.",
 

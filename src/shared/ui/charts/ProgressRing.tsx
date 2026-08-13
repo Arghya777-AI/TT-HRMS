@@ -37,6 +37,15 @@ export interface ProgressRingProps {
   readonly color?: string;
   readonly size?: number;
   readonly className?: string;
+  /**
+   * Print the share inside the ring, under the centre figure.
+   *
+   * The ring's whole purpose is the ratio, and until now it drew the ratio
+   * without ever saying it — a reader eyeballing "about two thirds" from an arc
+   * is doing arithmetic the picture could just do for them. Off by default
+   * because at 56px there is no room for a second line.
+   */
+  readonly showPercent?: boolean;
 }
 
 export function ProgressRing({
@@ -48,6 +57,7 @@ export function ProgressRing({
   color = "hsl(var(--primary))",
   size = 112,
   className,
+  showPercent = false,
 }: ProgressRingProps) {
   const titleId = useId();
   const stroke = Math.max(6, Math.round(size * 0.09));
@@ -102,6 +112,15 @@ export function ProgressRing({
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="num font-display text-xl font-semibold leading-none">{centre}</span>
+          {/*
+            Only where there IS a ratio. With no total the arc is an empty track
+            and a "0%" under it would be a claim about a fraction nobody supplied.
+          */}
+          {showPercent && total !== null && total > 0 ? (
+            <span className="num mt-0.5 text-[0.65rem] leading-none text-muted-foreground">
+              {String(Math.round(fraction * 100))}%
+            </span>
+          ) : null}
         </div>
       </div>
       <p className="mt-2 text-center text-xs text-muted-foreground">{caption}</p>

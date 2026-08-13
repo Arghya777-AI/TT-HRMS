@@ -45,7 +45,18 @@ describe("routine admin actions do not prompt for a comment", () => {
   it("still sends a reason, because a DB trigger rejects a write without one", () => {
     // `audit.reason_required_tables` is not advisory. No reason, no write.
     expect(BUTTON).toMatch(/const derivedReason/);
-    expect(BUTTON).toMatch(/admin console: \$\{title\}/);
+    // The reason is built from WHERE it happened and WHAT was done, in that order.
+    expect(BUTTON).toMatch(/\$\{surface\}: \$\{title\}/);
+  });
+
+  it("names the surface truthfully, and defaults to the console", () => {
+    /*
+      The prefix used to be the literal "admin console", which became a small lie
+      the moment a manager published a roster from /team/roster. It is a prop now
+      — but the DEFAULT must stay "admin console", or every existing call site
+      silently starts writing a different provenance than it did yesterday.
+    */
+    expect(BUTTON).toMatch(/surface = "admin console"/);
   });
 
   it("derives a reason long enough for the strictest floor in the product", () => {
@@ -56,7 +67,7 @@ describe("routine admin actions do not prompt for a comment", () => {
       component pads rather than gambling on every title being long.
     */
     expect(BUTTON).toMatch(/length >= 20/);
-    expect(BUTTON).toMatch(/recorded from the admin console/);
+    expect(BUTTON).toMatch(/recorded from the \$\{surface\}/);
   });
 
   it("surfaces a failure instead of looking like the button did nothing", () => {

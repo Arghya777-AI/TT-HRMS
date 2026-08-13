@@ -44,6 +44,7 @@ import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField, type SelectOption } from "../components/Field";
 import { CountTile } from "../components/CountTile";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { PAYROLL_RUN_CHIP } from "../display";
 import { useAdminPayrollRuns } from "../hooks/useAdminPayroll";
 import {
@@ -265,6 +266,34 @@ export default function PayrollStatutoryPage() {
             query={counts[key]}
           />
         ))}
+      </div>
+
+      {/*
+        HOW MANY LINES EACH HEAD PRODUCED, not how much money. This screen's
+        header is explicit that there is no per-run statutory total anywhere in
+        the schema and that summing paise in the browser is exactly what it will
+        not do — so the bar is over CARDINALITY, which is what the six tiles
+        above are. Every payslip line carries one head, so the six are disjoint.
+
+        Still worth drawing: a run where PF has 80 lines and ESI has 6 is either
+        a workforce mostly above the ESI wage ceiling or a settings mistake, and
+        that is visible in a bar long before anybody reads six numbers.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.stat.mix.title")}
+          hint={t("admin.stat.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.stat.mix.total", { n: formatNumber(n) })}
+          segments={STATUTORY_HEAD_KEYS.map((key, i) => ({
+            key,
+            label: headLabel(key),
+            value: counts[key].data,
+            /* Six adjacent bands need to stay separable, and no head is "good"
+               or "bad" — so they alternate rather than carrying a judgement. */
+            tone: i % 2 === 0 ? ("employer" as const) : ("leave" as const),
+          }))}
+        />
       </div>
 
       <section className="mt-6">

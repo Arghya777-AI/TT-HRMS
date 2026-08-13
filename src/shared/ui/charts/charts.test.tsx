@@ -20,6 +20,7 @@ import { CHART_TONE, seriesColor, CHART_SERIES } from "./chartTokens";
 import { ProgressRing } from "./ProgressRing";
 import { SplitBar } from "./SplitBar";
 import { CoverageBar, coverageState, shortfall } from "./CoverageBar";
+import { StatusMixCard } from "./StatusMixCard";
 
 /* The tone map is internal to the component; mirrored here so a drift between
    meaning and colour fails a test rather than shipping. */
@@ -252,5 +253,48 @@ describe("CoverageBar", () => {
     expect(screen.getByText("4")).toBeInTheDocument();
     // No shortfall figure, because there is no target to fall short of.
     expect(screen.queryByText(/^−/)).not.toBeInTheDocument();
+  });
+});
+
+describe("StatusMixCard", () => {
+  const seg = (key: string, value: number | undefined) =>
+    ({ key, label: key, value, tone: "neutral" }) as const;
+
+  it("waits for every count rather than reading a missing one as zero", () => {
+    /*
+      THE FAILURE THIS PREVENTS: three counts land, the fourth is still in
+      flight, and the bar draws with that bucket at zero — then reshapes a moment
+      later. A reader who glanced at the first shape saw a register that does not
+      exist, and the reshape reads as the data having changed.
+    */
+    const { container } = render(
+      <StatusMixCard title="Assets" segments={[seg("a", 5), seg("b", undefined)]} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("draws once they have all arrived", () => {
+    render(<StatusMixCard title="Assets" segments={[seg("a", 5), seg("b", 3)]} />);
+    expect(screen.getByRole("heading", { name: "Assets" })).toBeInTheDocument();
+  });
+
+  it("draws nothing for an empty register", () => {
+    // "0, 0" over an empty grey track is furniture; the grid's own empty state
+    // says it better.
+    const { container } = render(
+      <StatusMixCard title="Assets" segments={[seg("a", 0), seg("b", 0)]} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("hands the caller the total so it is not summed twice", () => {
+    render(
+      <StatusMixCard
+        title="Assets"
+        segments={[seg("a", 5), seg("b", 3)]}
+        totalCaption={(n) => `${String(n)} on the register`}
+      />,
+    );
+    expect(screen.getByText("8 on the register")).toBeInTheDocument();
   });
 });

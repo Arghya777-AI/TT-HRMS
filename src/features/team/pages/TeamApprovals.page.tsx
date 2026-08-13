@@ -50,6 +50,7 @@ import { fmtCivilDate, fmtDateTime, fmtDurationFromHours } from "@/lib/datetime"
 import { dash, formatDays, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { summaryText } from "@/features/apply/api/apply.api";
 import { useAuth } from "@/app/auth/AuthProvider";
 import { Notice } from "@/features/admin/components/Notice";
@@ -437,6 +438,41 @@ export default function TeamApprovalsPage() {
         <Notice tone="warning" className="mb-4">
           {t("team.approvals.rowCap", { count: formatNumber(APPROVAL_ROW_CAP) })}
         </Notice>
+      ) : null}
+
+      {/*
+        AM I BEHIND — the same two-band split as the admin inbox, deliberately, so
+        a manager and an administrator reading the same backlog see it drawn the
+        same way.
+
+        Two bands, not three. `overdue` (is_overdue) and `escalated`
+        (escalated_at IS NOT NULL) are both subsets of `all`, but they OVERLAP each
+        other — an escalated request is usually also overdue — so a third band
+        would count those rows twice and understate the on-time share.
+      */}
+      {counts.all.data !== undefined && counts.overdue.data !== undefined ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("team.approvals.mix.title")}
+            hint={t("team.approvals.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("team.approvals.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "ontime",
+                label: t("team.approvals.mix.ontime"),
+                value: Math.max(counts.all.data - counts.overdue.data, 0),
+                tone: "present",
+              },
+              {
+                key: "overdue",
+                label: t("team.approvals.mix.overdue"),
+                value: counts.overdue.data,
+                tone: "absent",
+              },
+            ]}
+          />
+        </div>
       ) : null}
 
       {/* Server counts. Each tile filters the grid to its own predicate. */}

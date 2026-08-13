@@ -43,6 +43,7 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { dash, formatNumber } from "@/lib/format";
 import { addIstDays, compareCivilDates, fmtCivilDate, nowIstDate } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField, TextField } from "../components/Field";
@@ -386,6 +387,59 @@ export default function OnboardingPage() {
           }}
         />
       </div>
+
+      {/*
+        ARE CONFIRMATIONS SLIPPING — the question the four tiles cannot answer,
+        because three of them overlap. `dueSoon` and `overdue` are both
+        `on_probation` NARROWED by a due window, so they are subsets of the
+        probation tile; stacking all four would count the same people two and
+        three times over.
+
+        This bar partitions the probation population instead, which is exact:
+        overdue, due within thirty days, and everybody else — disjoint by
+        construction because the two windows are past and future.
+
+        The remainder IS a subtraction, and a deliberate one: all three figures
+        are server counts over the same scope, and probation ⊇ (dueSoon ∪ overdue)
+        with the two disjoint, so `probation − dueSoon − overdue` is exact rather
+        than an estimate. Clamped at zero anyway, because a negative band would be
+        a rendering bug rather than a fact.
+      */}
+      {probationCount.data !== undefined &&
+      dueSoonCount.data !== undefined &&
+      overdueCount.data !== undefined ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("admin.onboarding.mix.title")}
+            hint={t("admin.onboarding.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("admin.onboarding.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "overdue",
+                label: t("admin.onboarding.tile.overdue"),
+                value: overdueCount.data,
+                tone: "absent",
+              },
+              {
+                key: "dueSoon",
+                label: t("admin.onboarding.tile.dueSoon"),
+                value: dueSoonCount.data,
+                tone: "late",
+              },
+              {
+                key: "later",
+                label: t("admin.onboarding.mix.later"),
+                value: Math.max(
+                  probationCount.data - dueSoonCount.data - overdueCount.data,
+                  0,
+                ),
+                tone: "present",
+              },
+            ]}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <SelectField

@@ -37,6 +37,7 @@ import { dash, formatNumber } from "@/lib/format";
 import { addIstDays, fmtCivilDate, nowIstDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField, TextField } from "../components/Field";
@@ -198,6 +199,52 @@ export default function DocumentExpiryPage() {
             : t("admin.docs.exp.subtitlePlain")
         }
       />
+
+      {/*
+        COMPLIANCE, IN ONE BAR. The four bands are the whole of
+        `ComplianceStatus` and a requirement holds exactly one of them, so this is
+        a true partition — no overlap to reason about and no remainder.
+
+        MISSING AND EXPIRED ARE BOTH RED, deliberately. They are different
+        failures — one document was never collected, the other lapsed — but they
+        are the same exposure: if an inspector asks today, neither can be produced.
+        Colouring "missing" amber because it feels less like a lapse would make the
+        bar look better than the venue's position actually is.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.docs.exp.mix.title")}
+          hint={t("admin.docs.exp.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.docs.exp.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "valid",
+              label: t("admin.docs.exp.tile.valid"),
+              value: counts.valid.data,
+              tone: "present",
+            },
+            {
+              key: "expiring_soon",
+              label: t("admin.docs.exp.tile.expiring"),
+              value: counts.expiring_soon.data,
+              tone: "late",
+            },
+            {
+              key: "expired",
+              label: t("admin.docs.exp.tile.expired"),
+              value: counts.expired.data,
+              tone: "absent",
+            },
+            {
+              key: "missing",
+              label: t("admin.docs.exp.tile.missing"),
+              value: counts.missing.data,
+              tone: "absent",
+            },
+          ]}
+        />
+      </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {TILES.map((tile) => {

@@ -46,6 +46,7 @@ import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField, TextField, type SelectOption } from "../components/Field";
@@ -352,6 +353,45 @@ export default function AssetAllocationsPage() {
           </Notice>
         </div>
       ) : null}
+
+      {/*
+        WHERE CUSTODY STANDS. Three distinct `asset_allocation_status` values, so
+        the bands are disjoint. `overdue` is a tile above but not a band: it is
+        `is_return_overdue`, a property that crosses all three statuses, so
+        stacking it would count those rows twice.
+
+        What the bar says that the tiles do not: whether the pile is waiting on
+        EMPLOYEES to acknowledge receipt, or on STORES to collect returns. Those
+        are different jobs for different people.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.assets.alloc.mix.title")}
+          hint={t("admin.assets.alloc.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.assets.alloc.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "acknowledged",
+              label: t("admin.assets.alloc.tile.acknowledged"),
+              value: tileCounts.acknowledged.data,
+              tone: "present",
+            },
+            {
+              key: "allocated",
+              label: t("admin.assets.alloc.tile.awaitingAck"),
+              value: tileCounts.allocated.data,
+              tone: "late",
+            },
+            {
+              key: "return_requested",
+              label: t("admin.assets.alloc.tile.returnRequested"),
+              value: tileCounts.return_requested.data,
+              tone: "leave",
+            },
+          ]}
+        />
+      </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {TILES.map((tile) => {

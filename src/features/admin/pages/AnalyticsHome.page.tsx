@@ -221,7 +221,14 @@ export default function AnalyticsHomePage() {
 
       <div className="mt-4 space-y-3">
         <Notice tone="info">{t("admin.analytics.home.footnote")}</Notice>
-        <Notice tone="warning">{t("admin.analytics.home.gap")}</Notice>
+        {/*
+          INFO, NOT WARNING. This note is permanent, architectural, and nothing an
+          administrator can act on — three screens have no table behind them, which
+          is a roadmap fact rather than a fault in their data. Dressed as a warning
+          it read as an error somebody had to fix, and a warning triangle that
+          never clears is how people learn to ignore warning triangles.
+        */}
+        <Notice tone="info">{t("admin.analytics.home.gap")}</Notice>
       </div>
     </div>
   );

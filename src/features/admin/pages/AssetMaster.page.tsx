@@ -47,6 +47,7 @@ import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import { fmtCivilDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { SelectField, TextField, type SelectOption } from "../components/Field";
@@ -385,6 +386,38 @@ export default function AssetMasterPage() {
           </Notice>
         </div>
       ) : null}
+
+      {/*
+        The register's shape, from the SAME five counts as the tiles. Disjoint by
+        construction — `assets.status` holds one value per unit — which is what
+        makes a stacked bar honest here.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.assets.mix.title")}
+          hint={t("admin.assets.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.assets.mix.total", { n: formatNumber(n) })}
+          segments={STATUS_TILES.map((tile) => ({
+            key: tile,
+            label: ASSET_STATUS_CHIP[tile].label,
+            value: tileCounts[tile].data,
+            /* The chips' own tones, so a band never disagrees with the tile
+               above it: allocated is working stock, in-repair is a warning,
+               lost is a loss, retired is history. */
+            tone:
+              tile === "allocated"
+                ? "employer"
+                : tile === "in_stock"
+                  ? "present"
+                  : tile === "in_repair"
+                    ? "late"
+                    : tile === "lost"
+                      ? "absent"
+                      : "neutral",
+          }))}
+        />
+      </div>
 
       {/* Status tiles — server counts, each one a filter on the grid below. */}
       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">

@@ -50,6 +50,7 @@ import {
   nowIstMonth,
 } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { ReasonActionButton } from "../components/ReasonActionButton";
@@ -388,6 +389,44 @@ export default function ExitsPage() {
             : t("admin.exits.subtitle.plain")
         }
       />
+
+      {/*
+        WHAT THE VENUE STILL OWES ITS LEAVERS.
+
+        The four tiles cannot be stacked: `settlement pending` and `interview
+        pending` are both `exited` NARROWED, so they are subsets of the exited tile
+        AND overlap each other — somebody can be waiting on both.
+
+        So the bar splits the EXITED population by the one that is money:
+        settlement outstanding, versus settled. Exact, because settlement-pending
+        is a strict subset of exited. An unsettled full-and-final is a statutory
+        obligation with a clock on it, which is why it is the band drawn in red
+        rather than the exit interview.
+      */}
+      {exitedCount.data !== undefined && settlementCount.data !== undefined ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("admin.exits.mix.title")}
+            hint={t("admin.exits.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("admin.exits.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "settlement",
+                label: t("admin.exits.mix.pending"),
+                value: settlementCount.data,
+                tone: "absent",
+              },
+              {
+                key: "settled",
+                label: t("admin.exits.mix.settled"),
+                value: Math.max(exitedCount.data - settlementCount.data, 0),
+                tone: "present",
+              },
+            ]}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Tile

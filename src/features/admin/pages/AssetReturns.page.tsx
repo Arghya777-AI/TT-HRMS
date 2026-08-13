@@ -54,6 +54,7 @@ import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -305,6 +306,45 @@ export default function AssetReturnsPage() {
       {recall.userMessage !== null ? (
         <div className="mt-4">
           <Notice tone="error">{recall.userMessage}</Notice>
+        </div>
+      ) : null}
+
+      {/*
+        HOW MUCH OF WHAT MUST COME BACK IS LATE.
+
+        The three tiles above OVERLAP and cannot be stacked: `due` is
+        `expected_return_date IS NOT NULL` and `overdue` is that same column
+        `< today` (verified in the view, 003700), so every overdue item is also a
+        due one. `recalled` is `recall_requested_at IS NOT NULL`, which crosses
+        both.
+
+        So the bar splits the DUE population in two, which is exact: overdue, and
+        the rest still within time. The subtraction is safe precisely because
+        overdue is a strict subset — and clamped anyway, since a negative band
+        would be a bug rather than a fact.
+      */}
+      {tileCounts.due.data !== undefined && tileCounts.overdue.data !== undefined ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("admin.assets.returns.mix.title")}
+            hint={t("admin.assets.returns.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("admin.assets.returns.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "overdue",
+                label: t("admin.assets.returns.tile.overdue"),
+                value: tileCounts.overdue.data,
+                tone: "absent",
+              },
+              {
+                key: "within",
+                label: t("admin.assets.returns.mix.within"),
+                value: Math.max(tileCounts.due.data - tileCounts.overdue.data, 0),
+                tone: "present",
+              },
+            ]}
+          />
         </div>
       ) : null}
 

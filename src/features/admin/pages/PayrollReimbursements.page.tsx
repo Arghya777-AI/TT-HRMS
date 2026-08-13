@@ -46,6 +46,7 @@ import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import { fmtCivilDate, nowIstDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { type MessageKey, t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { qk } from "@/shared/api/keys";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
 import { useAuditedMutation } from "@/shared/hooks/useAuditedMutation";
@@ -445,6 +446,48 @@ export default function PayrollReimbursementsPage() {
               : t("admin.reimb.matchingUnknown")}
           </p>
         </div>
+      </div>
+
+      {/*
+        WHERE THE MONEY IS STUCK. Three of the four slices partition exactly:
+        `awaiting` is pending/in-progress/escalated, and `routed`/`unrouted` split
+        the approved ones by whether a payroll run has picked them up.
+
+        `paid` is a tile above and NOT a band: it is `paid_on IS NOT NULL`, which a
+        routed claim acquires once the run pays it, so it overlaps `routed` and
+        would count those rows twice.
+
+        UNROUTED is the band worth looking at. An approved claim attached to no run
+        is money somebody has been promised that no payroll will pay — invisible in
+        a list sorted by date, and obvious as a band.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.reimb.mix.title")}
+          hint={t("admin.reimb.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.reimb.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "awaiting",
+              label: t("admin.reimb.tile.awaiting"),
+              value: counts.awaiting.data,
+              tone: "late",
+            },
+            {
+              key: "unrouted",
+              label: t("admin.reimb.tile.unrouted"),
+              value: counts.unrouted.data,
+              tone: "absent",
+            },
+            {
+              key: "routed",
+              label: t("admin.reimb.tile.routed"),
+              value: counts.routed.data,
+              tone: "present",
+            },
+          ]}
+        />
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

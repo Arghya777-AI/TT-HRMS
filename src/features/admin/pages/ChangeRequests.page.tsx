@@ -72,6 +72,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { CountTile } from "../components/CountTile";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
@@ -428,6 +429,51 @@ export default function ChangeRequestsPage() {
             : t("admin.chq.subtitlePlain")
         }
       />
+
+      {/*
+        WHAT THE BACKLOG IS MADE OF — and it is the BACKLOG, not the register.
+        The three bands are disjoint (`pending`, `approved ∧ not applied`,
+        `status = failed`) but they are three of five states: applied and rejected
+        requests are finished and deliberately absent, so the caption names what
+        the whole is rather than letting a reader assume it is everything.
+
+        `sensitive` is a tile above and NOT a band here: it is `pending ∧
+        sensitive`, a subset of the first band, so drawing it would count those
+        rows twice.
+
+        The distinction the bar makes that four numbers do not: a backlog waiting
+        on APPROVAL is a queue somebody has to work through, one waiting on MANUAL
+        ENTRY is a queue somebody has already agreed to, and a FAILED one is
+        broken. They need different people.
+      */}
+      <div className="mb-4">
+        <StatusMixCard
+          title={t("admin.chq.mix.title")}
+          hint={t("admin.chq.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.chq.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "pending",
+              label: t("admin.chq.tile.pending"),
+              value: pendingCount.data,
+              tone: "late",
+            },
+            {
+              key: "manual",
+              label: t("admin.chq.tile.manual"),
+              value: manualCount.data,
+              tone: "employer",
+            },
+            {
+              key: "failed",
+              label: t("admin.chq.tile.failed"),
+              value: failedCount.data,
+              tone: "absent",
+            },
+          ]}
+        />
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <CountTile

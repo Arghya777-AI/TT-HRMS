@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
@@ -326,6 +327,46 @@ export default function DeliveryLogPage() {
           hint={t("admin.comms.del.kpi.unreadHint")}
         />
       </section>
+
+      {/*
+        DID THE MESSAGES ARRIVE. Three of the four tiles above are the delivery
+        outcome of one notification each — queued, delivered, failed — and
+        `notifications.status` holds one of them per row, so the three are
+        disjoint and the bar is exact.
+
+        `unread` is deliberately NOT a band: an unread message was delivered
+        successfully, so it belongs to the delivered slice. Adding it would count
+        those rows twice and make the failure share look smaller than it is —
+        which is the one number on this screen somebody acts on.
+      */}
+      <div className="mb-4">
+        <StatusMixCard
+          title={t("admin.comms.del.mix.title")}
+          hint={t("admin.comms.del.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.comms.del.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "delivered",
+              label: t("admin.comms.del.kpi.delivered"),
+              value: deliveredCount.data,
+              tone: "present",
+            },
+            {
+              key: "queued",
+              label: t("admin.comms.del.kpi.queued"),
+              value: queuedCount.data,
+              tone: "late",
+            },
+            {
+              key: "failed",
+              label: t("admin.comms.del.kpi.failed"),
+              value: failedCount.data,
+              tone: "absent",
+            },
+          ]}
+        />
+      </div>
 
       <div className="mb-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3">
         <TextField

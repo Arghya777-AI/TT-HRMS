@@ -18,6 +18,10 @@ export const keysAdminChangequeue = {
     "Every field change an employee has proposed, with the value on the record beside it.",
 
   // Triage tiles ------------------------------------------------------------
+  "admin.chq.mix.title": "What the backlog is made of",
+  "admin.chq.mix.hint":
+    "Only requests still needing something. One waiting on approval needs a decision, one waiting on manual entry has already been agreed, and a failed one is broken — three different people fix these.",
+  "admin.chq.mix.total": "{n} request(s) outstanding — applied and rejected ones are not counted",
   "admin.chq.tile.pending": "Waiting",
   "admin.chq.tile.pendingHint": "Proposed changes nobody has decided yet.",
   "admin.chq.tile.pendingDrill": "Open the requests still waiting",

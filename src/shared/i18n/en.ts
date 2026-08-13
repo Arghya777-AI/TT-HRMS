@@ -6653,6 +6653,10 @@ export const en = catalogue({
   "admin.reimb.matchingUnknown": "Match count unavailable",
   "admin.reimb.partial": "employee names and your approval queue",
   "admin.reimb.source.register": "the reimbursement claims register",
+  "admin.reimb.mix.title": "Where the money is stuck",
+  "admin.reimb.mix.hint":
+    "Claims by what is holding them. An approved claim attached to no payroll run is money somebody has been promised that no run will pay — that is the band to act on.",
+  "admin.reimb.mix.total": "{n} claim(s) not yet paid — already-paid claims are not counted",
   "admin.reimb.tile.awaiting": "Awaiting decision",
   "admin.reimb.tile.awaitingHint": "Claims still with an approver.",
   "admin.reimb.tile.unrouted": "Approved, no run",
@@ -6734,6 +6738,10 @@ export const en = catalogue({
   "admin.stat.head.lwf": "Labour welfare fund",
   "admin.stat.head.tds": "Income tax (TDS)",
   "admin.stat.head.gratuity": "Gratuity provision",
+  "admin.stat.mix.title": "Which heads this run produced",
+  "admin.stat.mix.hint":
+    "The number of payslip lines under each statutory head — not amounts, which this screen does not total. A head with far fewer lines than expected is either a wage ceiling doing its job or a settings mistake.",
+  "admin.stat.mix.total": "{n} statutory line(s) in this run",
   "admin.stat.rates.title": "Rates this run is pinned to",
   "admin.stat.rates.effective": "In force {from} to {to}.",
   "admin.stat.rates.empty.title": "This run has no pinned rate set",
@@ -6940,6 +6948,10 @@ export const en = catalogue({
 
   // Admin · Assets (§12) — register, allocations, returns, exit liability,
   // history, consumables.
+  "admin.assets.mix.title": "What the register holds",
+  "admin.assets.mix.hint":
+    "Every unit by its state. Allocated stock is out with somebody; in-stock is what you can issue today; anything in repair or lost is capacity you do not have.",
+  "admin.assets.mix.total": "{n} unit(s) on the register",
   "admin.assets.status.inStock": "In stock",
   "admin.assets.status.allocated": "With someone",
   "admin.assets.status.inRepair": "In repair",
@@ -7061,6 +7073,10 @@ export const en = catalogue({
   "admin.assets.alloc.title": "Allocations",
   "admin.assets.alloc.subtitle": "{n} assets are with someone right now",
   "admin.assets.alloc.subtitlePlain": "Who holds what, since when",
+  "admin.assets.alloc.mix.title": "Where custody stands",
+  "admin.assets.alloc.mix.hint":
+    "Items out with people, by what is holding them up. Waiting on acknowledgement is on the employee; a requested return is on Stores to collect.",
+  "admin.assets.alloc.mix.total": "{n} item(s) in somebody's custody",
   "admin.assets.alloc.tile.all": "Currently held",
   "admin.assets.alloc.tile.awaitingAck": "Awaiting acknowledgement",
   "admin.assets.alloc.tile.acknowledged": "Acknowledged",
@@ -7115,6 +7131,11 @@ export const en = catalogue({
   "admin.assets.returns.title": "Returns & Recalls",
   "admin.assets.returns.subtitle": "{n} in this queue",
   "admin.assets.returns.subtitlePlain": "Pending returns and recalls",
+  "admin.assets.returns.mix.title": "How much of what must come back is late",
+  "admin.assets.returns.mix.hint":
+    "Everything with a return date, split by whether that date has passed. Items with no return date at all are not counted — there is nothing to be late for.",
+  "admin.assets.returns.mix.within": "Still within time",
+  "admin.assets.returns.mix.total": "{n} item(s) with a return date",
   "admin.assets.returns.tile.overdue": "Overdue",
   "admin.assets.returns.tile.due": "Has a due date",
   "admin.assets.returns.tile.recalled": "Recall requested",
@@ -7240,6 +7261,10 @@ export const en = catalogue({
   "admin.assets.consum.noReorder": "Not set",
   "admin.assets.consum.tile.lines": "Stock lines",
   "admin.assets.consum.tile.linesHint": "Rows in consumable categories.",
+  "admin.assets.consum.mix.title": "On hand against issued",
+  "admin.assets.consum.mix.hint":
+    "Units you can still issue, against units already out. A line that is nearly all issued is one to reorder — and that is a proportion, which two numbers side by side do not make obvious.",
+  "admin.assets.consum.mix.total": "{n} unit(s) in stock or issued — lost and retired units are not counted",
   "admin.assets.consum.tile.inStock": "In stock",
   "admin.assets.consum.tile.inStockHint": "Consumable lines not issued to anyone.",
   "admin.assets.consum.tile.issued": "Issued out",
@@ -7307,7 +7332,7 @@ export const en = catalogue({
   "admin.analytics.home.builder.label": "Report builder",
   "admin.analytics.home.builder.hint": "Ad-hoc reporting arrives in a later phase; nothing backs it yet.",
   "admin.analytics.home.footnote": "Every figure here is counted by the database over the same rows the screen it opens will list. Nothing on this page is added up in the browser.",
-  "admin.analytics.home.gap": "Three screens have no relation behind their headline yet — the metric dictionary, scheduled reports and the report builder. They show a dash rather than a zero, because a zero would be a claim about your data instead of about the backend.",
+  "admin.analytics.home.gap": "Three of these screens have no table behind them yet — the metric dictionary, scheduled reports and the report builder. They show a dash, not a zero, and the difference matters: a dash means there is nothing in the database to count, while a zero (as on Exports recorded) means the table is there and genuinely empty. Nothing here is wrong with your data, and there is nothing to fix",
 
   // §14 Analytics — workforce (/admin/analytics/workforce)
   "admin.analytics.wf.title": "Workforce Analytics",
@@ -8206,6 +8231,10 @@ export const en = catalogue({
   "admin.docs.exp.title": "Expiry tracker",
   "admin.docs.exp.subtitle": "{n} required documents match.",
   "admin.docs.exp.subtitlePlain": "Licences and certificates about to lapse, and what was never provided.",
+  "admin.docs.exp.mix.title": "Where compliance stands",
+  "admin.docs.exp.mix.hint":
+    "Every document requirement by its state. Missing and expired are drawn the same colour on purpose — they are different failures, but if an inspector asks today neither can be produced.",
+  "admin.docs.exp.mix.total": "{n} requirement(s) tracked",
   "admin.docs.exp.tile.expired": "Already expired",
   "admin.docs.exp.tile.expiring": "Lapsing within 60 days",
   "admin.docs.exp.tile.missing": "Never provided",
@@ -9154,6 +9183,10 @@ export const en = catalogue({
   "admin.comms.ack.title": "Acknowledgement Compliance",
   "admin.comms.ack.subtitle": "{n} acknowledgement rows in this view.",
   "admin.comms.ack.subtitlePlain": "Who has read and signed what.",
+  "admin.comms.ack.mix.title": "How far the circulation got",
+  "admin.comms.ack.mix.hint":
+    "Every assignment by where it stands. A waiver closes a row without anybody reading the policy, so it is shown apart from a genuine acknowledgement rather than counted with it.",
+  "admin.comms.ack.mix.total": "{n} assignment(s) in total",
   "admin.comms.ack.kpi.open": "Open",
   "admin.comms.ack.kpi.openHint": "Assigned or opened, not yet signed.",
   "admin.comms.ack.kpi.acknowledged": "Signed",
@@ -9219,6 +9252,10 @@ export const en = catalogue({
   "admin.comms.del.title": "Delivery Log",
   "admin.comms.del.subtitle": "{n} notifications in this window.",
   "admin.comms.del.subtitlePlain": "Sent, delivered, opened, bounced.",
+  "admin.comms.del.mix.title": "Did the messages arrive?",
+  "admin.comms.del.mix.hint":
+    "Every notification in this window by its delivery outcome. A failed message is somebody who was never told — the share is what says whether that is a blip or a broken channel.",
+  "admin.comms.del.mix.total": "{n} message(s) in this window",
   "admin.comms.del.kpi.queued": "Queued",
   "admin.comms.del.kpi.queuedHint": "Recorded, not yet handed to a channel.",
   "admin.comms.del.kpi.delivered": "Delivered",
@@ -9530,6 +9567,11 @@ export const en = catalogue({
   "admin.onboarding.tile.dueSoon": "Confirmation due soon",
   "admin.onboarding.tile.dueSoonHint": "Confirmation date inside 30 days.",
   "admin.onboarding.tile.overdue": "Confirmation overdue",
+  "admin.onboarding.mix.title": "Are confirmations slipping?",
+  "admin.onboarding.mix.hint":
+    "Everybody on probation, by how close their confirmation is. An overdue confirmation means somebody is working without the status they were promised — and it keeps accruing leave they may not be able to take.",
+  "admin.onboarding.mix.later": "Further out",
+  "admin.onboarding.mix.total": "{n} person(s) on probation",
   "admin.onboarding.tile.overdueHint": "The due date has passed and nobody has confirmed them.",
   "admin.onboarding.col.joiner": "Joiner",
   "admin.onboarding.col.stage": "Stage",
@@ -9845,6 +9887,12 @@ export const en = catalogue({
   "admin.comms.pol.status.draft": "Draft",
   "admin.comms.pol.status.superseded": "Superseded",
   // §2 · /admin/people/exits — Exits & Clearance ------------------------------
+  "admin.exits.mix.title": "What is still owed to leavers",
+  "admin.exits.mix.hint":
+    "People who have left, by whether their full and final settlement is done. An unsettled settlement is a statutory obligation with a clock on it.",
+  "admin.exits.mix.pending": "Settlement outstanding",
+  "admin.exits.mix.settled": "Settled",
+  "admin.exits.mix.total": "{n} person(s) who have left",
   "admin.exits.title": "Exits & clearance",
   "admin.exits.subtitle.count": "{n} people in this register.",
   "admin.exits.subtitle.plain": "Notice periods, leaving dates and what is still outstanding.",
@@ -10678,6 +10726,12 @@ export const en = catalogue({
     "Shift codes could not be read, so cells show a dash where the code belongs. The slots themselves are correct.",
   "team.roster.noTeam.title": "Nobody reports to you",
   "team.roster.noTeam.hint": "This screen fills itself the moment a reporting line points at you.",
+  "team.approvals.mix.title": "Are you behind?",
+  "team.approvals.mix.hint":
+    "Everything waiting on your decision, split by whether it has passed its service level. Escalated requests are not shown separately — most are already overdue, and counting them twice would flatter the picture.",
+  "team.approvals.mix.ontime": "Still within time",
+  "team.approvals.mix.overdue": "Past its service level",
+  "team.approvals.mix.total": "{n} waiting on you",
   "team.roster.chart.title": "Cover across the week",
   "team.roster.chart.hint":
     "People rostered on each day, weekly offs excluded — an off is a slot row but not somebody working. A bar at zero means nobody is rostered that day, which the grid below shows as an empty column.",

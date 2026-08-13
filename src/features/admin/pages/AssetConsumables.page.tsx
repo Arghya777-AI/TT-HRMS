@@ -47,6 +47,7 @@ import { Money } from "@/shared/ui/Money";
 import { dash, formatNumber } from "@/lib/format";
 import { fmtCivilDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { SelectField } from "../components/Field";
@@ -251,6 +252,39 @@ export default function AssetConsumablesPage() {
           </Button>
         }
       />
+
+      {/*
+        ON HAND AGAINST ISSUED. `assets.status` holds one value per unit, so
+        in-stock and allocated are disjoint — but they are two of five states, and
+        a consumable that is lost or retired is in neither. The caption names the
+        pair rather than letting the bar imply it is the whole register.
+
+        Why it is worth a bar: a consumable line that is 90% issued is one
+        somebody needs to reorder, and that is a proportion rather than a count —
+        two numbers side by side do not make it obvious.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.assets.consum.mix.title")}
+          hint={t("admin.assets.consum.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.assets.consum.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "in_stock",
+              label: t("admin.assets.consum.tile.inStock"),
+              value: inStockCount.data,
+              tone: "present",
+            },
+            {
+              key: "issued",
+              label: t("admin.assets.consum.tile.issued"),
+              value: issuedCount.data,
+              tone: "employer",
+            },
+          ]}
+        />
+      </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {TILES.map((tile) => (

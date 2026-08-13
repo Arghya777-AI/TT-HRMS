@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
@@ -308,6 +309,46 @@ export default function AcknowledgementsPage() {
           hint={t("admin.comms.ack.kpi.waivedHint")}
         />
       </section>
+
+      {/*
+        HOW FAR THE CIRCULATION GOT. The three bands are disjoint status sets —
+        a row is assigned/opened, acknowledged, or waived, never two of them.
+
+        `overdue` is NOT a band, though it is a tile above: an overdue row is
+        still an ASSIGNED one, so adding it would count those rows twice and
+        shrink the acknowledged share, which is the number this screen exists to
+        report. Overdue is a property of the open slice, not a fourth state.
+      */}
+      <div className="mb-6">
+        <StatusMixCard
+          title={t("admin.comms.ack.mix.title")}
+          hint={t("admin.comms.ack.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.comms.ack.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "acknowledged",
+              label: t("admin.comms.ack.kpi.acknowledged"),
+              value: acknowledgedCount.data,
+              tone: "present",
+            },
+            {
+              key: "open",
+              label: t("admin.comms.ack.kpi.open"),
+              value: assignedCount.data,
+              tone: "late",
+            },
+            /* Amber, not green: a waiver closes the row without anybody reading
+               the policy, which is a decision somebody made, not compliance. */
+            {
+              key: "waived",
+              label: t("admin.comms.ack.kpi.waived"),
+              value: waivedCount.data,
+              tone: "leave",
+            },
+          ]}
+        />
+      </div>
 
       <section className="mb-8">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">

@@ -39,9 +39,26 @@ export const keysTeamCharts = {
     "Drawn from the same counts as the tiles above — the ring against your board total, the bar across the three gate states. Nothing here is added up or worked out in your browser; every figure is one the database counted.",
   "team.today.chart.ring.title": "How much of your board has scanned in",
   "team.today.chart.ring.caption": "in, of {n} on your board",
-  "team.today.chart.gate.title": "At the gate: scanned in, still due, and past grace",
+  /*
+    The note used to say the bar showed only three states, because the six
+    booleans overlapped: an approved leave day is still a "working day" to the
+    engine, so a person on leave was both off today AND past grace. Migration
+    042900 fixed that in the DATA — `board_state` gives one bucket per person —
+    so the whole board is drawn now, and the Overdue tile has stopped counting
+    people on leave as missing.
+  */
+  /*
+    The per-row day run, drawn from `f_team_day_fractions` (042900) rather than
+    from the slice-filtered day list — so a gap means "no record" and nothing
+    else.
+  */
+  "team.att.trend.days": "Each day",
+  "team.att.trend.daysTitle": "Hours {name} worked each day in this period",
+  "team.att.trend.noRecord": "No record for this day",
+
+  "team.today.chart.gate.title": "Everyone on today's board, by where they are",
   "team.today.chart.note":
-    "The bar shows only the three gate states that cannot overlap: scanned in, still inside the grace period, and past grace with no scan. People off today are not in it — an approved leave day is still a working day to the engine, so counting it in both places would show one person twice.",
+    "Every person on the board is in exactly one segment, so these add up to the headcount below. Somebody on approved leave counts as off, not as missing — until recently the Overdue tile counted them as both.",
 
   // ---------------------------------------------------------------------------
   // /team/attendance — the split inside each roll-up row

@@ -1552,6 +1552,15 @@ export const en = catalogue({
   "attendance.state.noEmployee.title": "There's no employee record on this login",
   "attendance.state.noEmployee.hint":
     "Attendance is filed against an employee record, and this login isn't linked to one. Ask HR to link it — your gate scans are still being recorded.",
+  /*
+    The status mix — the ONE division of a month that is a real partition.
+    `f_attendance_period_summary`'s day columns overlap by design (a worked
+    weekly off is in both present_days and weekly_off_days), so they must never
+    be stacked; `attendance_days.status` is one value per day and can be.
+  */
+  "attendance.mix.title": "How the month divided",
+  "attendance.mix.hint": "Every day that has a record, by what kind of day it was — {n} so far.",
+  "attendance.mix.days": "{n} days",
   "attendance.summary.missing.title": "Nothing recorded for {month}",
   "attendance.summary.missing.hint":
     "The engine has not written a single day for this month. If you worked, pick another month or raise a correction.",
@@ -5210,6 +5219,14 @@ export const en = catalogue({
   "team.today.tile.overdue": "Not scanned yet",
   "team.today.tile.onLeave": "On leave",
   "team.today.tile.off": "Off today",
+  /*
+    Two buckets of `board_state` (042900) that never had a tile. `no_shift` is a
+    rota problem, not somebody to chase; `unknown` should always be zero and is
+    charted anyway, so that if the rules ever miss a case it shows up on screen
+    instead of being folded into a neighbour.
+  */
+  "team.today.state.noShift": "No shift rostered",
+  "team.today.state.unknown": "Not classified",
   "team.today.tileHint.in": "Scanned in at the gate",
   "team.today.tileHint.yetToReach": "Shift start and grace have not passed",
   "team.today.tileHint.late": "Arrived after the grace period",
@@ -7524,7 +7541,13 @@ export const en = catalogue({
   "admin.acost.note.grainAsOf":
     "Breakdown figures come from the cost matview, refreshed {at}. Its grain is one row per pay period, department and cost centre; the monthly totals and the tiles above come from the payroll run header, which is live.",
   "admin.acost.note.noEventCost":
-    "Cost per EVENT is not shown, and is not being estimated. The events master and the roster carry who worked which function, but no deployed view attributes payroll cost to an event, so any per-event figure would be a guess dressed as a number.",
+    /*
+      Corrected: there IS no events master. `public.events` is never created in
+      any migration — 004900 registers a deferred FK pointing at it and
+      roster_slots.event_id is a bare uuid, NULL on every row. Saying the master
+      exists made this read like a missing view when it is a missing register.
+    */
+    "Cost per EVENT is not shown, and is not being estimated. There is no events register in this database at all — roster slots carry an event id that is never filled — so there is nothing to attribute cost to yet, and any per-event figure would be a guess dressed as a number.",
 
   // Admin · /admin/analytics/kiosk — Kiosk Analytics (§14)
   "admin.akiosk.title": "Kiosk Analytics",
@@ -7733,7 +7756,7 @@ export const en = catalogue({
     "Each of these would need a server relation that does not exist. They are listed rather than approximated in the browser, because a number with no owner cannot be reconciled with the database.",
   "admin.adict.absent.eventCost.name": "Cost per event or function",
   "admin.adict.absent.eventCost.why":
-    "The events master and rosters record who worked which function, but no view attributes payroll cost to an event. It needs a relation joining payslip lines to roster slots.",
+    "There is no events register in this database — `public.events` is never created, and roster_slots.event_id is NULL on every row. Rosters record who worked which shift, and attendance days already carry the roster slot they were worked against, so the missing pieces are the register itself and a view apportioning payslip cost across it.",
   "admin.adict.absent.fleetRate.name": "Fleet-wide kiosk match rate",
   "admin.adict.absent.fleetRate.why":
     "Match rate exists per device per day only. A fleet figure needs a server view that re-divides matched by attempts across devices, weighted by volume.",
@@ -9494,6 +9517,20 @@ export const en = catalogue({
   "admin.onboarding.col.confirmedOn": "Confirmed on",
   "admin.onboarding.months": "{n} months",
   "admin.onboarding.noDue": "No due date set",
+  /*
+    THE ACTION THE OVERDUE TILE WAS COUNTING AND NOBODY COULD TAKE. The database
+    has permitted an admin to append a `confirmed` lifecycle event since 011, and
+    the projection trigger sets employment_status and confirmed_on in the same
+    transaction — no code in the browser ever did it, so ending a probation meant
+    a developer running SQL.
+  */
+  "admin.onboarding.col.action": "Confirm",
+  "admin.onboarding.confirm": "Confirm",
+  "admin.onboarding.alreadyConfirmed": "Confirmed",
+  "admin.onboarding.confirm.title": "Confirm {name} in their role",
+  "admin.onboarding.confirm.description":
+    "Their probation was due to end {date}. This records a permanent lifecycle event and moves them to active — it can be reversed later only by recording another event, never edited.",
+  "admin.onboarding.confirm.cta": "Record the confirmation",
   "admin.onboarding.notConfirmed": "Not yet confirmed",
   "admin.onboarding.slice.preJoining": "Pre-joining",
   "admin.onboarding.slice.joiners": "Recent joiners",
@@ -9587,8 +9624,50 @@ export const en = catalogue({
   "admin.transfers.partial.total": "the register total",
   "admin.transfers.empty.title": "No movements in this period",
   "admin.transfers.empty.hint": "Move the month, or clear the filters.",
+  /*
+    THIS SENTENCE WAS FALSE, and the page's own header said the opposite two
+    screens up. No trigger writes a lifecycle event when a placement field
+    changes — `trg_ele__status_projection` runs the other way (event → employee)
+    and maps the four movement types to NO status change at all. So editing a
+    department appended nothing, and this notice told an administrator their
+    change had been recorded when it had not.
+  */
+  /*
+    Recording a movement — the act the Transfers screen's notice used to claim a
+    trigger performed. `ele__admin_insert` has permitted it since migration 011;
+    nothing in the browser ever did it, so the movement register stayed empty
+    however many departments were edited.
+  */
+  "admin.transfers.col.record": "Movement",
+  "admin.transfers.record": "Record",
+  "admin.movement.cta": "Record it",
+  "admin.movement.saving": "Recording…",
+  "admin.movement.title": "Record a movement",
+  "admin.movement.description":
+    "Append a permanent event to {name}'s history — a promotion, a transfer, or a change of reporting manager.",
+  "admin.movement.field.type": "What kind of movement",
+  "admin.movement.field.typeHint":
+    "None of these change the person's employment status; they record where they moved.",
+  "admin.movement.field.date": "Effective from",
+  "admin.movement.field.dateHint": "The day the movement takes effect. It cannot be in the future.",
+  "admin.movement.field.from": "Moved from",
+  "admin.movement.field.fromHint": "Optional. What they are leaving — stored on the event as typed.",
+  "admin.movement.field.to": "Moved to",
+  "admin.movement.field.toHint": "The new designation, department or manager.",
+  "admin.movement.field.toDepartment": "New department",
+  "admin.movement.field.toDepartmentPlaceholder": "Choose a department",
+  "admin.movement.liveRecordNote":
+    "This records the HISTORY. The person's live department and designation are changed on their own record — the two are separate acts, and this screen will not quietly do the other one.",
+  "admin.movement.blockers": "This movement cannot be recorded yet",
+  "admin.movement.need.employee": "Choose whose movement this is from the register.",
+  "admin.movement.need.date": "Say when the movement takes effect.",
+  "admin.movement.need.to": "Say what they moved to.",
+  "admin.movement.need.profile": "Your own profile could not be read, so the event cannot be attributed.",
+  "admin.movement.reason": "Recording a movement for {name} to {to}.",
+  "admin.movement.done": "Movement recorded",
+  "admin.movement.doneDetail": "It is in the register now, against the effective date you gave.",
   "admin.transfers.triggerNotice":
-    "Movements appear here because a database trigger writes a lifecycle event whenever a placement field changes — nothing on this screen inserts the event by hand.",
+    "A movement is recorded here, as its own event — changing a department or a designation on the employee record does NOT append one. Use Record a movement so the register and the live record agree.",
   "admin.transfers.footnote":
     "A transfer changes the live record immediately: the new department decides whose team board the person appears on and whose approvals they need, from the moment it is recorded.",
 
@@ -10060,8 +10139,20 @@ export const en = catalogue({
   "admin.rehire.tile.notEligibleHint": "Ruled out for return.",
   "admin.rehire.tile.rehired": "Rehires on record",
   "admin.rehire.tile.rehiredHint": "Recorded rehire events, all time.",
+  /*
+    The notice said the rehire could not be performed because "no RPC or edge
+    function exposes that insert" — reading the absence of an RPC as the absence
+    of a write path. `ele__admin_insert` permitted it all along.
+  */
   "admin.rehire.gapNotice":
-    "This screen can record the DECISION but cannot perform the rehire. Moving someone back to active requires a 'rehired' lifecycle event, which only the database writes — no RPC or edge function exposes that insert, so there is no honest button for it here. Re-creating the person through Add Employee is not the same thing: the employee code is immutable, so a second row splits their service, leave ledger and payroll history.",
+    "Bringing somebody back records a 'rehired' lifecycle event against their existing record, and the database turns that into their employment status. Re-creating them through Add Employee is NOT the same thing: the employee code is immutable, so a second row splits their service, leave ledger and payroll history.",
+  "admin.rehire.col.action": "Rehire",
+  "admin.rehire.bringBack": "Bring back",
+  "admin.rehire.alreadyBack": "Back on roll",
+  "admin.rehire.dialog.title": "Bring {name} back on roll",
+  "admin.rehire.dialog.description":
+    "This appends a permanent 'rehired' event to their existing record and moves their status — their service, leave ledger and payroll history stay attached. It takes effect today.",
+  "admin.rehire.dialog.cta": "Record the rehire",
   "admin.rehire.filter.decision": "Decision",
   "admin.rehire.filter.department": "Department when they left",
   "admin.rehire.filter.departmentHint": "The department on the record now, not at joining.",

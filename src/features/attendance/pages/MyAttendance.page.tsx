@@ -53,6 +53,7 @@ import { SelfPunchCard } from "../components/SelfPunchCard";
 import { PeriodBanner } from "../components/PeriodBanner";
 import { MonthDonut } from "../components/MonthDonut";
 import { MonthGlance } from "../components/MonthGlance";
+import { MonthStatusMix } from "../components/MonthStatusMix";
 import { MonthKpis } from "../components/MonthKpis";
 
 const SLICE_LABEL_KEY: Record<SliceKey, Parameters<typeof t>[0]> = {
@@ -358,6 +359,15 @@ export default function MyAttendancePage() {
           donut slice: it is the shape of the whole month, and a four-bar chart
           under a filtered register would answer a question nobody asked. */}
       <MonthGlance rows={rows} summary={summary.data ?? null} />
+
+      {/*
+        BESIDE MonthGlance, not instead of it. That panel draws the summary's day
+        columns, which answer "how many days had this property" and deliberately
+        overlap; this one draws `attendance_days.status`, which is a partition, so
+        its segments genuinely sum to the days shown. Two true questions, two
+        bars, neither pretending to be the other.
+      */}
+      <MonthStatusMix from={range.from} to={range.to} />
 
       <h2 className="mb-3 font-display text-lg font-semibold">
         {t("attendance.register.title")}

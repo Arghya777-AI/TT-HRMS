@@ -35,6 +35,7 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRight, History, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RecordMovementSheet } from "../components/RecordMovementSheet";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
@@ -180,7 +181,40 @@ export default function TransfersPage() {
   }
 
 
+  /*
+    Whose movement is being recorded. Picked from the register rather than from a
+    directory search: this screen already knows who it is showing, and a second
+    people-picker is a second chance to choose the wrong person.
+  */
+  const [movingEmployee, setMovingEmployee] = useState<
+    { readonly id: string; readonly name: string | null } | null
+  >(null);
+
   const columns: DataGridColumn<LifecycleEvent>[] = [
+    {
+      /*
+        Record ANOTHER movement for this person. The register is the natural place
+        for it — somebody who transferred last quarter is exactly who transfers
+        again, and their name and id are already on the row.
+      */
+      key: "record",
+      header: t("admin.transfers.col.record"),
+      width: "8rem",
+      render: (r) => {
+        const label = labels.data?.get(r.employee_id);
+        return (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setMovingEmployee({ id: r.employee_id, name: label?.name ?? null });
+            }}
+          >
+            {t("admin.transfers.record")}
+          </Button>
+        );
+      },
+    },
     {
       key: "effective_date",
       header: t("admin.transfers.col.effective"),
@@ -356,6 +390,13 @@ export default function TransfersPage() {
       <div className="mt-4">
         <Notice tone="warning">{t("admin.transfers.footnote")}</Notice>
       </div>
+      <RecordMovementSheet
+        open={movingEmployee !== null}
+        onOpenChange={(next) => {
+          if (!next) setMovingEmployee(null);
+        }}
+        employee={movingEmployee}
+      />
     </div>
   );
 }

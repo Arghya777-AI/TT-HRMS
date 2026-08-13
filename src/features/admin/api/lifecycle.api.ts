@@ -11,9 +11,15 @@
  *     employee_lifecycle_events and writes employment_status / confirmed_on /
  *     resignation_date / last_working_day / exit_type onto `employees`. It does
  *     NOT run the other way: changing a department or a designation on
- *     `employees` appends NO event. There is no deployed function that records a
- *     transfer or a promotion as an event, so the movement register lists the
- *     events that exist and the Transfers screen says so in as many words.
+ *     `employees` appends NO event — so a department changed directly on the
+ *     employee row is invisible to the movement register, and that remains true.
+ *
+ *     WHAT IS NO LONGER TRUE is the sentence that used to follow: that no
+ *     deployed function could record an event. `ele__admin_insert` has permitted
+ *     an administrator to append one since migration 011, and the projection
+ *     trigger runs inside the same transaction. Nothing in the BROWSER ever did
+ *     it — see `recordLifecycleEvent` at the foot of this file. An HR admin could
+ *     watch a probation end and had no way to confirm anybody.
  *  2. `confirmation_due_date` is a GENERATED STORED column
  *     (`date_of_join + probation_months`, migration 008). It is never computed
  *     here, and it cannot be written.
@@ -29,6 +35,8 @@
  */
 import { z } from "zod";
 import {
+  insertRow,
+  SENSITIVE_REASON_LENGTH,
   dbDate,
   dbDateNullable,
   dbInt,
@@ -477,4 +485,91 @@ export function movementPatch(input: MovementInput): Record<string, unknown> {
   if (input.reportingManagerId !== undefined)
     patch["reporting_manager_id"] = input.reportingManagerId;
   return patch;
+}
+
+// -----------------------------------------------------------------------------
+// Recording an event — the write nothing in the product performed
+// -----------------------------------------------------------------------------
+//
+// ── THE GAP, AND WHY IT WAS SMALLER THAN IT LOOKED ──────────────────────────
+//
+// This module's own header says "There is no deployed function that records a
+// transfer or a promotion as an event", and the Lifecycle, Onboarding, Transfers
+// and Rehire screens each say a version of the same thing. That was read as a
+// missing backend for months.
+//
+// It is not. `employee_lifecycle_events` has carried an admin INSERT policy
+// since migration 011:
+//
+//     CREATE POLICY ele__admin_insert ON public.employee_lifecycle_events
+//       FOR INSERT TO authenticated
+//       WITH CHECK (app.is_admin() AND app.admin_scope_covers(employee_id));
+//
+// and `trg_ele__status_projection` already projects the row onto `employees` —
+// employment_status, confirmed_on, resignation_date, last_working_day, exit_type.
+// So the database has been able to do this all along, correctly and in one
+// transaction. NO CODE IN THE BROWSER EVER INSERTED A ROW.
+//
+// Which means an HR admin could see that somebody's probation ended three weeks
+// ago and had no way to confirm them, on a screen whose "Overdue" tile was
+// counting exactly that.
+//
+// ── WHY AN INSERT AND NOT AN RPC ────────────────────────────────────────────
+//
+// Because the transaction is already atomic: one INSERT, and the trigger does
+// the projection inside it. An RPC would add a definer function that re-checks
+// what the policy already checks, and a second place for the two to disagree.
+// The reason travels in `x-reason` as it does for every audited write here.
+
+export interface RecordLifecycleEventInput {
+  readonly employeeId: string;
+  readonly eventType: LifecycleEventType;
+  /** The date the event TAKES EFFECT, which is not always today. */
+  readonly effectiveDate: string;
+  /** `profiles.id` of the administrator — `recorded_by` is NOT NULL. */
+  readonly recordedBy: string;
+  /**
+   * What changed, for the events the projection trigger does NOT act on
+   * (promoted, transferred, department_changed, manager_changed,
+   * salary_revised). Stored as-is on the event; nothing here interprets it.
+   */
+  readonly toValues?: Readonly<Record<string, unknown>>;
+  readonly fromValues?: Readonly<Record<string, unknown>>;
+}
+
+export const recordedLifecycleEventSchema = z.object({
+  id: dbUuid,
+  employee_id: dbUuid,
+  event_type: z.string(),
+  effective_date: dbDate,
+});
+
+export type RecordedLifecycleEvent = z.infer<typeof recordedLifecycleEventSchema>;
+
+/**
+ * Append one lifecycle event.
+ *
+ * `ck_ele__reason` requires ten characters, and the reason IS the audit record —
+ * the table is append-only (`ele_refuse_mutation` refuses DELETE and any UPDATE
+ * beyond flagging a reversal), so this sentence is permanent. A correction is a
+ * new reversing event, never an edit.
+ */
+export function recordLifecycleEvent(
+  input: RecordLifecycleEventInput,
+  reason: string,
+): Promise<RecordedLifecycleEvent> {
+  return insertRow(
+    LIFECYCLE_EVENTS_TABLE,
+    {
+      employee_id: input.employeeId,
+      event_type: input.eventType,
+      effective_date: input.effectiveDate,
+      recorded_by: input.recordedBy,
+      reason: reason.trim(),
+      ...(input.fromValues !== undefined ? { from_values: input.fromValues } : {}),
+      ...(input.toValues !== undefined ? { to_values: input.toValues } : {}),
+    },
+    recordedLifecycleEventSchema,
+    { reason, minReasonLength: SENSITIVE_REASON_LENGTH, columns: "id, employee_id, event_type, effective_date" },
+  );
 }

@@ -29,13 +29,18 @@ import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { RotateCcw, UserCheck, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
+import { ReasonDialog } from "@/shared/ui/ReasonDialog";
+import { useReasonPrompt } from "../hooks/useReasonPrompt";
+import { useRecordLifecycleEvent } from "../hooks/usePeopleLifecycle";
+import { useProfileId } from "@/shared/api/employee-scope";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { dash, formatNumber } from "@/lib/format";
-import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
+import { nowIstDate, fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
@@ -176,7 +181,47 @@ export default function RehirePage() {
     setParams(new URLSearchParams(), { replace: true });
   }
 
+  /*
+    Who is being brought back. The rehire itself is a `rehired` lifecycle event —
+    the projection trigger sets `employment_status = 'rehired'` from it, which is
+    exactly why re-creating the person is the wrong answer: one row, reactivated,
+    keeps their service, leave ledger and payroll history intact.
+  */
+  const prompt = useReasonPrompt<{ employee: LifecycleEmployee }>();
+  const rehire = useRecordLifecycleEvent();
+  const actorProfileId = useProfileId();
+
   const columns: DataGridColumn<LifecycleEmployee>[] = [
+    {
+      /*
+        THE ACT THIS SCREEN SAID IT COULD NOT PERFORM.
+
+        Its header stated that "no deployed RPC or edge function records that
+        event", and read the absence of an RPC as the absence of a write path.
+        `ele__admin_insert` (migration 011) has permitted an administrator to
+        append the event all along, and `trg_ele__status_projection` turns it into
+        `employment_status = 'rehired'` inside the same transaction. One insert,
+        one status, one history.
+      */
+      key: "rehire",
+      header: t("admin.rehire.col.action"),
+      width: "9rem",
+      render: (r) =>
+        r.employment_status === "rehired" ? (
+          <span className="text-xs text-muted-foreground">{t("admin.rehire.alreadyBack")}</span>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              prompt.ask({ employee: r });
+            }}
+          >
+            <UserCheck className="mr-1.5 size-3.5" aria-hidden />
+            {t("admin.rehire.bringBack")}
+          </Button>
+        ),
+    },
     {
       key: "display_name",
       header: t("admin.rehire.col.person"),
@@ -446,6 +491,36 @@ export default function RehirePage() {
           />
         </StateBoundary>
       </div>
+      <ReasonDialog
+        open={prompt.isOpen}
+        title={t("admin.rehire.dialog.title", {
+          name: prompt.target?.employee.display_name ?? "",
+        })}
+        description={t("admin.rehire.dialog.description")}
+        minLength={SENSITIVE_REASON_LENGTH}
+        confirmLabel={t("admin.rehire.dialog.cta")}
+        pending={rehire.isPending}
+        errorMessage={rehire.userMessage}
+        onConfirm={(reason) => {
+          const target = prompt.target;
+          if (target === null || actorProfileId === null) return;
+          rehire.save(
+            {
+              employeeId: target.employee.id,
+              eventType: "rehired",
+              /* Today: a rehire takes effect when it is decided. Backdating it
+                 would rewrite the status of days they were not employed for. */
+              effectiveDate: nowIstDate(),
+              recordedBy: actorProfileId,
+            },
+            reason,
+          );
+          prompt.close();
+        }}
+        onCancel={() => {
+          prompt.close();
+        }}
+      />
     </div>
   );
 }

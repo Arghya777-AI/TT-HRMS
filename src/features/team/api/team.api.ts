@@ -283,23 +283,61 @@ export function isTeamPresenceSlice(value: string | null): value is TeamPresence
  * `off_today` also covers weekly offs and holidays, and calling a weekly off
  * "on leave" would be a wrong number with a confident label.
  */
+/*
+  ── THE FOUR EXCLUSIVE SLICES NOW READ `board_state` ────────────────────────
+
+  `overdue` used to be `isTrue("overdue")`, and that boolean is
+
+      is_working_day AND punch_count = 0 AND past grace
+
+  where `attendance_days.is_working_day` is GENERATED as
+  `NOT is_holiday AND NOT is_weekly_off AND status NOT IN ('not_yet_joined',
+  'post_exit')`. Approved leave is not in that exclusion list, and the engine
+  writes `shift_start_at` on a leave day regardless — so every person on
+  approved leave has been counted as OVERDUE, every day, since this board was
+  written. A manager working that list has been chasing people who filed leave
+  weeks ago.
+
+  Migration 042900 added `board_state`: one exclusive value per person, in the
+  order a human triages — IN beats everything, OFF beats MISSING. The four
+  slices that are meant to be mutually exclusive now read it, so the tiles stop
+  double-counting and the numbers add up to the board.
+
+  `late` and `on_leave` deliberately keep their own predicates: they are
+  REFINEMENTS, not members of the partition. Somebody late is also in, and that
+  is the point of the tile.
+*/
 export function teamPresenceFilters(slice: TeamPresenceSlice | null): Filter[] {
   switch (slice) {
     case "in":
-      return [isTrue("attended")];
+      return [eq("board_state", "in")];
     case "yet_to_reach":
-      return [isTrue("yet_to_reach")];
+      return [eq("board_state", "yet_to_reach")];
     case "overdue":
-      return [isTrue("overdue")];
+      return [eq("board_state", "missing")];
     case "late":
       return [isTrue("late_in")];
     case "on_leave":
       return [inList("status", ["on_leave", "on_leave_half"])];
     case "off":
-      return [isTrue("off_today")];
+      return [eq("board_state", "off")];
     case null:
       return [];
   }
+}
+
+/** The exclusive buckets `board_state` divides the board into, in triage order. */
+export const BOARD_STATES = ["in", "off", "yet_to_reach", "missing", "no_shift", "unknown"] as const;
+export type BoardState = (typeof BOARD_STATES)[number];
+
+/**
+ * How many people are in one bucket. Exclusive by construction, so these counts
+ * sum to the board — which is what makes a stacked bar of them honest.
+ */
+export function countBoardState(state: BoardState, signal?: AbortSignal): Promise<number> {
+  return selectCount(V_TEAM_TODAY_BOARD, [eq("board_state", state)], {
+    ...(signal ? { signal } : {}),
+  });
 }
 
 /** Today's board for MY team. RLS decides "my"; this function does not. */

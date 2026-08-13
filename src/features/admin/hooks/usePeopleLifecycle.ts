@@ -26,7 +26,7 @@
  */
 import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
-import { shouldRetryQuery } from "@/shared/api/query";
+import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
 import { istMonthRange } from "@/lib/datetime";
 import {
   useAuditedMutation,
@@ -36,6 +36,11 @@ import {
   fetchEmployeePeriodSummary,
   type PeriodSummary,
 } from "../api/attendance.api";
+import {
+  recordLifecycleEvent,
+  type RecordLifecycleEventInput,
+  type RecordedLifecycleEvent,
+} from "../api/lifecycle.api";
 import {
   fetchCurrentSalary,
   fetchSalaryRevisions,
@@ -109,6 +114,26 @@ function eventKey(f: LifecycleEventFilters, limit: number): Record<string, unkno
  * count degrades to "—" in the header while the list still renders — the partial
  * state, not a dead screen.
  */
+/**
+ * Append a lifecycle event — a confirmation, a transfer, a reinstatement.
+ *
+ * Invalidates the admin lists rather than patching a row: the projection trigger
+ * writes `employees.employment_status` inside the same transaction, so the
+ * register, every tile and the employee's own record all move at once. A
+ * hand-patched row would show the event recorded while the status beside it
+ * still said probation.
+ */
+export function useRecordLifecycleEvent(): AuditedMutationResult<
+  RecordedLifecycleEvent,
+  RecordLifecycleEventInput
+> {
+  return useAuditedMutation<RecordedLifecycleEvent, RecordLifecycleEventInput>({
+    mutationFn: (input, reason) => recordLifecycleEvent(input, reason),
+    invalidate: [qk.admin.all],
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+  });
+}
+
 export function useLifecycleRegister(
   filters: LifecycleFilters,
   order: LifecycleOrder,

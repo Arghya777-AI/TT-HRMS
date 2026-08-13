@@ -51,6 +51,7 @@ import { CHART_TONE, type ChartTone } from "@/shared/ui/charts/chartTokens";
 import { ProgressRing } from "@/shared/ui/charts/ProgressRing";
 import { SplitBar, type SplitSegment } from "@/shared/ui/charts/SplitBar";
 import {
+  useBoardStateCount,
   useIstToday,
   useMyApprovalCount,
   useTeamPresenceCount,
@@ -59,6 +60,7 @@ import {
 import {
   DAY_STATUS_CHIP,
   isTeamPresenceSlice,
+  type BoardState,
   type TeamPresenceSlice,
   type TeamTodayRow,
 } from "../api/team.api";
@@ -97,36 +99,38 @@ const TONE_RING: Readonly<Record<string, string>> = {
  * THE THREE SLICES THAT CANNOT OVERLAP, and why the other three are not here.
  *
  * `v_attendance_today_board` derives its flags independently, so the six tiles
- * are six predicates over the same rows — NOT six buckets. Two pairs nest:
+ * WERE six predicates over the same rows — NOT six buckets — and that is why an
+ * earlier version of this bar drew only three of them.
  *
- *   • `late_in` IS `is_late`, which the engine can only set from a first punch,
- *     so every late arrival is already inside `attended` ("In").
- *   • `on_leave` is a status filter drawn from inside the wider `off_today` set.
+ * Two pairs nest: `late_in` can only be set from a first punch, so every late
+ * arrival is already inside `attended`; `on_leave` is a status drawn from inside
+ * the wider `off_today` set. And one pair genuinely double-counted, because
+ * `attendance_days.is_working_day` is GENERATED as `NOT is_holiday AND NOT
+ * is_weekly_off AND status NOT IN ('not_yet_joined','post_exit')` — approved
+ * leave is not excluded, so a leave day on an ordinary Tuesday still carries a
+ * `shift_start_at` and zero punches, and that person satisfied `off_today` AND,
+ * past grace, `overdue`.
  *
- * And one pair genuinely double-counts. `attendance_days.is_working_day` is
- * GENERATED as `NOT is_holiday AND NOT is_weekly_off AND status NOT IN
- * ('not_yet_joined','post_exit')` — approved leave is not in that exclusion
- * list, so a leave day on an ordinary Tuesday is still a working day, still
- * carries a `shift_start_at`, and still has zero punches. That person satisfies
- * `off_today` AND, the moment grace expires, `overdue`.
+ * MIGRATION 042900 FIXED THE DATA RATHER THAN THE PICTURE. `board_state` is one
+ * exclusive value per person — in / off / yet_to_reach / missing / no_shift /
+ * unknown — assigned in the order a human triages: IN beats everything, OFF
+ * beats MISSING. So the whole board can now be drawn, the segments sum to the
+ * headcount the page prints, and the Overdue tile has stopped counting people on
+ * approved leave as missing.
  *
- * A stacked bar over all six would therefore render shares of a sum that is
- * larger than the board and that this page never prints — the "second answer
- * that can disagree" this codebase keeps refusing. `attended`, `yet_to_reach`
- * and `overdue` are the three the view DOES guarantee are mutually exclusive:
- * the first needs `punch_count > 0`, the other two need `punch_count = 0` and
- * split on `now() <` versus `now() >=` the same grace instant. Only those three
- * are drawn, and the caption underneath says what was left out.
- *
- * The tone is chosen to match the tile's own border above it, so the bar and the
- * number it came from are never two colours for one fact.
+ * `unknown` is charted too, deliberately. It should always be zero; if it ever
+ * is not, the gap in the rules belongs on screen rather than folded into a
+ * neighbouring bucket where nobody would find it.
  */
-const GATE_SLICES: readonly { slice: TeamPresenceSlice; label: string; tone: ChartTone }[] = [
-  // Same catalogue keys as TILES, so a segment and its tile cannot be worded
-  // differently; the tone matches the tile's border for the same reason.
-  { slice: "in", label: t("team.today.tile.in"), tone: "present" }, // success → --success
-  { slice: "yet_to_reach", label: t("team.today.tile.yetToReach"), tone: "leave" }, // info → --info
-  { slice: "overdue", label: t("team.today.tile.overdue"), tone: "absent" }, // danger → --destructive
+const BOARD_SLICES: readonly { state: BoardState; label: string; tone: ChartTone }[] = [
+  // Same catalogue keys as TILES wherever a tile exists, so a segment and its
+  // tile cannot be worded differently; tones match the tile borders.
+  { state: "in", label: t("team.today.tile.in"), tone: "present" },
+  { state: "off", label: t("team.today.tile.off"), tone: "weeklyOff" },
+  { state: "yet_to_reach", label: t("team.today.tile.yetToReach"), tone: "leave" },
+  { state: "missing", label: t("team.today.tile.overdue"), tone: "absent" },
+  { state: "no_shift", label: t("team.today.state.noShift"), tone: "neutral" },
+  { state: "unknown", label: t("team.today.state.unknown"), tone: "late" },
 ];
 
 export default function TeamTodayPage() {
@@ -165,13 +169,28 @@ export default function TeamTodayPage() {
     NO segment, and a bar missing one of its three segments would silently
     reshape the other two, so the bar renders only once all three are in.
   */
-  const gateSegments: SplitSegment[] = GATE_SLICES.flatMap((gate) => {
-    const value = counts[gate.slice].data;
+  /*
+    One count per exclusive bucket. Each is its own query, matching how every
+    other figure on this console is produced, and the bar renders only when ALL
+    of them have arrived — a missing segment would silently reshape the others
+    into shares of a smaller whole.
+  */
+  const boardStateCounts = {
+    in: useBoardStateCount("in"),
+    off: useBoardStateCount("off"),
+    yet_to_reach: useBoardStateCount("yet_to_reach"),
+    missing: useBoardStateCount("missing"),
+    no_shift: useBoardStateCount("no_shift"),
+    unknown: useBoardStateCount("unknown"),
+  } as const satisfies Record<BoardState, ReturnType<typeof useBoardStateCount>>;
+
+  const gateSegments: SplitSegment[] = BOARD_SLICES.flatMap((bucket) => {
+    const value = boardStateCounts[bucket.state].data;
     return value === undefined
       ? []
-      : [{ key: gate.slice, label: gate.label, value, tone: gate.tone }];
+      : [{ key: bucket.state, label: bucket.label, value, tone: bucket.tone }];
   });
-  const gateReady = gateSegments.length === GATE_SLICES.length;
+  const gateReady = gateSegments.length === BOARD_SLICES.length;
 
   /*
     The ring is the one ratio on this page that is provably exact: `attended` is

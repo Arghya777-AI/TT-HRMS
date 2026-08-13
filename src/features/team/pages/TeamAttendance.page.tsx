@@ -31,6 +31,26 @@ import { StatusChip } from "@/shared/ui/StatusChip";
 import { fmtCivilDateWeekday, fmtDuration } from "@/lib/datetime";
 import { dash, formatDays, formatNumber, formatPercent } from "@/lib/format";
 import { SplitBar, type SplitSegment } from "@/shared/ui/charts/SplitBar";
+import { TrendBars } from "@/shared/ui/charts/TrendBars";
+import type { ChartTone } from "@/shared/ui/charts/chartTokens";
+import { byEmployee, fillWindow } from "../api/day-series.api";
+import { statusLabel, statusTone } from "@/features/attendance/display";
+import { fmtDurationHm } from "@/lib/datetime";
+
+/**
+ * The day badges' own tone, translated to the chart vocabulary.
+ *
+ * Routed through `statusTone` rather than a second mapping: a bar and the badge
+ * describing the same day have to be the same colour, and asking the same
+ * function is the only way to guarantee it.
+ */
+const DAY_TONE: Readonly<Record<string, ChartTone>> = {
+  success: "present",
+  warn: "late",
+  info: "leave",
+  danger: "absent",
+  neutral: "weeklyOff",
+};
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
@@ -49,6 +69,7 @@ import {
   useTeamDays,
   useTeamPeriodSummaries,
 } from "../hooks/useTeamDecisions";
+import { useTeamDaySeries } from "../hooks/useTeamToday";
 
 const SLICE_ORDER: readonly TeamDaySlice[] = [
   "all",
@@ -142,6 +163,21 @@ export default function TeamAttendancePage() {
     analytics.period.from,
     analytics.period.to,
     employeeIds,
+  );
+
+  /*
+    THE DAY RUN, from a source a gap can be trusted in.
+
+    `useTeamDays` above is slice-filtered and row-capped, so a missing day there
+    might mean "not late" or "truncated" rather than "no record" — three meanings
+    for one gap, which is why a per-row chart was declined when the visuals went
+    in. `f_team_day_fractions` (migration 042900) is unfiltered and bounded by the
+    employees asked for, so an absent date means exactly one thing.
+  */
+  const daySeries = useTeamDaySeries(employeeIds, analytics.period.from, analytics.period.to);
+  const seriesByEmployee = useMemo(
+    () => byEmployee(daySeries.data ?? []),
+    [daySeries.data],
   );
 
   // One count per slice tile, all sharing the month + roster predicate. The
@@ -319,7 +355,7 @@ export default function TeamAttendancePage() {
               skeletonRows={3}
             >
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[48rem] text-sm">
+                <table className="w-full min-w-[62rem] text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th scope="col" className="py-2 pr-4">{t("team.att.trend.person")}</th>
@@ -329,6 +365,10 @@ export default function TeamAttendancePage() {
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.lateDays")}</th>
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.latePct")}</th>
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.attendancePct")}</th>
+                      {/* The day run sits before the split, so the row reads
+                          left to right: the figures, then the shape of the
+                          period, then the shape of the totals. */}
+                      <th scope="col" className="py-2 pr-4">{t("team.att.trend.days")}</th>
                       <th scope="col" className="py-2 pr-0">{t("team.att.trend.split")}</th>
                     </tr>
                   </thead>
@@ -382,6 +422,41 @@ export default function TeamAttendancePage() {
                           <td className="num py-2 pr-4 text-right">{formatNumber(s.late_days)}</td>
                           <td className="num py-2 pr-4 text-right">{formatPercent(s.late_pct)}</td>
                           <td className="num py-2 pr-4 text-right">{formatPercent(s.attendance_pct)}</td>
+                          <td className="py-2 pr-4">
+                            {/*
+                              Hours worked per day across the period. Rendered
+                              only where the series has at least one record for
+                              this person — a row of pure gaps would say "nothing
+                              recorded" thirty times over, which the empty split
+                              bar beside it already says once.
+                            */}
+                            {(seriesByEmployee.get(s.employee_id) ?? []).length > 0 ? (
+                              <TrendBars
+                                bars={fillWindow(
+                                  seriesByEmployee.get(s.employee_id) ?? [],
+                                  analytics.period.from,
+                                  analytics.period.to,
+                                ).map((entry) => ({
+                                  key: entry.date,
+                                  label: entry.date.slice(8),
+                                  /* null, not 0: no record is not a day worked
+                                     to nothing. TrendBars draws it as a gap. */
+                                  value: entry.point === null ? null : entry.point.worked_minutes,
+                                  tone: entry.point === null ? "neutral" : DAY_TONE[statusTone(entry.point.status)] ?? "neutral",
+                                  caption:
+                                    entry.point === null
+                                      ? t("team.att.trend.noRecord")
+                                      : statusLabel(entry.point.status),
+                                }))}
+                                title={t("team.att.trend.daysTitle", {
+                                  name: who?.name ?? dash(who?.code),
+                                })}
+                                format={(v) => fmtDurationHm(v)}
+                                height={44}
+                                className="min-w-[10rem]"
+                              />
+                            ) : null}
+                          </td>
                           <td className="py-2 pr-0">
                             <SplitBar
                               segments={splitSegments}

@@ -29,6 +29,12 @@ import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ClipboardList, FileText, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ReasonDialog } from "@/shared/ui/ReasonDialog";
+import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
+import { useProfileId } from "@/shared/api/employee-scope";
+import { useReasonPrompt } from "../hooks/useReasonPrompt";
+import { useRecordLifecycleEvent } from "../hooks/usePeopleLifecycle";
+import { CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
@@ -189,6 +195,17 @@ export default function OnboardingPage() {
     setParams(new URLSearchParams(), { replace: true });
   }
 
+  /*
+    Confirming a probation is a SENSITIVE, permanent, append-only act — the event
+    row cannot be edited afterwards, only reversed by another event. So it goes
+    through the reason dialog every other sensitive admin change uses, and the
+    sentence typed there becomes the event's own `reason`.
+  */
+  const prompt = useReasonPrompt<{ employee: LifecycleEmployee }>();
+  const confirmEvent = useRecordLifecycleEvent();
+  const actorProfileId = useProfileId();
+  const confirming = confirmEvent.isPending ? (prompt.target?.employee.id ?? null) : null;
+
   const columns: DataGridColumn<LifecycleEmployee>[] = [
     {
       key: "display_name",
@@ -268,6 +285,43 @@ export default function OnboardingPage() {
       header: t("admin.onboarding.col.manager"),
       hideBelow: "lg",
       render: (r) => dash(r.reporting_manager_name),
+    },
+    {
+      /*
+        THE ACTION THE OVERDUE TILE WAS COUNTING AND NOBODY COULD TAKE.
+
+        This screen has always been able to show that somebody's probation ended
+        three weeks ago. It could not confirm them: no code in the browser ever
+        wrote `employee_lifecycle_events`, so the only way to end a probation was
+        for a developer to run SQL.
+
+        The database was ready the whole time — `ele__admin_insert` (migration
+        011) permits an administrator to append the event, and
+        `trg_ele__status_projection` writes `employment_status = 'active'` and
+        `confirmed_on` inside the same transaction. So confirming is ONE insert,
+        and the register, the tiles and the employee's own record all move
+        together.
+      */
+      key: "confirm",
+      header: t("admin.onboarding.col.action"),
+      width: "9rem",
+      align: "right",
+      render: (r) =>
+        r.confirmed_on !== null ? (
+          <span className="text-xs text-muted-foreground">{t("admin.onboarding.alreadyConfirmed")}</span>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={confirming !== null}
+            onClick={() => {
+              prompt.ask({ employee: r });
+            }}
+          >
+            <CheckCircle2 className="mr-1.5 size-3.5" aria-hidden />
+            {t("admin.onboarding.confirm")}
+          </Button>
+        ),
     },
   ];
 
@@ -425,7 +479,45 @@ export default function OnboardingPage() {
       <div className="mt-4">
         <Notice tone="info">{t("admin.onboarding.footnote")}</Notice>
       </div>
+
+      <ReasonDialog
+        open={prompt.isOpen}
+        title={t("admin.onboarding.confirm.title", {
+          name: prompt.target?.employee.display_name ?? "",
+        })}
+        description={t("admin.onboarding.confirm.description", {
+          date: fmtCivilDate(prompt.target?.employee.confirmation_due_date ?? null),
+        })}
+        minLength={SENSITIVE_REASON_LENGTH}
+        confirmLabel={t("admin.onboarding.confirm.cta")}
+        pending={confirmEvent.isPending}
+        errorMessage={confirmEvent.userMessage}
+        onConfirm={(reason) => {
+          const target = prompt.target;
+          if (target === null || actorProfileId === null) return;
+          confirmEvent.save(
+            {
+              employeeId: target.employee.id,
+              eventType: "confirmed",
+              /*
+                TODAY, not the due date. The confirmation takes effect when it is
+                decided — backdating it to a due date three weeks ago would
+                rewrite three weeks of employment status, and the projection
+                trigger would happily do it.
+              */
+              effectiveDate: today,
+              recordedBy: actorProfileId,
+            },
+            reason,
+          );
+          prompt.close();
+        }}
+        onCancel={() => {
+          prompt.close();
+        }}
+      />
     </div>
+
   );
 }
 

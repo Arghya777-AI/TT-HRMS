@@ -21,10 +21,13 @@
 import { useMemo } from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { fetchTeamDaySeries, type TeamDayPoint } from "../api/day-series.api";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { nowIstDate } from "@/lib/datetime";
 import { useAuth } from "@/app/auth/AuthProvider";
 import {
+  countBoardState,
+  type BoardState,
   countMyApprovalInbox,
   countTeamEdges,
   countTeamPresence,
@@ -90,6 +93,43 @@ export function useTeamPresenceCount(slice: TeamPresenceSlice | null, istDate: s
     queryKey: qk.team.today({ date: istDate, slice: slice ?? "all", agg: "count" }),
     queryFn: ({ signal }) => countTeamPresence(slice, signal),
     refetchInterval: TEAM_BOARD_REFETCH_MS,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * How many people are in ONE exclusive board bucket (migration 042900).
+ *
+ * Separate from `useTeamPresenceCount` because the two answer different
+ * questions: that one counts a SLICE, which may overlap another slice (somebody
+ * late is also in), while this counts a BUCKET, and the buckets sum to the
+ * board. Only the second kind may be stacked into a bar.
+ */
+export function useBoardStateCount(state: BoardState): Count {
+  return useQuery({
+    queryKey: qk.team.today({ boardState: state, agg: "count" }),
+    queryFn: ({ signal }) => countBoardState(state, signal),
+    refetchInterval: TEAM_BOARD_REFETCH_MS,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * The unfiltered day series for the employees currently on screen.
+ *
+ * Keyed on the employee ids so a different page of people is a different cache
+ * entry, and disabled when there is nobody to ask about — an empty array would
+ * return every row RLS allows, which is not what "no rows to draw" means.
+ */
+export function useTeamDaySeries(
+  employeeIds: readonly string[],
+  from: string,
+  to: string,
+): UseQueryResult<TeamDayPoint[], Error> {
+  return useQuery({
+    queryKey: qk.team.list({ entity: "day-series", from, to, ids: [...employeeIds].sort() }),
+    queryFn: ({ signal }) => fetchTeamDaySeries(employeeIds, from, to, signal),
+    enabled: employeeIds.length > 0,
     retry: shouldRetryQuery,
   });
 }

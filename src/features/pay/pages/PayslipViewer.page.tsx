@@ -154,9 +154,14 @@ export default function PayslipViewerPage() {
   const mastheadPartial = issuer.error ?? employee.error ?? statutory.error ?? account.error;
 
   return (
-    <div className="space-y-6">
+    /*
+      `data-print="payslip"` is what the print rule in index.css keeps on the
+      page — see the Download button below for why printing is the download.
+    */
+    <div className="space-y-6" data-print="payslip">
       <Link
         to="/me/payslips"
+        data-print-hide
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -570,13 +575,34 @@ export default function PayslipViewerPage() {
             </section>
 
             {/* ------------------------------------------------------- actions */}
-            <section id="pdf" className="rounded-lg border bg-card p-4">
+            <section id="pdf" className="rounded-lg border bg-card p-4" data-print-hide>
               <h2 className="font-display text-base font-semibold">
                 {t("pay.viewer.actions.heading")}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">{t("pay.viewer.pdf.note")}</p>
 
               <div className="mt-3 flex flex-wrap items-center gap-3">
+                {/*
+                  A DOWNLOAD THAT DOES NOT WAIT FOR A DEPLOY.
+
+                  Reported: "we can see all details but no download button". Every
+                  branch below depends on `pdf_document_id`, which is written by
+                  the `payslip-publish` edge function — real, pdf-lib based, and
+                  never deployed on this project. So the payslip renders in full
+                  and offers nothing to take away, which is the wrong way round:
+                  the numbers on screen ARE the payslip.
+
+                  Printing is the browser's own PDF writer. It needs no function,
+                  no storage object and no `documents` row, and what it produces
+                  is a real file that can be sent to a bank. When the function is
+                  deployed the signed-PDF branch below appears alongside it — the
+                  official copy and this one can both exist.
+                */}
+                <Button variant="outline" size="sm" onClick={() => window.print()}>
+                  <Download className="mr-1.5 h-4 w-4" aria-hidden />
+                  {t("pay.viewer.pdf.print")}
+                </Button>
+
                 {header.pdf_document_id === null ? (
                   <p className="text-sm text-muted-foreground">{t("pay.viewer.pdf.none")}</p>
                 ) : pdf.data != null ? (

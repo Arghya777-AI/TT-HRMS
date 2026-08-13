@@ -357,3 +357,53 @@
     --tw-ring-color: hsl(var(--destructive));
   }
 }
+
+@media print {
+  /*
+    PRINTING A PAYSLIP IS HOW YOU DOWNLOAD ONE, UNTIL THE GENERATOR IS DEPLOYED.
+
+    `payslip-publish` renders a real PDF with pdf-lib and stores it against the
+    payslip — but it has never been deployed here, so `pdf_document_id` is NULL
+    on every row and the download branch never rendered. Reported as: "we can see
+    all details but no download button".
+
+    The browser's own print-to-PDF needs no edge function, no storage object and
+    no `documents` row, and produces a file somebody can actually send to a bank.
+    These rules make what it produces a payslip rather than a screenshot of an
+    application: the rail, the top bar, the buttons and anything marked
+    `data-print-hide` come off, and the payslip fills the page.
+
+    Kept in one place rather than as a print-only component, because a second
+    rendering of a payslip is a second set of numbers that can disagree with the
+    first.
+  */
+  [data-print="payslip"] {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
+
+  body > *:not(:has([data-print="payslip"])) {
+    display: none !important;
+  }
+
+  [data-print-hide],
+  nav,
+  header[role="banner"],
+  aside {
+    display: none !important;
+  }
+
+  /* Cards keep their border but lose the screen's shadows and tinted fills,
+     which print as grey blocks and cost a cartridge for no information. */
+  [data-print="payslip"] * {
+    box-shadow: none !important;
+    background-image: none !important;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}

@@ -1802,7 +1802,13 @@ export const en = catalogue({
     "The PDF is the document payroll published and signed. Your browser downloads that file rather than drawing a second copy of it.",
   "pay.viewer.pdf.get": "Get the published PDF",
   "pay.viewer.pdf.ready": "Download {file}",
-  "pay.viewer.pdf.none": "Payroll has not attached a PDF to this payslip.",
+  /*
+    The signed PDF comes from the `payslip-publish` edge function, which is real
+    and not deployed here — so this sentence was the whole answer to "download my
+    payslip". The print action below is the one that works today.
+  */
+  "pay.viewer.pdf.none": "Payroll has not attached a signed PDF to this payslip yet.",
+  "pay.viewer.pdf.print": "Download as PDF",
   "pay.viewer.query": "Query this payslip",
   "pay.viewer.query.closed":
     "The {days}-day window to query this payslip has closed.",

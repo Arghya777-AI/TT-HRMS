@@ -57,7 +57,7 @@ import { Label } from "@/components/ui/label";
 import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { resignationReasonValues, type ResignationReason } from "../api/simple-requests.api";
 import {
   useOpenResignation,
@@ -236,6 +236,7 @@ export default function ResignationPage() {
   if (noticeDays === null) resignBlockers.push(t("apply.resign.blocked.notice"));
 
   return (
+    <SubmitAttemptScope attempt={attempt}>
     <div>
       <PageHeader
         icon={LogOut}
@@ -367,6 +368,7 @@ export default function ResignationPage() {
                       <Required />
                     </Label>
                     <textarea
+        required
                       id="rg-waiver"
                       rows={2}
                       maxLength={1000}
@@ -782,5 +784,6 @@ export default function ResignationPage() {
         </section>
       </div>
     </div>
+    </SubmitAttemptScope>
   );
 }

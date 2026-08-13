@@ -53,7 +53,7 @@ import { Label } from "@/components/ui/label";
 import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { ASSET_REQUEST_MAX_QUANTITY } from "../api/simple-requests.api";
 import { dash, formatNumber } from "@/lib/format";
@@ -197,6 +197,7 @@ export default function AssetRequestPage() {
   }
 
   return (
+    <SubmitAttemptScope attempt={attempt}>
     <div>
       <PageHeader
         icon={Package}
@@ -222,6 +223,7 @@ export default function AssetRequestPage() {
             <div>
               <Label htmlFor="ar-cat">{t("apply.asset.field.category")}<Required /></Label>
               <select
+        required
                 id="ar-cat"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
@@ -237,6 +239,7 @@ export default function AssetRequestPage() {
             <div>
               <Label htmlFor="ar-qty">{t("apply.asset.field.quantity")}<Required /></Label>
               <Input
+        required
                 id="ar-qty"
                 type="number"
                 min={1}
@@ -264,6 +267,7 @@ export default function AssetRequestPage() {
           <div className="mt-3">
             <Label htmlFor="ar-reason">{t("apply.asset.field.reason")}<Required /></Label>
             <textarea
+        required
               id="ar-reason"
               rows={3}
               maxLength={1000}
@@ -480,5 +484,6 @@ export default function AssetRequestPage() {
         </section>
       </div>
     </div>
+    </SubmitAttemptScope>
   );
 }

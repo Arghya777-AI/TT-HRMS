@@ -25,6 +25,7 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
 import { Money } from "@/shared/ui/Money";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { t } from "@/shared/i18n/en";
@@ -152,13 +153,27 @@ export default function MyPayslipsPage() {
           >
             {t("pay.list.view")}
           </Link>
+          {/*
+            DOWNLOAD FROM THE LIST, not three clicks in.
+
+            This was a link to `#pdf` on the payslip viewer — so getting a copy
+            meant: open the payslip, scroll to the actions block, press "Get the
+            PDF" to mint a link, then press the link. Four steps to do the thing
+            people come to this screen for.
+
+            `DocumentOpenButtons` is the same control every other document uses:
+            it calls `document-access`, which records the access BEFORE the URL
+            exists and returns a signed link that expires. Download is allowed
+            here — unlike on the policy register — because a payslip is the
+            employee's own record and keeping a copy is the point of it.
+          */}
           {row.pdf_document_id !== null ? (
-            <Link
-              to={`/me/payslips/${periodKey(row)}#pdf`}
-              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-            >
-              {t("pay.list.pdf")}
-            </Link>
+            <DocumentOpenButtons
+              documentId={row.pdf_document_id}
+              title={t("pay.list.pdf")}
+              variant="text"
+              allowDownload
+            />
           ) : null}
         </span>
       ),

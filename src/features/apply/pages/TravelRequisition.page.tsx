@@ -54,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { Required } from "@/shared/ui/Required";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import { rupeesToPaise } from "../api/claim-submit.api";
 import { useSubmitTravelRequisition } from "../hooks/useApply";
@@ -171,6 +171,7 @@ export default function TravelRequisitionPage() {
   if (advance.trim() !== "" && rupeesToPaise(advance) === null) trBlockers.push(t("apply.travel.blocked.cost"));
 
   return (
+    <SubmitAttemptScope attempt={attempt}>
     <div>
       <PageHeader
         icon={Plane}
@@ -203,12 +204,14 @@ export default function TravelRequisitionPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <Label htmlFor="tr-from">{t("apply.travel.field.from")}<Required /></Label>
-              <Input id="tr-from" className="mt-1.5 h-11" value={fromLoc}
+              <Input
+        required id="tr-from" className="mt-1.5 h-11" value={fromLoc}
                 onChange={(e) => setFromLoc(e.target.value)} />
             </div>
             <div>
               <Label htmlFor="tr-to">{t("apply.travel.field.to")}<Required /></Label>
-              <Input id="tr-to" className="mt-1.5 h-11" value={toLoc}
+              <Input
+        required id="tr-to" className="mt-1.5 h-11" value={toLoc}
                 onChange={(e) => setToLoc(e.target.value)} />
             </div>
             <div>
@@ -236,7 +239,8 @@ export default function TravelRequisitionPage() {
 
           <div className="mt-3">
             <Label htmlFor="tr-purpose">{t("apply.travel.field.purpose")}<Required /></Label>
-            <textarea id="tr-purpose" rows={3} maxLength={500} value={purpose}
+            <textarea
+        required id="tr-purpose" rows={3} maxLength={500} value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
               className="mt-1.5 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
             <p className="mt-1 text-xs text-muted-foreground">{t("form.needTen")}</p>
@@ -406,5 +410,6 @@ export default function TravelRequisitionPage() {
         </section>
       </div>
     </div>
+    </SubmitAttemptScope>
   );
 }

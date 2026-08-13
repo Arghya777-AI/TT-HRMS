@@ -61,7 +61,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { t } from "@/shared/i18n/en";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtCivilDayMonthWeekday, nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -421,6 +421,7 @@ export default function LeaveApplicationPage() {
   }
 
   return (
+    <SubmitAttemptScope attempt={attempt}>
     <div className="container py-6">
       <PageHeader
         icon={CalendarPlus}
@@ -985,5 +986,6 @@ export default function LeaveApplicationPage() {
         </div>
       </StateBoundary>
     </div>
+    </SubmitAttemptScope>
   );
 }

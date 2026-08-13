@@ -66,6 +66,7 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
       dueIsTimestamp: true,
       overdue: row.is_overdue === true,
       to: "/team/approvals",
+      raisedAt: row.submitted_at,
     });
   }
 
@@ -83,6 +84,7 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
       dueIsTimestamp: false,
       overdue: ack.status === "overdue" || isPastCivilDate(ack.due_on),
       to: `/me/policies/${ack.document_id}`,
+      raisedAt: ack.assigned_at,
     });
   }
 
@@ -103,6 +105,8 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
       dueIsTimestamp: false,
       overdue: gap.compliance_status === "expired",
       to: "/me/profile/documents",
+      // A missing document is a standing gap with no moment of arrival.
+      raisedAt: null,
     });
   }
 
@@ -120,11 +124,31 @@ function buildActions(data: PendingActionsResult): PendingAction[] {
       dueIsTimestamp: false,
       overdue: asset.is_return_overdue === true,
       to: "/me/assets",
+      raisedAt: asset.allocated_at,
     });
   }
 
-  // overdue DESC, then due ASC (no deadline last), then stable by id.
+  /*
+    NEWEST FIRST, and overdue no longer jumps the queue.
+
+    The order was: overdue, then earliest deadline. Defensible for a to-do list
+    and wrong for this screen — something raised a minute ago landed at the
+    bottom, under items due weeks earlier, and the person who had just raised it
+    could not find it. Reported as "show action which is latest not just random":
+    it was not random, it was sorted by a key nobody could see.
+
+    So the default is the one people expect of an inbox — the most recent arrival
+    on top — and urgency is still visible as the Overdue badge and still
+    available by pressing the DUE header, which sorts. Items with no arrival time
+    (a standing document gap) fall to the bottom rather than to the top, where a
+    null would otherwise pin them permanently.
+  */
   return out.sort((a, b) => {
+    if (a.raisedAt === null && b.raisedAt !== null) return 1;
+    if (a.raisedAt !== null && b.raisedAt === null) return -1;
+    if (a.raisedAt !== null && b.raisedAt !== null && a.raisedAt !== b.raisedAt) {
+      return a.raisedAt < b.raisedAt ? 1 : -1;
+    }
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
     if (a.dueOn === null && b.dueOn !== null) return 1;
     if (a.dueOn !== null && b.dueOn === null) return -1;
@@ -163,9 +187,31 @@ export default function ApprovalsPage() {
       render: (row) => row.detail,
     },
     {
+      /*
+        WHEN IT ARRIVED, which the list is now sorted by.
+
+        A grid ordered by a column it does not show reads as unordered — that is
+        exactly what was reported. Showing the key makes the order legible, and
+        `sortable` lets somebody flip to oldest-first without going anywhere else.
+      */
+      key: "raisedAt",
+      header: t("approvals.col.raised"),
+      width: "13rem",
+      hideBelow: "md",
+      sortable: true,
+      sortValue: (row) => row.raisedAt,
+      render: (row) => (
+        <span className="num text-sm">{row.raisedAt === null ? dash(null) : fmtDateTime(row.raisedAt)}</span>
+      ),
+    },
+    {
       key: "due",
       header: t("approvals.col.due"),
       width: "14rem",
+      // Sortable too: urgency is still one press away, it is just no longer the
+      // only order on offer.
+      sortable: true,
+      sortValue: (row) => row.dueOn,
       render: (row) => (
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="num">

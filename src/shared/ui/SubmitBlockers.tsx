@@ -27,7 +27,15 @@
  * RED, not amber. Amber reads as advice; this is a refusal, and it was reported
  * as wanting to be a "red color box".
  */
-import { useCallback, useRef, useState, type RefObject } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 export interface SubmitAttempt {
   /** True once the person has pressed the button with something outstanding. */
@@ -50,6 +58,58 @@ export interface SubmitAttempt {
  * "say how many days" before they have had a chance to type anything. After the
  * first press the list stays live, so fixing a field makes its line disappear.
  */
+/**
+ * Has this form been submitted with something missing?
+ *
+ * ── WHY A CONTEXT AND NOT A PROP ON EVERY FIELD ────────────────────────────
+ *
+ * Asked for: "if user has not filled any mandatory field across the website then
+ * mark it is red when user is submitting form".
+ *
+ * `SubmitBlockers` already lists what is missing, but the LIST is not where
+ * somebody looks — they look at the form. Wiring that per field would mean an
+ * `error` prop on every control in every form, computed twice (once for the
+ * blocker sentence, once for the field), and the two would drift the first time
+ * a rule changed.
+ *
+ * A field already knows the two things that decide this: whether it is
+ * `required`, and whether it is empty. The only fact it lacks is whether the
+ * button has been pressed — so that is the only fact this carries. Any field
+ * inside the scope turns red on the press, and forms need no per-field edits.
+ *
+ * Default `false` means a field outside a scope behaves exactly as before.
+ */
+const SubmitAttemptContext = createContext(false);
+
+/** Wrap the fields of a form so `required` ones can go red on a failed press. */
+export function SubmitAttemptScope({
+  attempt,
+  children,
+}: {
+  readonly attempt: SubmitAttempt;
+  readonly children: ReactNode;
+}) {
+  return (
+    <SubmitAttemptContext.Provider value={attempt.attempted}>
+      {/*
+        `data-submit-attempted` is what reaches the RAW controls. The employee
+        forms are built from plain <Input>, <select> and <textarea> rather than
+        the admin Field atoms, so a React context cannot colour them — but one
+        CSS rule in index.css can, keyed off this attribute and the control's own
+        native `required`. That attribute is the correct markup anyway: it is
+        what a screen reader announces, and it means a form added next year
+        inherits this with no code at all.
+      */}
+      <div data-submit-attempted={attempt.attempted ? "true" : undefined}>{children}</div>
+    </SubmitAttemptContext.Provider>
+  );
+}
+
+/** True once the form has been submitted with a blocker outstanding. */
+export function useSubmitAttempted(): boolean {
+  return useContext(SubmitAttemptContext);
+}
+
 export function useSubmitAttempt(): SubmitAttempt {
   const [attempted, setAttempted] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);

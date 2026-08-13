@@ -219,6 +219,18 @@ export interface PendingAction {
   readonly overdue: boolean;
   /** Where the employee goes to do it. */
   readonly to: string;
+  /**
+   * WHEN THIS ARRIVED — the server's own timestamp for each source:
+   * `submitted_at` for a decision, `assigned_at` for a policy, `allocated_at`
+   * for an asset. Null where the source has no such column (a missing document
+   * is a standing gap, not an event).
+   *
+   * Added because the list was ordered by DEADLINE only, so something raised a
+   * minute ago sat at the bottom under items due weeks earlier, and the person
+   * who had just submitted it could not find it. Reported as: "show action which
+   * is latest not just random".
+   */
+  readonly raisedAt: string | null;
 }
 
 export interface PendingActionsPayload {

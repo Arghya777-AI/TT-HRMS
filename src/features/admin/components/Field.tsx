@@ -13,6 +13,8 @@ import { useId, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { t } from "@/shared/i18n/en";
+import { useSubmitAttempted } from "@/shared/ui/SubmitBlockers";
 
 interface BaseProps {
   label: string;
@@ -60,6 +62,26 @@ function Frame({
   );
 }
 
+/**
+ * The error to show on a field, which may be the one the CALLER passed or the one
+ * a failed submit implies.
+ *
+ * A required field that is empty after the button has been pressed is missing —
+ * that is the whole rule, and neither the caller nor this atom has to say it
+ * twice. `caller` always wins: a specific message ("That date is in the future")
+ * is more useful than "This is required".
+ */
+function fieldError(
+  caller: string | null | undefined,
+  required: boolean | undefined,
+  value: string,
+  attempted: boolean,
+): string | undefined {
+  if (caller != null && caller !== "") return caller;
+  if (required === true && attempted && value.trim() === "") return t("form.field.required");
+  return undefined;
+}
+
 const CONTROL_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -86,22 +108,20 @@ export function SelectField({
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
-  const described = [base.hint ? hintId : null, base.error ? errorId : null]
+  const error = fieldError(base.error, base.required, value, useSubmitAttempted());
+  const described = [base.hint ? hintId : null, error ? errorId : null]
     .filter((v): v is string => v !== null)
     .join(" ");
   return (
-    <Frame {...base} id={id} hintId={hintId} errorId={errorId}>
+    <Frame {...base} error={error} id={id} hintId={hintId} errorId={errorId}>
       <select
         id={id}
         value={value}
         disabled={base.disabled ?? false}
-        aria-invalid={base.error != null && base.error !== ""}
+        aria-invalid={error !== undefined}
         {...(described !== "" ? { "aria-describedby": described } : {})}
         onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          CONTROL_CLASS,
-          base.error != null && base.error !== "" && "border-destructive",
-        )}
+        className={cn(CONTROL_CLASS, error !== undefined && "border-destructive")}
       >
         {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
         {options.map((option) => (
@@ -145,17 +165,18 @@ export function TextField({
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
-  const described = [base.hint ? hintId : null, base.error ? errorId : null]
+  const error = fieldError(base.error, base.required, value, useSubmitAttempted());
+  const described = [base.hint ? hintId : null, error ? errorId : null]
     .filter((v): v is string => v !== null)
     .join(" ");
   return (
-    <Frame {...base} id={id} hintId={hintId} errorId={errorId}>
+    <Frame {...base} error={error} id={id} hintId={hintId} errorId={errorId}>
       <Input
         id={id}
         type={type}
         value={value}
         disabled={base.disabled ?? false}
-        aria-invalid={base.error != null && base.error !== ""}
+        aria-invalid={error !== undefined}
         {...(described !== "" ? { "aria-describedby": described } : {})}
         {...(placeholder !== undefined ? { placeholder } : {})}
         {...(inputMode !== undefined ? { inputMode } : {})}
@@ -163,7 +184,7 @@ export function TextField({
         {...(max !== undefined ? { max } : {})}
         {...(step !== undefined ? { step } : {})}
         onChange={(event) => onChange(event.target.value)}
-        className={cn(base.error != null && base.error !== "" && "border-destructive")}
+        className={cn(error !== undefined && "border-destructive")}
       />
     </Frame>
   );

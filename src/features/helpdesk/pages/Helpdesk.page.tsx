@@ -41,7 +41,7 @@
  *
  * @route /me/helpdesk
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClipboardList, FileText, LifeBuoy, MessageSquare, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -58,11 +58,20 @@ import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/features/admin/components/Notice";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { fmtDateTime, nowIstDate } from "@/lib/datetime";
 import { type MessageKey, t } from "@/shared/i18n/en";
 import { documentKindValues, type DocumentKind } from "@/features/apply/api/simple-requests.api";
-import { useSubmitDocumentRequest } from "@/features/apply/hooks/useApply";
+import {
+  useMyOpenRequestsOfType,
+  useRequestTypeByCode,
+  useSubmitDocumentRequest,
+} from "@/features/apply/hooks/useApply";
+import { OpenRequestsGrid } from "@/features/apply/components/OpenRequestsGrid";
+import {
+  REQUEST_CODE_DOCUMENT,
+  REQUEST_CODE_PAYSLIP,
+} from "@/features/apply/api/simple-requests.api";
 import {
   canReply,
   helpdeskDeskValues,
@@ -214,13 +223,53 @@ export default function HelpdeskPage() {
   const [periodTo, setPeriodTo] = useState("");
   const [docSent, setDocSent] = useState<string | null>(null);
   const sendDoc = useSubmitDocumentRequest();
+  /*
+    Their own document requests — BOTH types, which is the whole subtlety.
+
+    `submitDocumentRequest` files a payslip under `PAYSLIP_REQUEST` and every
+    other kind under `DOCUMENT_REQUEST` (simple-requests.api.ts:404), because the
+    two have different approval chains. Asking for one type listed exactly half of
+    what somebody had asked for, and the half it dropped was payslips — the most
+    commonly requested document of the lot. Reported as: "previously employee
+    requested for payslip that request is visible at approval but not at
+    helpdesk".
+
+    Read by CODE rather than a hard-coded id: the ids differ per deployment.
+  */
+  const docType = useRequestTypeByCode(REQUEST_CODE_DOCUMENT);
+  const payslipType = useRequestTypeByCode(REQUEST_CODE_PAYSLIP);
+  const docOnly = useMyOpenRequestsOfType(docType.data?.id);
+  const payslipOnly = useMyOpenRequestsOfType(payslipType.data?.id);
+
+  /* One list, newest first — the two chains are an internal detail, not
+     something an employee should have to know to find their own request. */
+  const myDocRequests = useMemo(() => {
+    const rows = [...(docOnly.data?.rows ?? []), ...(payslipOnly.data?.rows ?? [])].sort((a, b) =>
+      a.submitted_at < b.submitted_at ? 1 : a.submitted_at > b.submitted_at ? -1 : 0,
+    );
+    return {
+      rows,
+      approvers: { ...(docOnly.data?.approvers ?? {}), ...(payslipOnly.data?.approvers ?? {}) },
+    };
+  }, [docOnly.data, payslipOnly.data]);
+
+  const docRequestsPending = docOnly.isLoading || payslipOnly.isLoading;
+  const docRequestsError = docOnly.error ?? payslipOnly.error ?? undefined;
   const docAttempt = useSubmitAttempt();
 
   const periodic = PERIODIC_KINDS.includes(kind);
 
   const docBlockers: string[] = [];
   if (note.trim().length < 10) docBlockers.push(t("helpdesk.doc.blocked.note"));
-  if (kind === "payslip" && periodFrom === "") docBlockers.push(t("helpdesk.doc.blocked.period"));
+  /*
+    BOTH ENDS, for a payslip. Only `periodFrom` was checked, so "from 01-Apr" with
+    no end date passed the form and reached the database as an open-ended period
+    — which is not a payslip request anybody can fulfil. Asked for: "star mark
+    period from and to because it should be compulsory if it is asked for
+    payslip".
+  */
+  if (kind === "payslip" && periodFrom === "") docBlockers.push(t("helpdesk.doc.blocked.periodFrom"));
+  if (kind === "payslip" && periodTo === "") docBlockers.push(t("helpdesk.doc.blocked.periodTo"));
   if (periodFrom !== "" && periodFrom > today) docBlockers.push(t("helpdesk.doc.blocked.future"));
   if (periodTo !== "" && periodTo > today) docBlockers.push(t("helpdesk.doc.blocked.future"));
   if (periodFrom !== "" && periodTo !== "" && periodTo < periodFrom) {
@@ -285,6 +334,28 @@ export default function HelpdeskPage() {
       render: (row) => <StatusChip status={row.status} map={TICKET_STATUS_MAP} />,
     },
     {
+      /*
+        WHO HAS IT — the question every requester actually has, and the one this
+        list did not answer. It showed a status chip and left "is anybody looking
+        at this" to be inferred from it.
+
+        NOT A NAME. `assigned_to` is a `profiles.id`, and an employee may read
+        only their OWN profile row (`profiles__self_read`) — so the name is not
+        theirs to see, and embedding it would render an empty column that looks
+        like a fault. What IS visible and true is whether the desk has picked it
+        up, which is the half that changes what the requester does next.
+      */
+      key: "assigned_to",
+      header: t("helpdesk.col.with"),
+      width: "12rem",
+      render: (row) =>
+        row.assigned_to === null ? (
+          <Badge variant="warning">{t("helpdesk.with.unclaimed")}</Badge>
+        ) : (
+          <span className="text-sm text-muted-foreground">{t("helpdesk.with.claimed")}</span>
+        ),
+    },
+    {
       key: "created_at",
       header: t("helpdesk.col.raised"),
       width: "13rem",
@@ -307,6 +378,7 @@ export default function HelpdeskPage() {
         <div className="mt-4"><Notice tone="success">{t("helpdesk.new.done", { ref: ticketSent })}</Notice></div>
       ) : null}
 
+      <SubmitAttemptScope attempt={ticketAttempt}>
       <section className="mt-4 rounded-lg border bg-card p-4" aria-labelledby="hd-new">
         <h2 id="hd-new" className="flex items-center gap-2 font-display text-lg font-semibold">
           <LifeBuoy className="size-4 text-muted-foreground" aria-hidden />
@@ -346,6 +418,7 @@ export default function HelpdeskPage() {
         <div className="mt-3">
           <Label htmlFor="hd-subject">{t("helpdesk.new.subject")}<Required /></Label>
           <Input
+        required
             id="hd-subject"
             className="mt-1.5 h-11"
             maxLength={200}
@@ -357,6 +430,7 @@ export default function HelpdeskPage() {
         <div className="mt-3">
           <Label htmlFor="hd-detail">{t("helpdesk.new.detail")}<Required /></Label>
           <textarea
+        required
             id="hd-detail"
             rows={3}
             maxLength={5000}
@@ -407,6 +481,8 @@ export default function HelpdeskPage() {
         </Button>
       </section>
 
+      </SubmitAttemptScope>
+
       {/* ── My tickets ───────────────────────────────────────────────────── */}
       <section className="mt-6" aria-labelledby="hd-mine">
         <h2 id="hd-mine" className="font-display text-lg font-semibold">
@@ -441,12 +517,31 @@ export default function HelpdeskPage() {
         <div className="mt-6"><Notice tone="success">{t("helpdesk.doc.done")}</Notice></div>
       ) : null}
 
+      <SubmitAttemptScope attempt={docAttempt}>
       <section className="mt-6 rounded-lg border bg-card p-4" aria-labelledby="dr-form">
         <h2 id="dr-form" className="flex items-center gap-2 font-display text-lg font-semibold">
           <FileText className="size-4 text-muted-foreground" aria-hidden />
           {t("helpdesk.doc.title")}
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">{t("helpdesk.doc.hint")}</p>
+
+        {/*
+          A payslip is usually already downloadable, and asking HR for one they
+          can fetch themselves costs the employee days and HR an errand. Shown
+          only for the payslip kind — the same sentence under "letter for a bank"
+          would be wrong, because nobody can self-serve that.
+        */}
+        {kind === "payslip" ? (
+          <Notice tone="info">
+            <p className="font-medium">{t("helpdesk.doc.selfServe.title")}</p>
+            <p className="mt-1">
+              {t("helpdesk.doc.selfServe.hint")}{" "}
+              <Link to="/me/payslips" className="font-medium text-primary underline-offset-4 hover:underline">
+                {t("helpdesk.doc.selfServe.link")}
+              </Link>
+            </p>
+          </Notice>
+        ) : null}
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
@@ -481,8 +576,19 @@ export default function HelpdeskPage() {
           {periodic ? (
             <>
               <div>
-                <Label htmlFor="dr-pf">{t("helpdesk.doc.periodFrom")}</Label>
+                <Label htmlFor="dr-pf">
+                  {t("helpdesk.doc.periodFrom")}
+                  {/*
+                    Starred only where it is genuinely required. A payslip is FOR
+                    a month — the server refuses one without a period
+                    (`ck_dr__payslip_needs_period`) — while a salary certificate
+                    or a Form 16 can be asked for without naming a range.
+                    Starring it on every kind would be a lie on two of the three.
+                  */}
+                  {kind === "payslip" ? <Required /> : null}
+                </Label>
                 <Input
+        required
                   id="dr-pf"
                   type="date"
                   max={today}
@@ -492,8 +598,12 @@ export default function HelpdeskPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="dr-pt">{t("helpdesk.doc.periodTo")}</Label>
+                <Label htmlFor="dr-pt">
+                  {t("helpdesk.doc.periodTo")}
+                  {kind === "payslip" ? <Required /> : null}
+                </Label>
                 <Input
+        required
                   id="dr-pt"
                   type="date"
                   max={today}
@@ -510,6 +620,7 @@ export default function HelpdeskPage() {
         <div className="mt-3">
           <Label htmlFor="dr-note">{t("helpdesk.doc.note")}<Required /></Label>
           <textarea
+        required
             id="dr-note"
             rows={3}
             maxLength={1000}
@@ -567,6 +678,47 @@ export default function HelpdeskPage() {
         </Button>
 
         <p className="mt-3 text-xs text-muted-foreground">{t("helpdesk.doc.track")}</p>
+      </section>
+      </SubmitAttemptScope>
+
+      {/* ── What they have already asked HR for ──────────────────────────── */}
+      {/*
+        REPORTED: "if employee has asked somethings then table below list of
+        their request".
+
+        The form above raises a DOCUMENT REQUEST, not a helpdesk ticket, so
+        nothing it produces appears in "My tickets" — an employee could send three
+        payslip requests and this page would look exactly as it did before they
+        started. The footnote told them to go and look under Approvals, which is
+        a different screen for a thing they raised on this one.
+
+        `OpenRequestsGrid` is the same list the Apply launcher shows, including
+        the "With" column that resolves the current approver to a name. Reused
+        rather than rebuilt, so a request cannot read one way here and another
+        way there.
+      */}
+      <section className="mt-6" aria-labelledby="dr-mine">
+        <h2 id="dr-mine" className="font-display text-lg font-semibold">
+          {t("helpdesk.doc.mine.title")}
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{t("helpdesk.doc.mine.hint")}</p>
+        <div className="mt-3">
+          <StateBoundary
+            loading={docRequestsPending}
+            error={docRequestsError}
+            onRetry={() => {
+              void docOnly.refetch();
+              void payslipOnly.refetch();
+            }}
+          >
+            <OpenRequestsGrid
+              rows={myDocRequests.rows}
+              approvers={myDocRequests.approvers}
+              emptyTitle={t("helpdesk.doc.mine.empty.title")}
+              emptyHint={t("helpdesk.doc.mine.empty.hint")}
+            />
+          </StateBoundary>
+        </div>
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

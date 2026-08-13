@@ -651,6 +651,8 @@ export const en = catalogue({
   "approvals.col.detail": "Detail",
   "approvals.col.kind": "Kind",
   "approvals.col.due": "Due",
+  // The column the list is sorted by; showing it is what makes the order legible.
+  "approvals.col.raised": "Raised",
   "approvals.col.action": "Action",
   "approvals.open": "Open",
   "approvals.kind.decision": "Decision",

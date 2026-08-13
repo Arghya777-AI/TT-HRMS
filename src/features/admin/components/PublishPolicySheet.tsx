@@ -36,7 +36,7 @@ import {
 import { Notice } from "./Notice";
 import { SelectField, TextField } from "./Field";
 import { Required } from "@/shared/ui/Required";
-import { SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { t } from "@/shared/i18n/en";
 import { formatNumber } from "@/lib/format";
@@ -216,6 +216,7 @@ export function PublishPolicySheet({
           </SheetDescription>
         </SheetHeader>
 
+        <SubmitAttemptScope attempt={attempt}>
         <div className="mt-6 space-y-4">
           {uploadedId !== null && publish.userMessage !== null ? (
             <Notice tone="warning">
@@ -372,6 +373,7 @@ export function PublishPolicySheet({
             </Button>
           </div>
         </div>
+        </SubmitAttemptScope>
       </SheetContent>
     </Sheet>
   );

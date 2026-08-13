@@ -326,3 +326,34 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+@layer utilities {
+  /*
+    A MANDATORY FIELD LEFT EMPTY GOES RED — ONCE THE BUTTON HAS BEEN PRESSED.
+
+    Asked for: "if user has not filled any mandatory field across the website
+    then mark it is red when user is submitting form".
+
+    `SubmitBlockers` already listed what was missing, but a list above the button
+    is not where somebody looks — they look at the field. Doing this per control
+    would mean an `error` prop on every input in every form, computed twice (once
+    for the blocker sentence, once for the field) and drifting apart the first
+    time a rule changed.
+
+    So it is two facts that already exist. The control carries the native
+    `required` attribute, which is what a screen reader announces anyway, and
+    `SubmitAttemptScope` stamps `data-submit-attempted` on the wrapper the moment
+    a press finds something missing. `:invalid` is then the browser's own
+    judgement of empty-and-required, not a second opinion this file maintains.
+
+    Nothing is coloured before the press: a form that shouts at you for fields
+    you have not reached yet is worse than one that says nothing.
+  */
+  [data-submit-attempted="true"] :is(input, select, textarea):invalid {
+    border-color: hsl(var(--destructive));
+  }
+
+  [data-submit-attempted="true"] :is(input, select, textarea):invalid:focus-visible {
+    --tw-ring-color: hsl(var(--destructive));
+  }
+}

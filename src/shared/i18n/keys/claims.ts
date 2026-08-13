@@ -191,8 +191,8 @@ export const keysClaims = {
   "helpdesk.doc.addressedTo": "Addressed to (optional)",
   "helpdesk.doc.addressedTo.hint": "The bank, consulate or landlord it must be written to.",
   "helpdesk.doc.note": "Anything HR should know",
-  "helpdesk.doc.periodFrom": "Period from (optional)",
-  "helpdesk.doc.periodTo": "Period to (optional)",
+  "helpdesk.doc.periodFrom": "Period from",
+  "helpdesk.doc.periodTo": "Period to",
   "helpdesk.doc.send": "Send the request",
   "helpdesk.doc.sending": "Sending…",
   "helpdesk.doc.done": "Sent. HR has it now and you can follow it under Approvals.",
@@ -211,7 +211,9 @@ export const keysClaims = {
   "helpdesk.doc.kind.visa_letter": "Letter for a visa",
   "helpdesk.doc.kind.noc": "No-objection certificate",
   "helpdesk.doc.kind.other": "Something else",
-  "helpdesk.doc.blocked.period": "A payslip needs a month — say which one.",
+  /* Split in two: only the FROM date was checked, so an open-ended period passed. */
+  "helpdesk.doc.blocked.periodFrom": "A payslip is for a month — say which month it starts.",
+  "helpdesk.doc.blocked.periodTo": "Say which month the payslip period ends.",
   "helpdesk.doc.blocked.future": "That period has not happened yet. Ask for it once it is over.",
   "helpdesk.doc.blocked.order": "The period cannot end before it starts.",
   "helpdesk.doc.track": "You can follow it under Approvals. HR is notified as soon as you send it.",
@@ -274,6 +276,30 @@ export const keysClaims = {
   "helpdesk.col.desk": "Desk",
   "helpdesk.col.status": "State",
   "helpdesk.col.raised": "Raised",
+  /*
+    The requester may read only their OWN profile row (`profiles__self_read`), so
+    the assignee's NAME is not theirs to see and embedding it would render an
+    empty column that looks like a fault. This says whether the desk has picked
+    the ticket up, which is the half that changes what they do next.
+  */
+  "helpdesk.col.with": "With",
+  /*
+    The document form on /me/helpdesk raises a DOCUMENT REQUEST, not a ticket, so
+    nothing it produces shows up in "My tickets". Without this list an employee
+    could send three payslip requests and the page would look untouched.
+  */
+  "helpdesk.doc.selfServe.title": "You may not need to ask",
+  "helpdesk.doc.selfServe.hint":
+    "Payslips already issued to you can be downloaded straight away — no request, no waiting.",
+  "helpdesk.doc.selfServe.link": "Go to Salary and payslips",
+  "helpdesk.doc.mine.title": "What you have asked HR for",
+  "helpdesk.doc.mine.hint":
+    "Every document request you have raised, and who it is waiting on right now.",
+  "helpdesk.doc.mine.empty.title": "You have not asked for a document yet",
+  "helpdesk.doc.mine.empty.hint":
+    "Anything you request above appears here with its reference and its current approver.",
+  "helpdesk.with.unclaimed": "Not picked up yet",
+  "helpdesk.with.claimed": "Someone is on it",
   "helpdesk.col.lateReply": "Reply overdue",
   "helpdesk.col.lateFix": "Fix overdue",
   "helpdesk.ticket.status.open": "Open",
@@ -413,6 +439,9 @@ export const keysClaims = {
     the button did nothing.
   */
   "form.needTen": "At least 10 characters.",
+  /* Shown on a required field left empty when the button was pressed. Any
+     message the caller supplies wins over it. */
+  "form.field.required": "This one is needed.",
   "form.required": "(required)",
   "register.filter.type": "Kind of request",
   "register.filter.allTypes": "All kinds",

@@ -39,7 +39,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { mutationUserMessage } from "@/shared/api/query";
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
-import { blockerButtonProps, SubmitBlockers, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
+import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttempt } from "@/shared/ui/SubmitBlockers";
 import { nowIstDate } from "@/lib/datetime";
 import {
   webPunchDirectionValues,
@@ -116,6 +116,7 @@ export default function WebPunchRequestPage() {
   if (reason.trim().length < 10) blockers.push(t("apply.webpunch.blocked.reason"));
 
   return (
+    <SubmitAttemptScope attempt={attempt}>
     <div>
       <PageHeader
         icon={ScanFace}
@@ -380,5 +381,6 @@ export default function WebPunchRequestPage() {
         </section>
       </div>
     </div>
+    </SubmitAttemptScope>
   );
 }

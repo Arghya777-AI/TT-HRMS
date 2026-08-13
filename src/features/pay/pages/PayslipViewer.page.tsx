@@ -34,9 +34,13 @@ import { ErrorState } from "@/shared/ui/ErrorState";
 import { KpiTile } from "@/shared/ui/KpiTile";
 import { Money } from "@/shared/ui/Money";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { PayslipDocumentActions } from "../components/PayslipDocumentActions";
+import type { PayslipPdfInput } from "../payslipPdf";
+import { SplitBar } from "@/shared/ui/charts/SplitBar";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { t } from "@/shared/i18n/en";
+import { MASKED_INR_SHAPE, formatPaise } from "@/lib/money";
 import {
   fmtCivilDate,
   fmtCivilMonth,
@@ -44,12 +48,14 @@ import {
   civilDayOffset,
   isIstMonthKey,
   istMonthRange,
+  nowInstantIso,
   nowIstDate,
 } from "@/lib/datetime";
 import { dash, formatDays, formatDaysFixed } from "@/lib/format";
 // The attendance domain's own hook, on purpose: same key, same cached row from
 // f_attendance_period_summary as `/me/attendance` shows for this month.
 import { useAttendancePeriodSummary } from "@/features/attendance/hooks/useAttendance";
+import { fetchPayslipPdf } from "../api/pay.api";
 import {
   useMyEmployeeRef,
   useMyPayoutAccount,
@@ -91,6 +97,16 @@ export default function PayslipViewerPage() {
   const masked = !reveal.revealed;
   const validPeriod = isIstMonthKey(period);
 
+  /*
+    The bars obey the session reveal exactly as `<Money>` does — same mask
+    constant, same formatter, one gate. A bar may show the SHAPE while masked
+    (that is a proportion, not a figure); its legend and its tooltips print
+    '₹•,••,•••' until Show amounts is pressed, so no amount reaches the screen
+    through a chart that the page itself is still hiding.
+  */
+  const formatMoney = (paise: number): string =>
+    masked ? MASKED_INR_SHAPE : formatPaise(paise);
+
   const payslip = usePayslipByPeriod(validPeriod ? period : undefined);
   const rows = payslip.data ?? [];
   const header = payslipHeader(rows);
@@ -107,6 +123,7 @@ export default function PayslipViewerPage() {
 
   const [wantPdf, setWantPdf] = useState(false);
   const pdf = usePayslipPdf(header?.pdf_document_id ?? null, wantPdf);
+
 
   if (!validPeriod) {
     return (
@@ -132,7 +149,56 @@ export default function PayslipViewerPage() {
   const earnings = linesOfKind(rows, "earning");
   const deductions = linesOfKind(rows, "deduction");
   const employerLines = linesOfKind(rows, "employer_contribution");
+
+  /*
+    Everything the PDF needs, taken from the SAME rows this page renders. Nothing
+    is recomputed for the document — a second arithmetic is a second answer.
+  */
+  const pdfInput: PayslipPdfInput | null =
+    header === null
+      ? null
+      : {
+          header,
+          earnings,
+          deductions,
+          employerLines,
+          issuer: {
+            legalName: issuer.data?.legal_name ?? null,
+            tradeName: issuer.data?.trade_name ?? null,
+          },
+          employee: {
+            name: employee.data?.display_name ?? null,
+            code: employee.data?.employee_code ?? null,
+            designation: employee.data?.designation_name ?? null,
+            department: employee.data?.department_name ?? null,
+            location: employee.data?.location_name ?? null,
+            dateOfJoining: employee.data?.date_of_join ?? null,
+          },
+          bank: {
+            /* The schema exposes `account_number_last4`; the masking dots are a
+               presentation choice, applied here so the PDF reads like the screen. */
+            maskedNumber:
+              account.data?.account_number_last4 == null
+                ? null
+                : `••••••${account.data.account_number_last4}`,
+            bankName: account.data?.bank_name ?? null,
+          },
+          statutory: {
+            pan: statutory.data?.pan_masked ?? null,
+            uan: statutory.data?.uan_masked ?? null,
+            pf: statutory.data?.pf_number_masked ?? null,
+          },
+          periodLabel: fmtCivilMonth(period),
+          generatedAtIso: nowInstantIso(),
+        };
   const otherLines: PayslipLineRow[] = OTHER_LINE_KINDS.flatMap((kind) => linesOfKind(rows, kind));
+
+  /**
+   * `employer_contributions_paise` is nullable in `v_payslip_detail` — a run
+   * that stamped no employer figure has no (C) to draw against (A), and a bar
+   * of one segment states nothing. No figure, no bar.
+   */
+  const employerPaise = header?.employer_contributions_paise ?? null;
 
   const summary = attendance.data ?? null;
   /**
@@ -174,7 +240,27 @@ export default function PayslipViewerPage() {
         {...(header === null
           ? {}
           : { subtitle: t("pay.viewer.subtitle", { number: header.payslip_number }) })}
-        actions={<ShowAmounts reveal={reveal} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            {/*
+              The document actions sit BESIDE Show amounts, at the top. The old
+              print button lived below the year-to-date tiles — past the whole
+              payslip — which is not where anybody looks for "give me a copy".
+            */}
+            <PayslipDocumentActions
+              input={pdfInput}
+              officialUrl={
+                header?.pdf_document_id == null
+                  ? null
+                  : async () => {
+                      const doc = await fetchPayslipPdf(header.pdf_document_id ?? "");
+                      return doc?.url ?? null;
+                    }
+              }
+            />
+            <ShowAmounts reveal={reveal} />
+          </div>
+        }
       />
       <RevealNote reveal={reveal} />
 
@@ -356,6 +442,42 @@ export default function PayslipViewerPage() {
                   </dd>
                 </div>
               </dl>
+
+              {/*
+                The three figures above, as rectangles. It answers the one
+                question the numbers make you do arithmetic for — how much of
+                gross actually reached me — and it answers it with the SAME
+                header columns printed beside it: net pay and total deductions,
+                neither summed nor scaled here. The bar states no total of its
+                own, so there is nothing for it to disagree with A − B about,
+                and the tiles stay exactly where they were.
+              */}
+              {header.gross_earnings_paise > 0 ? (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t("pay.viewer.split.net.label")}
+                  </p>
+                  <SplitBar
+                    title={t("pay.viewer.split.net.title")}
+                    format={formatMoney}
+                    segments={[
+                      {
+                        key: "net",
+                        label: t("pay.viewer.net"),
+                        value: header.net_pay_paise,
+                        tone: "earning",
+                      },
+                      {
+                        key: "deductions",
+                        label: t("pay.viewer.totalDeductions"),
+                        value: header.total_deductions_paise,
+                        tone: "deduction",
+                      },
+                    ]}
+                  />
+                </div>
+              ) : null}
+
               <Separator className="my-3" />
               <p className="text-sm">
                 <span className="text-muted-foreground">{t("pay.viewer.netWords")}: </span>
@@ -393,6 +515,41 @@ export default function PayslipViewerPage() {
                 </Fact>
               </dl>
               <p className="mt-2 text-xs text-muted-foreground">{t("pay.viewer.ctc.note")}</p>
+
+              {/*
+                (A) and (C) side by side, which is the whole point of the
+                section: employer contributions are a slice of what the company
+                SPENT, not a slice of what you were paid. Drawing them against
+                gross — never against net, never in the deductions colour —
+                is the same claim the note above makes, in a shape. Both values
+                are header columns; the whole they add up to is the CTC figure
+                stated immediately above, which is why no total is drawn here.
+              */}
+              {employerPaise !== null && employerPaise > 0 && header.gross_earnings_paise > 0 ? (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t("pay.viewer.split.ctc.label")}
+                  </p>
+                  <SplitBar
+                    title={t("pay.viewer.split.ctc.title")}
+                    format={formatMoney}
+                    segments={[
+                      {
+                        key: "gross",
+                        label: t("pay.viewer.gross"),
+                        value: header.gross_earnings_paise,
+                        tone: "earning",
+                      },
+                      {
+                        key: "employer",
+                        label: t("pay.viewer.employerTotal"),
+                        value: employerPaise,
+                        tone: "employer",
+                      },
+                    ]}
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* --------------------------------------------------- other lines */}
@@ -583,25 +740,12 @@ export default function PayslipViewerPage() {
 
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 {/*
-                  A DOWNLOAD THAT DOES NOT WAIT FOR A DEPLOY.
-
-                  Reported: "we can see all details but no download button". Every
-                  branch below depends on `pdf_document_id`, which is written by
-                  the `payslip-publish` edge function — real, pdf-lib based, and
-                  never deployed on this project. So the payslip renders in full
-                  and offers nothing to take away, which is the wrong way round:
-                  the numbers on screen ARE the payslip.
-
-                  Printing is the browser's own PDF writer. It needs no function,
-                  no storage object and no `documents` row, and what it produces
-                  is a real file that can be sent to a bank. When the function is
-                  deployed the signed-PDF branch below appears alongside it — the
-                  official copy and this one can both exist.
+                  The print button that was here is gone. It produced masked
+                  amounts, the assistant bubble and a URL footer; View and
+                  Download at the top of the page produce a real payslip. Two
+                  buttons doing the same job to different standards is how the
+                  worse one gets pressed.
                 */}
-                <Button variant="outline" size="sm" onClick={() => window.print()}>
-                  <Download className="mr-1.5 h-4 w-4" aria-hidden />
-                  {t("pay.viewer.pdf.print")}
-                </Button>
 
                 {header.pdf_document_id === null ? (
                   <p className="text-sm text-muted-foreground">{t("pay.viewer.pdf.none")}</p>

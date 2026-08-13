@@ -90,6 +90,13 @@ export const ADMIN_ROUTES = {
   announcements: "/admin/comms/announcements",
   analytics: "/admin/analytics",
   alerts: "/admin/alerts",
+  /**
+   * The feed filtered to one severity. `/admin/alerts` reads `?severity=` through
+   * `asKnown(…, EXCEPTION_SEVERITIES)`, so the value handed in here has to be one
+   * the view actually emits — anything else lands on the unfiltered feed rather
+   * than on a predicate that matches nothing.
+   */
+  alertsBySeverity: (severity: string) => `/admin/alerts?severity=${severity}`,
   tasks: "/admin/tasks",
 } as const;
 

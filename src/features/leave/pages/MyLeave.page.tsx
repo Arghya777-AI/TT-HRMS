@@ -29,6 +29,7 @@ import { useLeaveTypeRules, useMyLeaveContext, useWithdrawLeave } from "../hooks
 import { isProbationLocked, type LeaveTypeRule } from "../api/leave-apply.api";
 import type { LeaveBalance, LeaveRequest, LeaveRequestStatus } from "../api/leave.api";
 import { LeaveBalanceCard } from "../components/LeaveBalanceCard";
+import { LeaveBalanceRings } from "../components/LeaveBalanceRings";
 import { fmtDays, LEAVE_STATUS_MAP } from "../components/leave-vocab";
 import { toast } from "sonner";
 
@@ -276,6 +277,11 @@ export default function MyLeavePage() {
           partialLabel={t("leave.apply.rules.title")}
           skeletonRows={2}
         >
+          {/* The ratio the cards cannot show: taken against granted, per type.
+              Same rows, same columns, above the cards rather than in place of
+              them — "7 left" reads differently on a 30-day entitlement. */}
+          <LeaveBalanceRings balances={cardBalances} />
+
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {cardBalances.map((balance) => {
               const rule = ruleByTypeId.get(balance.leave_type_id);

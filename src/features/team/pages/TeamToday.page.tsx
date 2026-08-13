@@ -47,6 +47,9 @@ import { t } from "@/shared/i18n/en";
 // `Notice` is the one honest banner. Forking either would fork its defect fix.
 import { PersonCell } from "@/features/admin/components/PersonCell";
 import { Notice } from "@/features/admin/components/Notice";
+import { CHART_TONE, type ChartTone } from "@/shared/ui/charts/chartTokens";
+import { ProgressRing } from "@/shared/ui/charts/ProgressRing";
+import { SplitBar, type SplitSegment } from "@/shared/ui/charts/SplitBar";
 import {
   useIstToday,
   useMyApprovalCount,
@@ -90,6 +93,42 @@ const TONE_RING: Readonly<Record<string, string>> = {
   neutral: "border-border",
 };
 
+/**
+ * THE THREE SLICES THAT CANNOT OVERLAP, and why the other three are not here.
+ *
+ * `v_attendance_today_board` derives its flags independently, so the six tiles
+ * are six predicates over the same rows — NOT six buckets. Two pairs nest:
+ *
+ *   • `late_in` IS `is_late`, which the engine can only set from a first punch,
+ *     so every late arrival is already inside `attended` ("In").
+ *   • `on_leave` is a status filter drawn from inside the wider `off_today` set.
+ *
+ * And one pair genuinely double-counts. `attendance_days.is_working_day` is
+ * GENERATED as `NOT is_holiday AND NOT is_weekly_off AND status NOT IN
+ * ('not_yet_joined','post_exit')` — approved leave is not in that exclusion
+ * list, so a leave day on an ordinary Tuesday is still a working day, still
+ * carries a `shift_start_at`, and still has zero punches. That person satisfies
+ * `off_today` AND, the moment grace expires, `overdue`.
+ *
+ * A stacked bar over all six would therefore render shares of a sum that is
+ * larger than the board and that this page never prints — the "second answer
+ * that can disagree" this codebase keeps refusing. `attended`, `yet_to_reach`
+ * and `overdue` are the three the view DOES guarantee are mutually exclusive:
+ * the first needs `punch_count > 0`, the other two need `punch_count = 0` and
+ * split on `now() <` versus `now() >=` the same grace instant. Only those three
+ * are drawn, and the caption underneath says what was left out.
+ *
+ * The tone is chosen to match the tile's own border above it, so the bar and the
+ * number it came from are never two colours for one fact.
+ */
+const GATE_SLICES: readonly { slice: TeamPresenceSlice; label: string; tone: ChartTone }[] = [
+  // Same catalogue keys as TILES, so a segment and its tile cannot be worded
+  // differently; the tone matches the tile's border for the same reason.
+  { slice: "in", label: t("team.today.tile.in"), tone: "present" }, // success → --success
+  { slice: "yet_to_reach", label: t("team.today.tile.yetToReach"), tone: "leave" }, // info → --info
+  { slice: "overdue", label: t("team.today.tile.overdue"), tone: "absent" }, // danger → --destructive
+];
+
 export default function TeamTodayPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -116,6 +155,33 @@ export default function TeamTodayPage() {
   };
   const onBoard = useTeamPresenceCount(null, istDate);
   const approvals = useMyApprovalCount();
+
+  /*
+    THE PICTURE IS THE TILES, NOT A SECOND READING OF THEM.
+
+    Every value below is `data` off one of the count queries already driving a
+    tile — no row is counted, nothing is summed, and `rows.length` stays absent
+    from this file. A slice whose count has not arrived (or failed) contributes
+    NO segment, and a bar missing one of its three segments would silently
+    reshape the other two, so the bar renders only once all three are in.
+  */
+  const gateSegments: SplitSegment[] = GATE_SLICES.flatMap((gate) => {
+    const value = counts[gate.slice].data;
+    return value === undefined
+      ? []
+      : [{ key: gate.slice, label: gate.label, value, tone: gate.tone }];
+  });
+  const gateReady = gateSegments.length === GATE_SLICES.length;
+
+  /*
+    The ring is the one ratio on this page that is provably exact: `attended` is
+    a filter over the very rows `onBoard` counts unfiltered, so the numerator is
+    a subset of the denominator by construction and the arc can never overrun.
+    Both numbers are already printed — the "In" tile and the board line below.
+  */
+  const inCount = counts.in.data;
+  const boardCount = onBoard.data;
+  const showPresence = boardCount !== undefined && boardCount > 0;
 
   const setSlice = (next: TeamPresenceSlice | null) => {
     const params2 = new URLSearchParams(params);
@@ -263,6 +329,38 @@ export default function TeamTodayPage() {
           );
         })}
       </div>
+
+      {/* The same counts, drawn — beside the tiles, never instead of them. */}
+      {showPresence ? (
+        <section className="mt-4 rounded-lg border bg-card p-4">
+          <h2 className="font-display text-sm font-semibold">{t("team.today.chart.title")}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{t("team.today.chart.hint")}</p>
+          <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row sm:items-center">
+            {inCount === undefined ? null : (
+              <ProgressRing
+                value={inCount}
+                total={boardCount}
+                centre={formatNumber(inCount)}
+                caption={t("team.today.chart.ring.caption", { n: formatNumber(boardCount) })}
+                title={t("team.today.chart.ring.title")}
+                color={CHART_TONE.present}
+                className="sm:shrink-0"
+              />
+            )}
+            {gateReady ? (
+              <div className="w-full min-w-0 flex-1">
+                <SplitBar
+                  segments={gateSegments}
+                  title={t("team.today.chart.gate.title")}
+                  format={formatNumber}
+                  height={14}
+                />
+              </div>
+            ) : null}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">{t("team.today.chart.note")}</p>
+        </section>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
         <p className="text-sm text-muted-foreground">

@@ -29,6 +29,19 @@ export interface KpiTileProps {
   to?: string;
   /** Accessible name for the drill link when the label alone is ambiguous. */
   drillLabel?: string;
+  /**
+   * A small picture of the same number — a `ProgressRing`, a `SplitBar` — drawn
+   * to the RIGHT of the value, never in place of it.
+   *
+   * The slot exists so a chart can sit beside the figure it illustrates instead
+   * of in a second grid further down the card, where the reader has to match
+   * them up by name. Whatever goes here must be decorative or self-labelling:
+   * when `to` is set the whole tile is one link overlay, so a control in this
+   * slot would be unreachable.
+   *
+   * Omitted, the tile renders exactly the markup it always has.
+   */
+  visual?: ReactNode;
 }
 
 const TONE_VALUE_CLASS: Record<StatusTone, string> = {
@@ -49,10 +62,32 @@ export function KpiTile({
   onExplainerOpen,
   to,
   drillLabel,
+  visual,
 }: KpiTileProps) {
   const valueClass = cn(
     "num mt-2 font-display text-2xl font-semibold leading-none",
     TONE_VALUE_CLASS[tone],
+  );
+
+  const body = (
+    <>
+      {to !== undefined ? (
+        <Link
+          to={to}
+          aria-label={drillLabel ?? label}
+          className={cn(
+            valueClass,
+            "block rounded after:absolute after:inset-0 after:content-['']",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {value}
+        </Link>
+      ) : (
+        <p className={valueClass}>{value}</p>
+      )}
+      {hint ? <p className="relative z-10 mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+    </>
   );
 
   return (
@@ -85,22 +120,19 @@ export function KpiTile({
           ) : null}
         </div>
       </div>
-      {to !== undefined ? (
-        <Link
-          to={to}
-          aria-label={drillLabel ?? label}
-          className={cn(
-            valueClass,
-            "block rounded after:absolute after:inset-0 after:content-['']",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          )}
-        >
-          {value}
-        </Link>
+      {/*
+        No `visual` means no wrapper at all: every existing tile in the app keeps
+        the exact DOM it had, so this slot cannot have shifted a layout somewhere
+        that never asked for a picture.
+      */}
+      {visual === undefined ? (
+        body
       ) : (
-        <p className={valueClass}>{value}</p>
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">{body}</div>
+          <div className="shrink-0">{visual}</div>
+        </div>
       )}
-      {hint ? <p className="relative z-10 mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

@@ -34,7 +34,6 @@ import { z } from "zod";
 import {
   dbDateNullable,
   dbInt,
-  dbIntNullable,
   dbNumericNullable,
   dbTimestamp,
   dbTimestampNullable,
@@ -80,8 +79,23 @@ export const payrollCostRowSchema = z.object({
   employer_cost_paise: dbInt,
   /** §9.2 Payroll Cost = gross earnings + employer contributions. */
   total_cost_paise: dbInt,
-  /** §9.2 Cost per Employee, at THIS row's grain. Null when nobody was paid. */
-  cost_per_employee_paise: dbIntNullable,
+  /**
+   * §9.2 Cost per Employee, at THIS row's grain. Null when nobody was paid.
+   *
+   * NUMERIC, not an integer. The matview computes it as
+   * `SUM(...) / NULLIF(COUNT(DISTINCT employee_id), 0)`
+   * (matviews_analytics.sql:173) — and Postgres does NOT truncate numeric
+   * division, so three employees against an odd total yields
+   * 33333.333333333333. Every other integral column in that SELECT carries an
+   * explicit `::integer`; this one does not, and the schema declared it as
+   * though it did. The screen would have failed to parse the first time a
+   * month's cost did not divide evenly.
+   *
+   * The durable fix is a ROUND(...)::bigint in the matview so the column is
+   * genuinely integral like every other *_paise; until that migration exists,
+   * accepting what the view actually returns is the honest declaration.
+   */
+  cost_per_employee_paise: dbNumericNullable,
   overtime_cost_paise: dbInt,
   /** Already a percentage, already clamped by the view. */
   overtime_share_pct: dbNumericNullable,

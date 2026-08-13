@@ -21,6 +21,17 @@
  * THE DAY PANEL IS THE MOBILE STORY. Seven columns fit a phone at this cell size, and
  * tapping a day opens its detail below rather than in a tooltip — a tooltip is a
  * desktop-only affordance and this screen is mostly read on a phone.
+ *
+ * THE BARS UNDER THE GRID ANSWER WHAT THE GRID CANNOT. A cell says what KIND of day it
+ * was; it cannot say that Tuesday ran to eleven hours and Thursday stopped at four.
+ * That was already in the data — `total_worked_minutes` on every row this card
+ * already fetches, printed in the day panel under "Worked" — but one day at a time, so
+ * seeing a pattern meant opening thirty dialogs. Same query, same rows, no new figure:
+ * the bars only put the month's hours side by side.
+ *
+ * A DAY WITH NO ROW IS A GAP, NOT A ZERO BAR. Future dates and days the engine has not
+ * processed have no record, and drawing them at height nothing would say the employee
+ * worked nothing — which for a day that has not happened yet is a claim, not a fact.
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -28,6 +39,8 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
+import { TrendBars, type TrendBar } from "@/shared/ui/charts/TrendBars";
+import type { ChartTone } from "@/shared/ui/charts/chartTokens";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import {
@@ -97,6 +110,35 @@ const RECORDED_STYLE: Readonly<
   hr_override: { pip: "bg-orange-500", shape: "", key: "home.cal.by.hrOverride" },
 };
 
+/**
+ * The same statuses again, in the shared chart vocabulary, for the hours bars.
+ *
+ * IT IS NOT A SECOND COLOUR CODE. Every status whose bar can have any HEIGHT — the
+ * present family, half days, absents — maps to the tone that renders in the hue its
+ * own cell already carries: emerald→success, amber→warning, rose→destructive,
+ * sky→info. The two that do not line up exactly (`holiday` is indigo in the grid and
+ * plum in the ramp, `comp_off_availed` is violet and gets `leave`) are days nobody
+ * worked, so their bars are zero-height and carry no visible colour at all.
+ *
+ * `late` is the kit's name for the warning token, not a claim that a half day was
+ * late — the tone list is the colour vocabulary, and amber is what a half day is.
+ */
+const STATUS_TONE: Readonly<Record<string, ChartTone>> = {
+  present: "present",
+  work_from_home: "present",
+  on_duty: "present",
+  weekly_off_worked: "present",
+  holiday_worked: "present",
+  half_day: "late",
+  absent: "absent",
+  on_leave: "leave",
+  on_leave_half: "leave",
+  comp_off_availed: "leave",
+  weekly_off: "weeklyOff",
+  holiday: "holiday",
+  pending: "neutral",
+};
+
 /** Fixed legend order, so the key does not reshuffle itself month to month. */
 const RECORDED_ORDER = ["self", "corrected", "hr_override"] as const;
 const STATUS_ORDER = Object.keys(STATUS_STYLE);
@@ -163,6 +205,40 @@ export function MyMonthCalendar() {
       sources: RECORDED_ORDER.filter((code) => sources.has(code)),
     };
   }, [rows]);
+
+  /*
+    ONE BAR PER DATE, IN THE GRID'S OWN ORDER, so the fifth bar and the fifth cell are
+    the fifth of the month. `value` is the row's own `total_worked_minutes` and nothing
+    else — no averaging, no filling in, no totalling. A date with no row, or a row the
+    engine has not put an hours figure on, is `null`: TrendBars leaves a gap there, and
+    a gap is what "we do not know" looks like.
+
+    The tooltip caption is the status WORD, the same one the legend and the day panel
+    use, so a bar the reader is unsure about names itself rather than relying on hue.
+  */
+  const workedBars = useMemo<TrendBar[]>(
+    () =>
+      cells.map((cell) => {
+        const day = cell.day;
+        const style = day === null ? undefined : STATUS_STYLE[day.status];
+        return {
+          key: cell.date,
+          label: cell.dayOfMonth,
+          value: day?.total_worked_minutes ?? null,
+          tone: (day === null ? undefined : STATUS_TONE[day.status]) ?? "neutral",
+          ...(style === undefined ? {} : { caption: t(style.key as never) }),
+        };
+      }),
+    [cells],
+  );
+
+  /*
+    A month with no hours anywhere — before the date of joining, or one the engine has
+    not reached — would render as a bare axis under thirty gaps, which reads as a
+    broken chart rather than as an empty one. The grid above already says the month is
+    empty, honestly and in its own shape, so the bars simply stay away.
+  */
+  const hasWorkedHours = workedBars.some((bar) => bar.value !== null);
 
   const leadingBlanks = useMemo(() => {
     const first = cells[0];
@@ -359,6 +435,25 @@ export function MyMonthCalendar() {
               </>
             ) : null}
           </ul>
+        ) : null}
+
+        {/*
+          BELOW THE LEGEND ON PURPOSE. The bars borrow the grid's colours, so the key
+          that explains those colours has to have been read first.
+        */}
+        {hasWorkedHours ? (
+          <div className="mt-3 border-t pt-3">
+            <p className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("home.chart.worked.heading")}
+            </p>
+            <TrendBars
+              className="mt-1"
+              bars={workedBars}
+              title={t("home.chart.worked.title", { month: fmtMonthLong(month) })}
+              format={fmtDurationHm}
+              height={96}
+            />
+          </div>
         ) : null}
 
         {/* A modal, not a panel underneath: on a phone the panel was below the fold, so a

@@ -81,23 +81,29 @@ export function statusTone(status: string): StatusTone {
 }
 
 /**
- * A one-entry `StatusChip` vocabulary for a day row.
+ * What a day row's status READS AS, leave type included.
  *
- * On a leave day the chip must say WHICH leave — `On leave · Casual Leave`,
- * from `leave_type_name`. It never shows `leave_type_code` and never the raw
+ * On a leave day it must say WHICH leave — `On leave · Casual Leave`, from
+ * `leave_type_name`. It never shows `leave_type_code` and never the raw
  * `on_leave` enum (spec-employee §5 E-03).
+ *
+ * The chip below and the chart tooltip beside it both call this, so a day
+ * cannot be described one way in the register and another in the picture of it.
  */
+export function dayStatusText(status: string, leaveTypeName: string | null): string {
+  const onLeave = status === "on_leave" || status === "on_leave_half";
+  const base = statusLabel(status);
+  return onLeave && leaveTypeName !== null && leaveTypeName.length > 0
+    ? `${base} · ${leaveTypeName}`
+    : base;
+}
+
+/** A one-entry `StatusChip` vocabulary for a day row. */
 export function dayStatusChip(
   status: string,
   leaveTypeName: string | null,
 ): Record<string, StatusChipEntry> {
-  const onLeave = status === "on_leave" || status === "on_leave_half";
-  const base = statusLabel(status);
-  const label =
-    onLeave && leaveTypeName !== null && leaveTypeName.length > 0
-      ? `${base} · ${leaveTypeName}`
-      : base;
-  return { [status]: { label, tone: statusTone(status) } };
+  return { [status]: { label: dayStatusText(status, leaveTypeName), tone: statusTone(status) } };
 }
 
 /**

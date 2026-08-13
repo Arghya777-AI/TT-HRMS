@@ -338,7 +338,16 @@ export const adminTaskSchema = z.object({
   request_type_code: z.string(),
   request_type_name: z.string(),
   title: z.string(),
-  summary: z.string().nullable(),
+  /*
+    `approval_requests.summary` is `jsonb NOT NULL DEFAULT '{}'` (workflow.sql:263)
+    — the per-request facts, not a sentence. Declared here as a string, so EVERY
+    row failed to parse and the screen showed "Row from v_approval_inbox does not
+    match its schema" instead of the administrator's own queue.
+
+    Matches `workflow-admin.api.ts:292`, which had it right; the two read the same
+    view and disagreed about one column.
+  */
+  summary: z.record(z.unknown()).nullable(),
   priority: z.string(),
   status: z.string(),
   current_level: dbInt,

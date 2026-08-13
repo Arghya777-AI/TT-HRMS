@@ -26,6 +26,8 @@ import { keysAdminFaceEnrol } from "./keys/admin-face-enrol";
 import { keysEnrolmentStatus } from "./keys/enrolment-status";
 import { keysAdminPresence, keysOrgOther } from "./keys/admin-presence";
 import { keysHomeCalendar } from "./keys/home-calendar";
+import { keysHomeCharts } from "./keys/home-charts";
+import { keysAdminCommandCharts } from "./keys/admin-command-charts";
 import {
   keysLeaveApplication,
   keysLeaveApplicationExtra,
@@ -66,6 +68,8 @@ import { keysHrLeaveCost } from "./keys/hr-leavecost";
 import { keysHrWorkforce } from "./keys/hr-workforce";
 import { keysHrMovement } from "./keys/hr-movement";
 import { keysAnalyticsLive } from "./keys/analytics-live";
+import { keysAttendanceCharts } from "./keys/attendance-charts";
+import { keysTeamCharts } from "./keys/team-charts";
 
 /**
  * Keep the key set exact, widen every value to `string`.
@@ -95,6 +99,7 @@ export const en = catalogue({
   ...keysTimeAudit,
   ...keysPlatformAdmin,
   ...keysTeamExtra,
+  ...keysTeamCharts,
   ...keysMeApply,
   ...keysMeMisc,
   ...keysMeIndex,
@@ -111,6 +116,8 @@ export const en = catalogue({
   ...keysAdminPresence,
   ...keysOrgOther,
   ...keysHomeCalendar,
+  ...keysHomeCharts,
+  ...keysAdminCommandCharts,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,
@@ -145,6 +152,7 @@ export const en = catalogue({
   ...keysAiAssistant,
   ...keysHrLeaveCost,
   ...keysAnalyticsLive,
+  ...keysAttendanceCharts,
   ...keysHrMovement,
   ...keysHrWorkforce,
   ...keysHrCompliance,
@@ -1096,6 +1104,9 @@ export const en = catalogue({
   "leave.balances.title": "Your balances",
   "leave.balances.asAt": "Recomputed {when}",
   "leave.balances.eligibleOnly": "Only the leave types you are eligible for appear here.",
+  "leave.balances.rings.aria": "Days used against entitlement, one ring for each leave type",
+  "leave.balances.ring.title": "{type} entitlement",
+  "leave.balances.ring.caption": "used of {entitled} days",
   "leave.balance.available": "Available to use",
   "leave.balance.days": "{days} days",
   "leave.balance.opening": "Opening",
@@ -1451,6 +1462,15 @@ export const en = catalogue({
   "attendance.slice.absent": "Absents",
   "attendance.slice.pending": "Not processed yet",
 
+  // Month glance — the two strip charts above the register
+  "attendance.glance.split.title": "The month in one bar",
+  "attendance.glance.split.note":
+    "Each band is the server's own count, the one the tiles above show. A weekly off or holiday you worked is counted both as attended and as its own kind of day, so the bands can add up to more than the month.",
+  "attendance.glance.trend.title": "Hours worked, day by day",
+  "attendance.glance.trend.note":
+    "Bar height is the hours recorded for that day and the colour is its status. A day with no bar has no hours recorded — a weekly off, a holiday, a leave, an absence, or a date still to come. The exact figures are in the register below.",
+  "attendance.glance.trend.caption": "{date} · {status}",
+
   // KPI tiles — labels are verbatim from spec-employee §3.7
   "attendance.kpi.attended": "Attended",
   "attendance.kpi.attended.formula":
@@ -1754,6 +1774,9 @@ export const en = catalogue({
   "pay.viewer.gross": "Gross earnings (A)",
   "pay.viewer.totalDeductions": "Total deductions (B)",
   "pay.viewer.net": "Net pay (A − B)",
+  "pay.viewer.split.net.label": "How your gross divides",
+  "pay.viewer.split.net.title":
+    "Gross earnings (A) divided into net pay and total deductions",
   "pay.viewer.netWords": "In words",
   "pay.viewer.netWords.missing": "Payroll has not stamped the words form on this payslip.",
   "pay.viewer.netWords.masked": "Hidden — choose Show amounts to read it.",
@@ -1764,6 +1787,9 @@ export const en = catalogue({
   "pay.viewer.ctc": "Cost to company for this window (A + C)",
   "pay.viewer.ctc.note":
     "Your net pay is A − B. This figure is what the company spent, and it is shown here so the two are never confused.",
+  "pay.viewer.split.ctc.label": "How cost to company divides",
+  "pay.viewer.split.ctc.title":
+    "Cost to company for this window divided into gross earnings (A) and employer contributions (C)",
   "pay.viewer.other": "Other lines",
   "pay.viewer.other.note":
     "Reimbursements, arrears, recoveries and information-only lines from this run.",
@@ -1808,7 +1834,14 @@ export const en = catalogue({
     payslip". The print action below is the one that works today.
   */
   "pay.viewer.pdf.none": "Payroll has not attached a signed PDF to this payslip yet.",
-  "pay.viewer.pdf.print": "Download as PDF",
+  /*
+    View and Download at the TOP of the payslip. The print button these replace
+    produced masked amounts, the assistant bubble and a URL footer — a screenshot
+    of an application, not a document.
+  */
+  "pay.viewer.pdf.view": "View PDF",
+  "pay.viewer.pdf.download": "Download",
+  "pay.viewer.pdf.failed": "The payslip could not be generated. Try again, and tell HR if it keeps failing.",
   "pay.viewer.query": "Query this payslip",
   "pay.viewer.query.closed":
     "The {days}-day window to query this payslip has closed.",

@@ -24,6 +24,8 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import type { StatusTone } from "@/shared/ui/StatusChip";
+import { ProgressRing } from "@/shared/ui/charts/ProgressRing";
+import { CHART_TONE } from "@/shared/ui/charts/chartTokens";
 import { fmtDateTime, fmtTime } from "@/lib/datetime";
 import { dash, formatNumber, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -223,6 +225,23 @@ export function LiveOpsBand({ istDate }: LiveOpsBandProps) {
       ? t("admin.cc.ops.scopeUnknown")
       : t("admin.cc.ops.scope", { count: formatNumber(total.data ?? 0) });
 
+  /*
+    ── THE ONE RATIO ON THIS BAND, DRAWN ──────────────────────────────────────
+    The band already states both figures — `present` is the very count behind the
+    "In" chip, `total` the one in the sentence above — and states them as two
+    unrelated numbers. "14 in" and "42 on the board" are the same fact only if the
+    reader does the division, which is precisely the question they arrived with:
+    is that a lot. The ring answers it and prints NO percentage of its own; the
+    chips keep the exact counts, and every number here is still a server count.
+
+    IT NEEDS BOTH TO HAVE LANDED. A ring drawn while the denominator is loading —
+    or after it failed — would be a fraction of an unknown whole, so when either is
+    missing there is no picture at all and the chips carry on saying `—`. A board
+    of zero gets none either: there is nothing to be a fraction of.
+  */
+  const presentCount = present.isPending || present.error !== null ? null : present.data ?? null;
+  const boardTotal = total.isPending || total.error !== null ? null : total.data ?? null;
+
   return (
     <section aria-labelledby="live-ops-heading" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -238,43 +257,67 @@ export function LiveOpsBand({ istDate }: LiveOpsBandProps) {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <SliceChip
-          label={t("admin.cc.slice.present")}
-          to={ADMIN_ROUTES.liveIn}
-          tone="success"
-          query={present}
-        />
-        <SliceChip
-          label={t("admin.cc.slice.onTime")}
-          to={ADMIN_ROUTES.liveOnTime}
-          tone="success"
-          query={onTime}
-        />
-        <SliceChip
-          label={t("admin.cc.slice.late")}
-          to={ADMIN_ROUTES.daysLate(istDate)}
-          tone="warn"
-          query={late}
-        />
-        <SliceChip
-          label={t("admin.cc.slice.yetToReach")}
-          to={ADMIN_ROUTES.liveYetToReach}
-          tone="neutral"
-          query={yetToReach}
-        />
-        <SliceChip
-          label={t("admin.cc.slice.overdue")}
-          to={ADMIN_ROUTES.liveOverdue}
-          tone="danger"
-          query={overdue}
-        />
-        <SliceChip
-          label={t("admin.cc.slice.off")}
-          to={ADMIN_ROUTES.liveOff}
-          tone="info"
-          query={off}
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        {presentCount === null || boardTotal === null || boardTotal <= 0 ? null : (
+          <Link
+            to={ADMIN_ROUTES.liveIn}
+            aria-label={t("admin.cc.ops.ring.drill")}
+            className="shrink-0 rounded-lg border bg-background px-5 py-3 transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ProgressRing
+              value={presentCount}
+              total={boardTotal}
+              centre={formatNumber(presentCount)}
+              caption={t("admin.cc.ops.ring.caption", { total: formatNumber(boardTotal) })}
+              title={t("admin.cc.ops.ring.title")}
+              /* The same green as the "In" chip beside it and the present badge
+                 on every attendance screen — one meaning, one colour. */
+              color={CHART_TONE.present}
+              size={92}
+            />
+          </Link>
+        )}
+
+        {/* The chips are untouched: every count still shows, still says `—` when it
+            cannot be read, and still opens its own filtered board. */}
+        <div className="flex min-w-[15rem] flex-1 flex-wrap gap-2">
+          <SliceChip
+            label={t("admin.cc.slice.present")}
+            to={ADMIN_ROUTES.liveIn}
+            tone="success"
+            query={present}
+          />
+          <SliceChip
+            label={t("admin.cc.slice.onTime")}
+            to={ADMIN_ROUTES.liveOnTime}
+            tone="success"
+            query={onTime}
+          />
+          <SliceChip
+            label={t("admin.cc.slice.late")}
+            to={ADMIN_ROUTES.daysLate(istDate)}
+            tone="warn"
+            query={late}
+          />
+          <SliceChip
+            label={t("admin.cc.slice.yetToReach")}
+            to={ADMIN_ROUTES.liveYetToReach}
+            tone="neutral"
+            query={yetToReach}
+          />
+          <SliceChip
+            label={t("admin.cc.slice.overdue")}
+            to={ADMIN_ROUTES.liveOverdue}
+            tone="danger"
+            query={overdue}
+          />
+          <SliceChip
+            label={t("admin.cc.slice.off")}
+            to={ADMIN_ROUTES.liveOff}
+            tone="info"
+            query={off}
+          />
+        </div>
       </div>
 
       <div className="grid gap-3 xl:grid-cols-2">

@@ -29,7 +29,8 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { fmtCivilDateWeekday, fmtDuration } from "@/lib/datetime";
-import { dash, formatNumber, formatPercent } from "@/lib/format";
+import { dash, formatDays, formatNumber, formatPercent } from "@/lib/format";
+import { SplitBar, type SplitSegment } from "@/shared/ui/charts/SplitBar";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
@@ -318,7 +319,7 @@ export default function TeamAttendancePage() {
               skeletonRows={3}
             >
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[40rem] text-sm">
+                <table className="w-full min-w-[48rem] text-sm">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th scope="col" className="py-2 pr-4">{t("team.att.trend.person")}</th>
@@ -327,12 +328,49 @@ export default function TeamAttendancePage() {
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.leave")}</th>
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.lateDays")}</th>
                       <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.latePct")}</th>
-                      <th scope="col" className="py-2 pr-0 text-right">{t("team.att.trend.attendancePct")}</th>
+                      <th scope="col" className="py-2 pr-4 text-right">{t("team.att.trend.attendancePct")}</th>
+                      <th scope="col" className="py-2 pr-0">{t("team.att.trend.split")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(summaries.data ?? []).map((s) => {
                       const who = nameOf.get(s.employee_id);
+                      /*
+                        THE BAR IS THE ROW, RE-DRAWN — not a fourth figure.
+
+                        `present_days`, `absent_days` and `leave_days` are the
+                        three cells immediately to its left, straight off
+                        `f_attendance_period_summary`. Nothing is summed here:
+                        `SplitBar` normalises the three into widths, which is the
+                        same presentational step `DonutChart` takes, and the
+                        counts themselves stay printed beside it.
+
+                        Three tones, three meanings, matching the day chips the
+                        grid below uses for the same states.
+
+                        `leave_days` is `numeric` — half-days arrive as 7.5 — so
+                        `formatDays` renders the legend, never `String()`.
+                      */
+                      const splitSegments: SplitSegment[] = [
+                        {
+                          key: "present",
+                          label: t("team.att.trend.present"),
+                          value: s.present_days,
+                          tone: "present",
+                        },
+                        {
+                          key: "absent",
+                          label: t("team.att.trend.absent"),
+                          value: s.absent_days,
+                          tone: "absent",
+                        },
+                        {
+                          key: "leave",
+                          label: t("team.att.trend.leave"),
+                          value: s.leave_days,
+                          tone: "leave",
+                        },
+                      ];
                       return (
                         <tr key={s.employee_id} className="border-b last:border-0">
                           <td className="py-2 pr-4">
@@ -343,13 +381,27 @@ export default function TeamAttendancePage() {
                           <td className="num py-2 pr-4 text-right">{formatNumber(s.leave_days)}</td>
                           <td className="num py-2 pr-4 text-right">{formatNumber(s.late_days)}</td>
                           <td className="num py-2 pr-4 text-right">{formatPercent(s.late_pct)}</td>
-                          <td className="num py-2 pr-0 text-right">{formatPercent(s.attendance_pct)}</td>
+                          <td className="num py-2 pr-4 text-right">{formatPercent(s.attendance_pct)}</td>
+                          <td className="py-2 pr-0">
+                            <SplitBar
+                              segments={splitSegments}
+                              title={t("team.att.trend.splitTitle", {
+                                name: who?.name ?? dash(who?.code),
+                              })}
+                              format={formatDays}
+                              legend={false}
+                              className="min-w-[7rem]"
+                            />
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                {t("team.att.trend.splitNote")}
+              </p>
             </StateBoundary>
           </section>
 

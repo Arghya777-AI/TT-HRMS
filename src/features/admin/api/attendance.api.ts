@@ -254,7 +254,14 @@ export const periodSummarySchema = z.object({
   pending_days: dbInt,
   weekly_off_days: dbInt,
   holiday_days: dbInt,
-  leave_days: dbInt,
+  /*
+    `numeric`, not an integer: `COALESCE(SUM(ad.leave_day_fraction), 0)` with no
+    cast (views_attendance.sql:235), over a `numeric(4,3)` column that holds 0.5
+    for a half-day. The two sibling schemas over the SAME RPC — attendance and
+    team — already had it as dbNumeric; this one would have thrown on the first
+    half-day leave in the period.
+  */
+  leave_days: dbNumeric,
   comp_off_days: dbInt,
   paid_days: dbNumeric,
   working_days: dbInt,

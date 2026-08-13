@@ -40,6 +40,7 @@ import { fmtDateWeekday, nowInstantIso } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { AlertList } from "../components/AlertList";
+import { AlertSeverityBar } from "../components/AlertSeverityBar";
 import { LeaveCalendarBand } from "../components/LeaveCalendarBand";
 import { CommandKpiStrip } from "../components/CommandKpiStrip";
 import { LiveOpsBand } from "../components/LiveOpsBand";
@@ -113,6 +114,13 @@ export default function CommandCentrePage() {
                 <Link to={ADMIN_ROUTES.alerts}>{t("admin.cc.alerts.viewAll")}</Link>
               </Button>
             </div>
+
+            {/*
+              The total is still the sentence above it; this is the same queue's
+              SHAPE, from three more server counts, and each segment's legend entry
+              opens the feed filtered to itself. Nothing was removed to fit it in.
+            */}
+            <AlertSeverityBar />
 
             <Notice tone="info">{t("admin.alert.derivedNote")}</Notice>
 

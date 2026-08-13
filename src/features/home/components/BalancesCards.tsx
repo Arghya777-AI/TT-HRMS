@@ -10,6 +10,24 @@
  * Comp-off expiry colouring: amber ≤15 days, red ≤5 days (spec E-02 Region F).
  * The threshold is a calendar comparison against the server's `nearest_expiry`;
  * the DATE shown is always the column, never a computed countdown.
+ *
+ * ── THE RINGS ──────────────────────────────────────────────────────────────
+ *
+ * A balance card answers "how many". The question people actually arrive with is
+ * "is that a lot", and that is a ratio — so each tile carries a ring of the two
+ * columns its own explainer already spells out, and nothing else changes.
+ *
+ * Leave: `availed_days` against `entitlement_days`. Not `available` against
+ * `entitlement` — available is a GENERATED column that has already had
+ * encashment and lapses taken out of it, so available + availed is not the
+ * entitlement and a ring drawn from that pair would quietly not add up. Taken
+ * against entitled is one subtraction the server has already done.
+ *
+ * Comp-off: `expiring_within_30_days` against `available_days`. Both come from
+ * `v_comp_off_balance`, where the first is the SAME sum as the second under a
+ * `expires_on <= today + 30` filter — a genuine part of a genuine whole. The
+ * ring takes its colour from the same band as the badge beside it, so the two
+ * cannot say different things about the same urgency.
  */
 import { Link } from "react-router-dom";
 import { CalendarDays, HeartHandshake } from "lucide-react";
@@ -19,6 +37,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { KpiTile } from "@/shared/ui/KpiTile";
+import { ProgressRing } from "@/shared/ui/charts/ProgressRing";
+import { CHART_TONE } from "@/shared/ui/charts/chartTokens";
 import { fmtCivilDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
@@ -103,6 +123,32 @@ function LeaveTile({ balance }: { balance: LeaveBalance }) {
         formula: t("home.leave.explainer.formula"),
         numbers: t("home.leave.explainer.numbers", { available, held, used, entitlement }),
       }}
+      /*
+        NO ENTITLEMENT, NO RING. Migration 038600 sets `annual_quota_days = 0`
+        for every type except SL and EL, so most employees carry several types
+        entitled to nothing — and a ring with a zero denominator is not a poor
+        chart, it is a chart of a question that does not exist. The tile still
+        prints the figures either way.
+      */
+      visual={
+        balance.entitlement_days > 0 ? (
+          <ProgressRing
+            size={56}
+            value={balance.availed_days}
+            total={balance.entitlement_days}
+            centre={used}
+            caption={t("home.chart.leave.caption", { entitlement })}
+            title={t("home.chart.leave.title", {
+              type: balance.leave_type_name,
+              used,
+              entitlement,
+            })}
+            /* Leave is `info` everywhere else on the screen — the sky day cells
+               in the month calendar, the leave chips — so it is `info` here. */
+            color={CHART_TONE.leave}
+          />
+        ) : undefined
+      }
     />
   );
 }
@@ -135,32 +181,68 @@ export function CompOffCard({ query }: BalancesProps) {
           const compOff = data.compOff;
           if (compOff === null) return null;
           const tone = expiryTone(compOff.nearest_expiry);
+          const available = formatNumber(compOff.available_days);
+          const expiring = formatNumber(compOff.expiring_within_30_days);
+          /*
+            THE SAME BAND AS THE BADGE UNDERNEATH, deliberately. That badge is
+            `danger` on the ≤5-day band and `warning` on everything else it
+            appears for, and `CHART_TONE.absent` / `CHART_TONE.late` ARE
+            `--destructive` / `--warning`. Nothing expiring gets the muted ring:
+            an empty amber circle would read as a warning about nothing.
+          */
+          const ringColor =
+            compOff.expiring_within_30_days <= 0
+              ? CHART_TONE.neutral
+              : tone === "danger"
+                ? CHART_TONE.absent
+                : CHART_TONE.late;
           return (
             <div className="space-y-3">
-              <dl className="grid grid-cols-2 gap-4">
-                <Fact
-                  label={t("home.compOff.available")}
-                  value={t("home.unit.days", { count: formatNumber(compOff.available_days) })}
-                />
-                <Fact
-                  label={t("home.compOff.nearestExpiry")}
-                  value={
-                    compOff.nearest_expiry === null
-                      ? t("home.compOff.noExpiry")
-                      : fmtCivilDate(compOff.nearest_expiry)
-                  }
-                  tone={tone === "neutral" ? "default" : tone}
-                />
-              </dl>
+              <div className="flex items-center gap-4">
+                {/* A balance of zero has no whole for the expiring days to be a
+                    part of, so the ring stays away and the facts stand alone. */}
+                {compOff.available_days > 0 ? (
+                  <ProgressRing
+                    className="shrink-0"
+                    size={84}
+                    value={compOff.expiring_within_30_days}
+                    total={compOff.available_days}
+                    centre={expiring}
+                    caption={t("home.chart.compOff.caption", { available })}
+                    title={t("home.chart.compOff.title", { expiring, available })}
+                    color={ringColor}
+                  />
+                ) : null}
+                {/*
+                  The two facts stack into ONE column now that the ring shares the
+                  row. Side by side in the third of a grid this card occupies they
+                  had about 90px each, which is where `Fact`'s `truncate` starts
+                  eating expiry dates — and a truncated date is the one thing on
+                  this card nobody can afford to misread.
+                */}
+                <dl className="grid min-w-0 flex-1 gap-3">
+                  <Fact
+                    label={t("home.compOff.available")}
+                    value={t("home.unit.days", { count: available })}
+                  />
+                  <Fact
+                    label={t("home.compOff.nearestExpiry")}
+                    value={
+                      compOff.nearest_expiry === null
+                        ? t("home.compOff.noExpiry")
+                        : fmtCivilDate(compOff.nearest_expiry)
+                    }
+                    tone={tone === "neutral" ? "default" : tone}
+                  />
+                </dl>
+              </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="neutral">
                   {t("home.compOff.credits", { count: formatNumber(compOff.open_credits) })}
                 </Badge>
                 {compOff.expiring_within_30_days > 0 ? (
                   <Badge variant={tone === "danger" ? "danger" : "warning"}>
-                    {t("home.compOff.expiringSoon", {
-                      days: formatNumber(compOff.expiring_within_30_days),
-                    })}
+                    {t("home.compOff.expiringSoon", { days: expiring })}
                   </Badge>
                 ) : null}
               </div>

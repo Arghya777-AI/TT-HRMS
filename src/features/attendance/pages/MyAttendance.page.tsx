@@ -52,6 +52,7 @@ import { PeriodSelector } from "../components/PeriodSelector";
 import { SelfPunchCard } from "../components/SelfPunchCard";
 import { PeriodBanner } from "../components/PeriodBanner";
 import { MonthDonut } from "../components/MonthDonut";
+import { MonthGlance } from "../components/MonthGlance";
 import { MonthKpis } from "../components/MonthKpis";
 
 const SLICE_LABEL_KEY: Record<SliceKey, Parameters<typeof t>[0]> = {
@@ -348,6 +349,15 @@ export default function MyAttendancePage() {
           </>
         ) : null}
       </StateBoundary>
+
+      {/* The month in two pictures, in the register's own colours and directly
+          above it. Both read server columns only — the split bar the summary
+          row, the day bars the same `total_worked_minutes` the Worked column
+          below prints — so neither can state a figure the table contradicts.
+          It carries no state of its own and is deliberately NOT filtered by the
+          donut slice: it is the shape of the whole month, and a four-bar chart
+          under a filtered register would answer a question nobody asked. */}
+      <MonthGlance rows={rows} summary={summary.data ?? null} />
 
       <h2 className="mb-3 font-display text-lg font-semibold">
         {t("attendance.register.title")}

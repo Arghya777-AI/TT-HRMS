@@ -178,10 +178,21 @@ export function fetchJobRuns(
   });
 }
 
+/*
+  `code`, NOT `job_code` — there is no such column on `cron_jobs` and never has
+  been (system.sql:197). The name was guessed, and it was guessed in TWO places:
+  here and in the `order` clause below, where PostgREST answers an unknown sort
+  column with a 400. So this read has been failing outright, not merely parsing
+  loosely.
+
+  `settings-extra.api.ts` reads the same table correctly via `code`. Two files,
+  one relation, disagreeing — the same shape as the v_approval_inbox `summary`
+  defect that broke /admin/tasks.
+*/
 export const cronJobSchema = z
   .object({
     id: dbUuid,
-    job_code: z.string(),
+    code: z.string(),
     is_enabled: z.boolean(),
   })
   .passthrough();
@@ -194,7 +205,7 @@ export type CronJob = z.infer<typeof cronJobSchema>;
  */
 export function fetchCronJobs(signal?: AbortSignal): Promise<CronJob[]> {
   return selectMany(CRON_JOBS_TABLE, cronJobSchema, {
-    order: [{ column: "job_code", ascending: true }],
+    order: [{ column: "code", ascending: true }],
     limit: 100,
     ...(signal ? { signal } : {}),
   });

@@ -91,7 +91,7 @@ export async function fetchMyCalendarRef(signal?: AbortSignal): Promise<MyCalend
 }
 
 /** Which of the three server sources named in the header answered. */
-export type CalendarSource = "assignment" | "employee" | "location";
+export type CalendarSource = "assignment" | "employee" | "location" | "default";
 
 export interface ResolvedCalendarRef {
   readonly calendarId: string;
@@ -134,6 +134,43 @@ export async function fetchLocationDefaultCalendarId(
   return row?.default_holiday_calendar_id ?? null;
 }
 
+/**
+ * THE COMPANY DEFAULT — the fourth source, and the one that was missing.
+ *
+ * Reported: "for admin and manager can't see holiday list but employee can".
+ * Exactly right, and the reason is that all three sources above are keyed to the
+ * caller's OWN employee row: an assignment, an override on the row, or the
+ * default of the LOCATION they are posted to. An administrator or a manager who
+ * is not posted to a site has none of the three and got an empty screen — while
+ * a venue employee, who has a location, got the list.
+ *
+ * The public holidays of the company are not private to whoever happens to have
+ * a location on their record. `holidays__ref_read` has always allowed any
+ * authenticated caller to read the active ones; nothing but this resolution
+ * chain was stopping them.
+ *
+ * `is_default` picks the calendar, and the year is matched to the date being
+ * viewed so January does not silently show last year's list.
+ */
+export async function fetchDefaultCalendarId(
+  isoDate: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const year = Number.parseInt(isoDate.slice(0, 4), 10);
+  const rows = await selectMany(HOLIDAY_CALENDARS_TABLE, holidayCalendarSchema, {
+    columns: CALENDAR_COLUMNS,
+    filters: [eq("is_default", true), eq("is_active", true)],
+    order: [{ column: "year", ascending: false }],
+    limit: 20,
+    ...(signal ? { signal } : {}),
+  });
+  if (rows.length === 0) return null;
+  // The year being viewed, else the most recent — never nothing when a calendar
+  // exists, because "no calendar" reads as "the company has no holidays".
+  const match = rows.find((row) => row.year === year) ?? rows[0];
+  return match?.id ?? null;
+}
+
 /** Resolution in the engine's own order — see the module header. */
 export async function resolveMyCalendar(
   employeeId: string,
@@ -144,7 +181,12 @@ export async function resolveMyCalendar(
   if (assigned !== null) return { calendarId: assigned, source: "assignment" };
 
   const me = await fetchMyCalendarRef(signal);
-  if (me === null) return null;
+  if (me === null) {
+    // No employee row at all — a pure administrator account. The company
+    // calendar is still theirs to read.
+    const fallback = await fetchDefaultCalendarId(isoDate, signal);
+    return fallback === null ? null : { calendarId: fallback, source: "default" };
+  }
   if (me.holiday_calendar_id !== null) {
     return { calendarId: me.holiday_calendar_id, source: "employee" };
   }
@@ -152,6 +194,13 @@ export async function resolveMyCalendar(
     const fromLocation = await fetchLocationDefaultCalendarId(me.location_id, signal);
     if (fromLocation !== null) return { calendarId: fromLocation, source: "location" };
   }
+  /*
+    Last: the company default. Deliberately last, so anybody who HAS a calendar
+    of their own still sees theirs — this widens who sees a list without changing
+    which list an employee sees.
+  */
+  const fallback = await fetchDefaultCalendarId(isoDate, signal);
+  if (fallback !== null) return { calendarId: fallback, source: "default" };
   return null;
 }
 

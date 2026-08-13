@@ -35,6 +35,7 @@ import {
   useMyEmployee,
   useTodayAttendance,
   useTodayShiftContext,
+  useMyHolidayCalendarId,
   useUpcomingHolidays,
   useWeeklyOffRule,
 } from "../hooks/useHome";
@@ -74,6 +75,7 @@ export default function HomePage() {
   const monthQuery = useHomeMonthStrip();
   const balancesQuery = useHomeBalances();
   const holidaysQuery = useUpcomingHolidays(4);
+  const calendarId = useMyHolidayCalendarId();
   const announcementsQuery = useAnnouncements(3);
   const payslipQuery = useLatestPayslip();
 
@@ -229,7 +231,12 @@ export default function HomePage() {
         {/* Region H + I + J */}
         <UpcomingHolidaysCard
           query={holidaysQuery}
-          hasCalendar={me === null ? null : me.holiday_calendar_id !== null}
+          /*
+            The RESOLVED calendar, not the column. `me.holiday_calendar_id` is
+            NULL for every seeded employee, so this gate said "no calendar" to
+            people whose site had one — and to every administrator.
+          */
+          hasCalendar={calendarId.isPending ? null : calendarId.data != null}
         />
         <AnnouncementsCard query={announcementsQuery} />
         <LastPayslipCard query={payslipQuery} />

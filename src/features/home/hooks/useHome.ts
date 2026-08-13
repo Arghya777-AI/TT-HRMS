@@ -14,6 +14,8 @@ import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-q
 import { qk } from "@/shared/api/keys";
 import { QueryError, shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
+import { resolveMyCalendar } from "@/features/holidays/api/holidays.api";
+import { nowIstDate } from "@/lib/datetime";
 import { istToday } from "@/lib/datetime";
 import type { AttendanceDay, AttendancePeriodSummary } from "@/features/attendance/api/attendance.api";
 import {
@@ -99,15 +101,45 @@ export function useHomeBalances(): UseQueryResult<HomeBalances, Error> {
 }
 
 /**
- * Region H — the next few holidays on the employee's calendar.
+ * WHICH CALENDAR THIS PERSON'S HOLIDAYS COME FROM.
  *
- * Depends on `useMyEmployee()` for `holiday_calendar_id`; stays disabled until
- * that resolves. An employee with no calendar assigned yields no query and the
- * card renders its empty state.
+ * Was `me.holiday_calendar_id` and nothing else — one source, on the employee
+ * row. Reported as "for admin and manager can't see holiday list but employee
+ * can": that column is NULL for every seeded employee, and the venue staff who
+ * did see holidays were getting them from their SITE, a source this card never
+ * consulted.
+ *
+ * `resolveMyCalendar` is the chain the /me/holidays screen uses — assignment,
+ * then the employee override, then the site default, then the company calendar.
+ * Shared rather than reimplemented, so the card and the screen it links to can
+ * never disagree about which holidays are yours.
+ */
+export function useMyHolidayCalendarId(): UseQueryResult<string | null, Error> {
+  const employeeId = useEmployeeId();
+  return useQuery({
+    queryKey: qk.home.upcomingHolidays(`calendar:${employeeId ?? NO_EMPLOYEE}`),
+    queryFn: async ({ signal }) => {
+      const resolved = await resolveMyCalendar(
+        employeeId ?? "",
+        nowIstDate(),
+        signal,
+      );
+      return resolved?.calendarId ?? null;
+    },
+    /*
+      Runs even with no employee id: an administrator account without an employee
+      row still has the company calendar to read, and that is the case this fixes.
+    */
+    staleTime: 10 * 60 * 1000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Region H — the next few holidays on the calendar that applies to this person.
  */
 export function useUpcomingHolidays(limit = 5): UseQueryResult<Holiday[], Error> {
-  const { data: me } = useMyEmployee();
-  const calendarId = me?.holiday_calendar_id ?? null;
+  const { data: calendarId = null } = useMyHolidayCalendarId();
   return useQuery({
     queryKey: qk.home.upcomingHolidays(calendarId ?? NO_EMPLOYEE),
     queryFn: ({ signal }) => {
@@ -115,7 +147,7 @@ export function useUpcomingHolidays(limit = 5): UseQueryResult<Holiday[], Error>
         throw new QueryError(
           "holidays",
           "not_found",
-          "No holiday calendar is assigned to this employee yet.",
+          "No holiday calendar could be resolved — not on this employee, their site, or as a company default.",
         );
       }
       return fetchUpcomingHolidays({ holidayCalendarId: calendarId, limit }, signal);

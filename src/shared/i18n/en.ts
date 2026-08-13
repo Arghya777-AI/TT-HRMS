@@ -10715,6 +10715,12 @@ export const en = catalogue({
   "holidays.source.assignment": "the calendar assigned to your company",
   "holidays.source.employee": "the calendar set on your employee record",
   "holidays.source.location": "your site's default calendar",
+  /*
+    The fourth source. Reported as "for admin and manager can't see holiday list
+    but employee can" — the first three all read the caller's own employee row,
+    so anybody without a site posted to them saw an empty screen.
+  */
+  "holidays.source.default": "the company calendar",
   "holidays.source.note":
     "Your calendar was resolved by the same function the attendance engine uses — this is {source}.",
   "holidays.col.paid": "Paid",

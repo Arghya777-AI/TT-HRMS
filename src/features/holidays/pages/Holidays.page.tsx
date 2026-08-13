@@ -61,6 +61,9 @@ const SOURCE_LABEL: Readonly<Record<CalendarSource, string>> = {
   assignment: t("holidays.source.assignment"),
   employee: t("holidays.source.employee"),
   location: t("holidays.source.location"),
+  /* The company calendar, shown to anybody the first three sources do not
+     answer for — an administrator or a manager with no site on their record. */
+  default: t("holidays.source.default"),
 };
 
 interface HolidayRow {

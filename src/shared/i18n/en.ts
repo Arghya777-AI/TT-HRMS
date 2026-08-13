@@ -1118,6 +1118,8 @@ export const en = catalogue({
   "leave.balance.carried": "Carried forward",
   "leave.balance.adjusted": "Adjusted",
   "leave.balance.entitlement": "Entitlement",
+  "leave.balance.chart.title": "How your {type} stands",
+  "leave.balance.chart.available": "Left to take",
   "leave.balance.used": "Used",
   "leave.balance.held": "Held",
   "leave.balance.encashed": "Encashed",
@@ -8483,6 +8485,12 @@ export const en = catalogue({
   "admin.wf.inbox.title": "Approval Inbox",
   "admin.wf.inbox.subtitle.count": "{n} requests in this view, counted by the database.",
   "admin.wf.inbox.subtitle.plain": "Every request in flight across the organisation.",
+  "admin.wf.inbox.chart.title": "Are we behind?",
+  "admin.wf.inbox.chart.hint":
+    "Everything still waiting for a decision, split by whether its service level has already been breached. The breach set is written by the server's own sweep every 30 minutes, not measured against this browser's clock.",
+  "admin.wf.inbox.chart.ontime": "Still within time",
+  "admin.wf.inbox.chart.late": "Past its service level",
+  "admin.wf.inbox.chart.total": "{n} waiting for a decision",
   "admin.wf.inbox.tile.open": "In flight",
   "admin.wf.inbox.tile.mine": "Waiting on you",
   "admin.wf.inbox.tile.breached": "Late",
@@ -10670,6 +10678,10 @@ export const en = catalogue({
     "Shift codes could not be read, so cells show a dash where the code belongs. The slots themselves are correct.",
   "team.roster.noTeam.title": "Nobody reports to you",
   "team.roster.noTeam.hint": "This screen fills itself the moment a reporting line points at you.",
+  "team.roster.chart.title": "Cover across the week",
+  "team.roster.chart.hint":
+    "People rostered on each day, weekly offs excluded — an off is a slot row but not somebody working. A bar at zero means nobody is rostered that day, which the grid below shows as an empty column.",
+  "team.roster.chart.day": "{date}",
   "team.roster.publish.cta": "Publish this week",
   "team.roster.publish.title": "Publish the roster for the week of {week}",
   "team.roster.publish.what":

@@ -46,6 +46,17 @@ export const keysCertification = {
   "apply.cert.notListed":
     "This is not on the funded list, so it is a request rather than a claim against an agreed offer. Nothing is wrong with that — say clearly below what it is for.",
 
+  // ── The funding picture ─────────────────────────────────────────────────────
+  "apply.cert.chart.split": "Who pays what",
+  "apply.cert.chart.venue": "Asked of the venue",
+  "apply.cert.chart.self": "You would fund",
+  "apply.cert.chart.shortfall":
+    "You would be paying {self} of this yourself. Ask for more if that is not what you intended.",
+  "apply.cert.chart.whole": "You are asking the venue to fund the whole course.",
+  "apply.cert.chart.agreed": "Agreed against asked",
+  "apply.cert.chart.agreedHint":
+    "Across {n} decided claim(s). Requests still waiting are not counted — a queue is not a refusal.",
+
   // ── Refusals, in the server's own terms ─────────────────────────────────────
   "apply.cert.blocked.title": "Before this can be sent",
   "apply.cert.blocked.name": "Name the certification.",

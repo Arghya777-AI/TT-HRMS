@@ -47,7 +47,15 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
-import { addIstDays, civilDayOffset, fmtCivilDate, fmtDateTime, nowIstDate } from "@/lib/datetime";
+import {
+  addIstDays,
+  civilDayOffset,
+  fmtCivilDate,
+  fmtDateTime,
+  fmtWeekday,
+  nowIstDate,
+} from "@/lib/datetime";
+import { TrendBars, type TrendBar } from "@/shared/ui/charts/TrendBars";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "@/features/admin/components/Notice";
@@ -212,6 +220,42 @@ export default function TeamRosterPage() {
   );
   const publish = usePublishRoster();
 
+  /*
+    ── WHICH DAY IS THIN ──────────────────────────────────────────────────────
+    The six tiles above answer "how much of this week is what" — published,
+    draft, weekly off. None of them answers the question a section head actually
+    asks on a Tuesday, which is WHICH DAY is short. Seven bars do, at a glance.
+
+    Counted from the slots already loaded rather than seven more `count=exact`
+    reads: `slots.data` IS the week for this team, fetched under one predicate,
+    so a per-day tally over it is a partition of a set the server already
+    returned — not a second, looser query that could disagree with the grid.
+
+    A day with no slots is a REAL zero here, not an absent record: the week was
+    read in full and nothing was found on that date. That is exactly the state
+    the footnote calls "an empty cell is the absence of a row".
+  */
+  const dayBars: readonly TrendBar[] = useMemo(() => {
+    const perDay = new Map<string, number>();
+    for (const slot of slots.data ?? []) {
+      /* A weekly off is a slot row but not a person working — counting it as
+         cover is how a Sunday looks staffed when nobody is in. */
+      if (slot.is_weekly_off) continue;
+      perDay.set(slot.slot_date, (perDay.get(slot.slot_date) ?? 0) + 1);
+    }
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = addIstDays(weekStart, i);
+      const n = perDay.get(date) ?? 0;
+      return {
+        key: date,
+        label: fmtWeekday(`${date}T12:00:00+05:30`).slice(0, 3),
+        value: n,
+        tone: n === 0 ? ("absent" as const) : ("present" as const),
+        caption: t("team.roster.chart.day", { date: fmtCivilDate(date) }),
+      };
+    });
+  }, [slots.data, weekStart]);
+
   /**
    * Grid rows are PEOPLE — every reportee, in the name order
    * `v_team_employee_basic` returned — so somebody with nothing rostered is
@@ -268,6 +312,23 @@ export default function TeamRosterPage() {
               />
             ))}
           </div>
+
+          {/* ── Which day is thin ────────────────────────────────────────── */}
+          <section className="mt-4 rounded-lg border bg-card p-4">
+            <h2 className="font-display text-sm font-semibold">
+              {t("team.roster.chart.title")}
+            </h2>
+            <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+              {t("team.roster.chart.hint")}
+            </p>
+            <TrendBars
+              title={t("team.roster.chart.title")}
+              bars={dayBars}
+              height={130}
+              showAxis
+              format={(v) => formatNumber(v)}
+            />
+          </section>
 
           {/* The week's header rows — publish state, and when it happened. */}
           <section className="mt-4 rounded-lg border bg-card p-4">

@@ -54,6 +54,7 @@ import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
 import { useEmployeeId, useProfileId } from "@/shared/api/employee-scope";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { dash, formatDays, formatNumber } from "@/lib/format";
+import { SplitBar } from "@/shared/ui/charts/SplitBar";
 import { formatINR } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
@@ -431,6 +432,59 @@ export default function ApprovalInboxPage() {
             : t("admin.wf.inbox.subtitle.plain")
         }
       />
+
+      {/*
+        ── HOW MUCH OF THE QUEUE IS ALREADY LATE ─────────────────────────────
+        Six tiles say how many are in each state. None answers the question an
+        approver opens this screen with, which is whether they are behind.
+
+        TWO segments, not three, and that is deliberate. `breached` is
+        `open statuses ∧ id ∈ sla_breaches`, so it is a strict SUBSET of `open`
+        and the split is exact. `escalated` overlaps `breached` — a request can be
+        both — so adding it as a third band would count those rows twice and every
+        share on the bar would be wrong. A missing band is a gap in what the chart
+        shows; a double-counted one is a lie about the numbers beside it.
+
+        Held back until `breachIds` has landed, for the same reason the Late tile
+        is: the breach predicate is an id set, and before it arrives the count is
+        a confident zero that would draw a fully on-time queue.
+      */}
+      {counts.open.data !== undefined &&
+      counts.breached.data !== undefined &&
+      !breachIds.isPending &&
+      counts.open.data > 0 ? (
+        <div className="mt-4 rounded-lg border bg-card p-4">
+          <h2 className="font-display text-sm font-semibold">
+            {t("admin.wf.inbox.chart.title")}
+          </h2>
+          <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+            {t("admin.wf.inbox.chart.hint")}
+          </p>
+          <SplitBar
+            title={t("admin.wf.inbox.chart.title")}
+            showShare
+            height={12}
+            format={(v) => formatNumber(v)}
+            segments={[
+              {
+                key: "ontime",
+                label: t("admin.wf.inbox.chart.ontime"),
+                value: Math.max(counts.open.data - counts.breached.data, 0),
+                tone: "present",
+              },
+              {
+                key: "late",
+                label: t("admin.wf.inbox.chart.late"),
+                value: counts.breached.data,
+                tone: "absent",
+              },
+            ]}
+            totalCaption={t("admin.wf.inbox.chart.total", {
+              n: formatNumber(counts.open.data),
+            })}
+          />
+        </div>
+      ) : null}
 
       {/* Server counts. Each tile is the cardinality of the rows it opens. */}
       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">

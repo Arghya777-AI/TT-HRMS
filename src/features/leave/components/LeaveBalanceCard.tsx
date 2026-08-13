@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { fmtCivilDate } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
+import { SplitBar, type SplitSegment } from "@/shared/ui/charts/SplitBar";
 import type { LeaveBalance } from "../api/leave.api";
 import { fmtDays } from "./leave-vocab";
 
@@ -68,6 +69,43 @@ export function LeaveBalanceCard({
     available: fmtDays(balance.available_after_pending),
   });
 
+  /*
+    ── WHERE THE YEAR'S ENTITLEMENT WENT ──────────────────────────────────────
+    Eight numbers in a definition list say what each component IS. None of them
+    says what a reader actually wants to know before booking a holiday: how much
+    of the year is left versus already spent. A stacked bar says it in one glance.
+
+    NOTHING IS COMPUTED. Every segment is a stored column, and these five are
+    exactly the ones the generated `available_after_pending` is built from — so
+    the bar IS the entitlement divided, not a second opinion about it. A sixth
+    segment or a subtraction here would be arithmetic competing with Postgres.
+
+    Zero-value segments are dropped by `SplitBar` itself, so a type that cannot
+    be encashed or lapsed simply shows fewer bands.
+  */
+  const segments: readonly SplitSegment[] = [
+    {
+      key: "available",
+      label: t("leave.balance.chart.available"),
+      value: balance.available_after_pending,
+      tone: "present",
+    },
+    /* Amber, not green: held days are spoken for but not yet granted, and a
+       reader who counts them as taken is as wrong as one who counts them free. */
+    { key: "held", label: t("leave.balance.held"), value: balance.pending_days, tone: "late" },
+    { key: "used", label: t("leave.balance.used"), value: balance.availed_days, tone: "employer" },
+    {
+      key: "encashed",
+      label: t("leave.balance.encashed"),
+      value: balance.encashed_days,
+      tone: "leave",
+    },
+    /* Red, because lapsed days are the only band on this bar that represents
+       something the employee LOST rather than chose. */
+    { key: "lapsed", label: t("leave.balance.lapsed"), value: balance.lapsed_days, tone: "absent" },
+  ];
+  const entitled = segments.reduce((sum, seg) => sum + seg.value, 0);
+
   const applyHref = balance.is_comp_off
     ? "/me/comp-off"
     : `/me/leave/apply?type=${encodeURIComponent(balance.leave_type_id)}`;
@@ -101,6 +139,18 @@ export function LeaveBalanceCard({
       <p className="num font-display text-3xl font-semibold leading-none">
         {fmtDays(balance.available_after_pending)}
       </p>
+
+      {entitled > 0 ? (
+        <div className="mt-3">
+          <SplitBar
+            title={t("leave.balance.chart.title", { type: balance.leave_type_name })}
+            segments={segments}
+            legend={false}
+            height={8}
+            format={(v) => fmtDays(v)}
+          />
+        </div>
+      ) : null}
 
       <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
         {visibleRows.map((row) => (

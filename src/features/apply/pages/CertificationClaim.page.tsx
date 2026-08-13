@@ -67,7 +67,9 @@ import {
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { mutationUserMessage } from "@/shared/api/query";
 import { formatPaise } from "@/lib/money";
-import { dash } from "@/lib/format";
+import { CoverageBar } from "@/shared/ui/charts/CoverageBar";
+import { SplitBar } from "@/shared/ui/charts/SplitBar";
+import { dash, formatNumber } from "@/lib/format";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import type { MessageKey } from "@/shared/i18n/en";
@@ -154,6 +156,24 @@ export default function CertificationClaimPage() {
   if (hasOpenClaimFor(mine.data ?? [], name)) {
     blockers.push(t("apply.cert.blocked.duplicate"));
   }
+
+  /*
+    Totals across DECIDED claims only — a decision is the only moment both
+    figures exist. `amount_approved_paise` is null until then, and counting a
+    pending claim's ask against a null agreement would draw the queue as a
+    refusal.
+  */
+  const decided = (mine.data ?? []).reduce(
+    (acc, c) =>
+      c.amount_approved_paise === null
+        ? acc
+        : {
+            asked: acc.asked + c.amount_requested_paise,
+            agreed: acc.agreed + c.amount_approved_paise,
+            count: acc.count + 1,
+          },
+    { asked: 0, agreed: 0, count: 0 },
+  );
 
   /* Above the cap is ALLOWED — said out loud rather than prevented. */
   const overCap =
@@ -443,6 +463,47 @@ export default function CertificationClaimPage() {
                     </div>
                   )}
 
+                  {/*
+                    WHO IS PAYING FOR WHAT, while it is still being typed.
+                    The fee and the ask are two boxes several fields apart, and
+                    the difference between them — the part the employee would be
+                    funding themselves — is the number nobody computes until the
+                    money is gone. Drawn only once both are valid, because a bar
+                    that redraws on every keystroke of a half-typed figure is
+                    noise rather than information.
+                  */}
+                  {feePaise !== null && askPaise !== null && feePaise > 0 && askPaise > 0 ? (
+                    <div className="mt-4 rounded-md border bg-muted/20 p-3">
+                      <SplitBar
+                        title={t("apply.cert.chart.split")}
+                        showShare
+                        height={12}
+                        format={(v) => formatPaise(v)}
+                        segments={[
+                          {
+                            key: "venue",
+                            label: t("apply.cert.chart.venue"),
+                            value: Math.min(askPaise, feePaise),
+                            tone: "earning",
+                          },
+                          {
+                            key: "self",
+                            label: t("apply.cert.chart.self"),
+                            value: Math.max(feePaise - askPaise, 0),
+                            tone: "deduction",
+                          },
+                        ]}
+                        totalCaption={
+                          feePaise > askPaise
+                            ? t("apply.cert.chart.shortfall", {
+                                self: formatPaise(feePaise - askPaise),
+                              })
+                            : t("apply.cert.chart.whole")
+                        }
+                      />
+                    </div>
+                  ) : null}
+
                   {overCap && chosen !== undefined && askPaise !== null ? (
                     <div className="mt-3">
                       <Notice tone="warning">
@@ -597,6 +658,27 @@ export default function CertificationClaimPage() {
               {t("apply.cert.mine.title")}
             </h2>
             <p className="mb-3 text-sm text-muted-foreground">{t("apply.cert.mine.hint")}</p>
+            {/*
+              Only over DECIDED claims. Adding a pending request into "asked"
+              while its approval is necessarily absent from "agreed" would draw a
+              shortfall that is really just a queue — and read as a refusal
+              nobody has made.
+            */}
+            {decided.asked > 0 ? (
+              <div className="mb-4 rounded-lg border bg-card p-4">
+                <CoverageBar
+                  value={decided.agreed}
+                  target={decided.asked}
+                  title={t("apply.cert.chart.agreed")}
+                  showLabel
+                  height={12}
+                  format={(v) => formatPaise(v)}
+                  caption={t("apply.cert.chart.agreedHint", {
+                    n: formatNumber(decided.count),
+                  })}
+                />
+              </div>
+            ) : null}
             <StateBoundary
               loading={mine.isLoading}
               error={mine.error ?? undefined}

@@ -19,6 +19,16 @@ import { describe, expect, it } from "vitest";
 import { CHART_TONE, seriesColor, CHART_SERIES } from "./chartTokens";
 import { ProgressRing } from "./ProgressRing";
 import { SplitBar } from "./SplitBar";
+import { CoverageBar, coverageState, shortfall } from "./CoverageBar";
+
+/* The tone map is internal to the component; mirrored here so a drift between
+   meaning and colour fails a test rather than shipping. */
+const STATE_TONE_FOR_TEST = {
+  unknown: CHART_TONE.neutral,
+  short: CHART_TONE.absent,
+  met: CHART_TONE.present,
+  over: CHART_TONE.present,
+} as const;
 
 describe("chart tokens", () => {
   it("wraps the categorical ramp instead of running out of colours", () => {
@@ -193,5 +203,54 @@ describe("the informative additions", () => {
     // The caption still carries the real figures; the SHARE cannot exceed the whole.
     expect(container.textContent).toContain("100%");
     expect(container.textContent).toContain("of 10");
+  });
+});
+
+describe("CoverageBar", () => {
+  /*
+    The distinction this component exists for. "Nobody has said what this
+    department needs" and "this department is fully staffed" are opposite facts,
+    and a bar that paints them the same colour tells a manager the venue is
+    covered on a night nobody has planned.
+  */
+  it("treats no stated target as unknown, never as met", () => {
+    expect(coverageState(0, null)).toBe("unknown");
+    expect(coverageState(0, 0)).toBe("unknown");
+    expect(coverageState(4, null)).toBe("unknown");
+    // And the colour follows the meaning, not the fill.
+    expect(STATE_TONE_FOR_TEST.unknown).toBe(CHART_TONE.neutral);
+    expect(STATE_TONE_FOR_TEST.met).toBe(CHART_TONE.present);
+    expect(STATE_TONE_FOR_TEST.short).toBe(CHART_TONE.absent);
+  });
+
+  it("separates short, met and over", () => {
+    expect(coverageState(3, 5)).toBe("short");
+    expect(coverageState(5, 5)).toBe("met");
+    expect(coverageState(7, 5)).toBe("over");
+  });
+
+  it("never reports a negative shortfall", () => {
+    // Over-rostering is not a shortfall of minus two; it is not a shortfall.
+    expect(shortfall(7, 5)).toBe(0);
+    expect(shortfall(5, 5)).toBe(0);
+    expect(shortfall(3, 5)).toBe(2);
+    expect(shortfall(3, null)).toBe(0);
+  });
+
+  it("renders the pair of figures, not a percentage", () => {
+    /*
+      A reader acting on this needs "3 of 5", because the action is finding two
+      more people. "60%" is the same fact with the actionable part removed.
+    */
+    render(<CoverageBar value={3} target={5} title="Kitchen" showLabel />);
+    expect(screen.getByText("3 / 5")).toBeInTheDocument();
+    expect(screen.getByText("−2")).toBeInTheDocument();
+  });
+
+  it("says what it is even with nothing to compare against", () => {
+    render(<CoverageBar value={4} target={null} title="Kitchen" showLabel />);
+    expect(screen.getByText("4")).toBeInTheDocument();
+    // No shortfall figure, because there is no target to fall short of.
+    expect(screen.queryByText(/^−/)).not.toBeInTheDocument();
   });
 });

@@ -62,7 +62,18 @@ import {
 import { confirmSubmitted } from "@/shared/ui/confirmSubmitted";
 import { mutationUserMessage } from "@/shared/api/query";
 import { dash, formatNumber } from "@/lib/format";
-import { fmtDateTime, istWallClockToInstant, nowIstDate } from "@/lib/datetime";
+import { CoverageBar } from "@/shared/ui/charts/CoverageBar";
+import { SplitBar } from "@/shared/ui/charts/SplitBar";
+import { TrendBars, type TrendBar } from "@/shared/ui/charts/TrendBars";
+import {
+  addIstDays,
+  fmtCivilDate,
+  fmtDateTime,
+  istDate,
+  istWallClockToInstant,
+  nowIstDate,
+} from "@/lib/datetime";
+import { istWeekStart } from "@/features/team/api/roster.api";
 import { t } from "@/shared/i18n/en";
 import type { MessageKey } from "@/shared/i18n/en";
 import {
@@ -81,6 +92,18 @@ import {
 import { useCompanies } from "../hooks/useMasters";
 
 const BLOCKER_ID = "event-blockers";
+
+/*
+  The same meanings the status chips carry, so a green segment never sits beside
+  an amber badge for one fact: confirmed is settled work, an enquiry is not yet,
+  a completed booking is history, a cancellation is money that went away.
+*/
+const STATUS_TONE = {
+  confirmed: "present",
+  enquiry: "late",
+  completed: "neutral",
+  cancelled: "absent",
+} as const;
 
 /** `ck_events__status`, in the words a venue manager uses. */
 const EVENT_STATUS_MAP: Record<string, StatusChipEntry> = {
@@ -157,6 +180,52 @@ export default function EventRegisterPage() {
   if (guestCount !== null && (!Number.isFinite(guestCount) || guestCount < 0)) {
     blockers.push(t("events.new.blocked.guests"));
   }
+
+  /*
+    ── WHY THESE TWO CHARTS ARE CONDITIONAL ──────────────────────────────────
+    They are drawn from the LOADED ROWS, not from a server aggregate, because
+    Postgres has not been asked for a per-status or per-week count here. That is
+    honest only while the register is complete: the list is capped at 200, and a
+    distribution drawn over the first 200 of 340 bookings is a picture of the cap,
+    not of the season. So the charts appear when the server's own count agrees
+    with what arrived, and a line says why when they do not.
+  */
+  const loaded = events.data ?? [];
+  const complete = total.data !== undefined && total.data === loaded.length;
+
+  const statusSegments = complete
+    ? (["confirmed", "enquiry", "completed", "cancelled"] as const)
+        .map((key) => ({
+          key,
+          label: t(`events.status.${key}` as MessageKey),
+          value: loaded.filter((e) => e.status === key).length,
+          /* The same meaning the chips carry: confirmed is settled work,
+             an enquiry is not yet, a cancellation is money that went away. */
+          tone: STATUS_TONE[key],
+        }))
+        .filter((seg) => seg.value > 0)
+    : [];
+
+  /* Eight weeks from this week's Monday — the horizon a venue actually staffs
+     against. Weeks with no booking are a real zero here, not an absent record:
+     the register was read in full, and nothing was found. */
+  const weekBars: readonly TrendBar[] = complete
+    ? Array.from({ length: 8 }, (_, i) => {
+        const monday = addIstDays(istWeekStart(nowIstDate()), i * 7);
+        const sunday = addIstDays(monday, 6);
+        const n = loaded.filter((e) => {
+          const d = istDate(e.starts_at);
+          return d >= monday && d <= sunday;
+        }).length;
+        return {
+          key: monday,
+          label: fmtCivilDate(monday).slice(0, 6),
+          value: n,
+          tone: n === 0 ? ("neutral" as const) : ("employer" as const),
+          caption: t("events.ahead.week", { week: fmtCivilDate(monday) }),
+        };
+      })
+    : [];
 
   const columns: DataGridColumn<EventRow>[] = [
     {
@@ -262,16 +331,23 @@ export default function EventRegisterPage() {
     {
       key: "short_by",
       header: t("events.coverage.col.short"),
-      align: "right",
-      width: "9rem",
-      /* `short_by` is GREATEST(required - rostered, 0) in Postgres. Not
-         recomputed here — one subtraction, in one place. */
-      render: (row) =>
-        row.short_by === 0 ? (
-          <span className="text-xs text-muted-foreground">{t("events.coverage.covered")}</span>
-        ) : (
-          <span className="num font-semibold text-destructive">{formatNumber(row.short_by)}</span>
-        ),
+      width: "13rem",
+      /*
+        The bar carries the pair; `short_by` stays beside it as the exact figure.
+        A manager acts on "two more people", not on a rectangle — the bar is what
+        makes a table of twenty rows scannable, and the number is what gets acted
+        on. Neither is computed here: `short_by` is the view's own
+        GREATEST(required − rostered, 0).
+      */
+      render: (row) => (
+        <CoverageBar
+          value={row.rostered_headcount}
+          target={row.required_headcount === 0 ? null : row.required_headcount}
+          title={`${row.title} · ${row.department_name ?? t("events.coverage.noDept")}`}
+          showLabel
+          format={(v) => formatNumber(v)}
+        />
+      ),
     },
   ];
 
@@ -318,6 +394,46 @@ export default function EventRegisterPage() {
               </span>
             )}
           </div>
+
+          {/* ── The shape of the season ──────────────────────────────────── */}
+          {complete && loaded.length > 0 ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="rounded-lg border bg-card p-4">
+                <h2 className="font-display text-sm font-semibold">
+                  {t("events.chart.mix.title")}
+                </h2>
+                <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+                  {t("events.chart.mix.hint")}
+                </p>
+                <SplitBar
+                  title={t("events.chart.mix.title")}
+                  segments={statusSegments}
+                  showShare
+                  height={12}
+                  format={(v) => formatNumber(v)}
+                  totalCaption={t("events.chart.mix.total", {
+                    n: formatNumber(loaded.length),
+                  })}
+                />
+              </section>
+
+              <section className="rounded-lg border bg-card p-4">
+                <h2 className="font-display text-sm font-semibold">
+                  {t("events.chart.ahead.title")}
+                </h2>
+                <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
+                  {t("events.chart.ahead.hint")}
+                </p>
+                <TrendBars
+                  title={t("events.chart.ahead.title")}
+                  bars={weekBars}
+                  height={120}
+                  showAxis
+                  format={(v) => formatNumber(v)}
+                />
+              </section>
+            </div>
+          ) : null}
 
           {/* ── The register ─────────────────────────────────────────────── */}
           <section aria-labelledby="events-list">

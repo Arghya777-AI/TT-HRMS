@@ -78,6 +78,7 @@ import {
 } from "../hooks/useAttendanceRecords";
 import { useRefOptions } from "../hooks/useMasters";
 import { useEventCoverage } from "../hooks/useEventRegister";
+import { CoverageBar } from "@/shared/ui/charts/CoverageBar";
 import type { EventCoverageRow } from "../api/events.api";
 
 const ROSTER_STATUS_CHIP: Readonly<Record<string, StatusChipEntry>> = {
@@ -153,14 +154,18 @@ export default function EventCoveragePage() {
     {
       key: "short_by",
       header: t("events.coverage.col.short"),
-      align: "right",
-      width: "9rem",
-      render: (row) =>
-        row.short_by === 0 ? (
-          <span className="text-xs text-muted-foreground">{t("events.coverage.covered")}</span>
-        ) : (
-          <span className="num font-semibold text-destructive">{formatNumber(row.short_by)}</span>
-        ),
+      width: "13rem",
+      /* The same bar the event register draws, from the same view column — two
+         screens showing one fact must not render it two ways. */
+      render: (row) => (
+        <CoverageBar
+          value={row.rostered_headcount}
+          target={row.required_headcount === 0 ? null : row.required_headcount}
+          title={`${row.title} · ${row.department_name ?? t("events.coverage.noDept")}`}
+          showLabel
+          format={(v) => formatNumber(v)}
+        />
+      ),
     },
   ];
   const days = useMemo(() => istWeekDates(weekStart), [weekStart]);

@@ -54,6 +54,16 @@ export const keysEvents = {
   "events.type.photoshoot": "Photoshoot",
   "events.type.other": "Other",
 
+  // ── The shape of the season ─────────────────────────────────────────────────
+  "events.chart.mix.title": "Where the diary stands",
+  "events.chart.mix.hint":
+    "Confirmed work against what is still only an enquiry. An enquiry needs chasing; a confirmed booking needs staffing.",
+  "events.chart.mix.total": "{n} booking(s) in this view",
+  "events.chart.ahead.title": "The next eight weeks",
+  "events.chart.ahead.hint":
+    "Bookings by the week they start, so a heavy fortnight is visible before it arrives rather than when the roster is built.",
+  "events.ahead.week": "Week of {week}",
+
   // ── Coverage ────────────────────────────────────────────────────────────────
   "events.coverage.title": "Rostered against required",
   "events.coverage.hint":

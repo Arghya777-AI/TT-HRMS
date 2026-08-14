@@ -40,7 +40,9 @@ export const keysScheduledReports = {
 
   // ── The standing fact about delivery ────────────────────────────────────────
   "admin.asched.undelivered":
-    "Nothing dispatches these yet. The schedules and their recipients are recorded, but no function renders a report and hands it to the mailer, so every row below reads \"never sent\" and will keep reading that until one is built. This is stated rather than hidden because an enabled schedule that silently never fires is worse than no schedule at all.",
+    "A scheduled report sends a LINK, not a file. The recipient opens it here and downloads under their own permissions, so access ends when their account does rather than living forever in an inbox. That also means an external address with no login cannot be served this way — those are skipped, and the schedule says so.",
+  "admin.asched.jobOff":
+    "The dispatcher job is registered but switched off. Turn on \"scheduled-report-dispatch\" under System health when you are ready for these to start going out.",
 
   // ── Adding one ──────────────────────────────────────────────────────────────
   "admin.asched.new.title": "Schedule a report",

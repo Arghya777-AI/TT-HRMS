@@ -231,6 +231,9 @@ export default function AnalyticsScheduledPage() {
         */}
         <div className="mt-4">
           <Notice tone="note">{t("admin.asched.undelivered")}</Notice>
+          <div className="mt-2">
+            <Notice tone="note">{t("admin.asched.jobOff")}</Notice>
+          </div>
         </div>
 
         <section className="mt-6" aria-labelledby="sched-list">

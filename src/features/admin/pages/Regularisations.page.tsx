@@ -38,6 +38,7 @@ import { fmtCivilDateWeekday, fmtDateTime, fmtDuration, fmtTime } from "@/lib/da
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -188,6 +189,39 @@ export default function RegularisationsPage() {
             : t("admin.regq.subtitlePlain")
         }
       />
+
+      {/*
+        HOW MUCH IS STILL WAITING. `pending` is a subset of the filtered total, so
+        the remainder — everything already decided — is exact.
+
+        A regularisation is somebody saying the clock got their day wrong. A large
+        pending share is not a queue problem so much as a signal that the gate or
+        the roster is producing bad days faster than anybody can correct them.
+      */}
+      {total.data !== undefined && pendingCount.data !== undefined && total.data > 0 ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("admin.regq.mix.title")}
+            hint={t("admin.regq.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("admin.regq.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "pending",
+                label: t("admin.regq.mix.pending"),
+                value: pendingCount.data,
+                tone: "late",
+              },
+              {
+                key: "decided",
+                label: t("admin.regq.mix.decided"),
+                value: Math.max(total.data - pendingCount.data, 0),
+                tone: "present",
+              },
+            ]}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-4">
         <SelectField

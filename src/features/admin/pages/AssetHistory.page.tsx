@@ -379,7 +379,7 @@ export default function AssetHistoryPage() {
       </section>
 
       <div className="mt-6">
-        <Notice tone="warning">{t("admin.assets.history.footnote")}</Notice>
+        <Notice tone="note">{t("admin.assets.history.footnote")}</Notice>
       </div>
     </div>
   );

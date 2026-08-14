@@ -190,7 +190,7 @@ export default function DocumentAccessLogPage() {
       />
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.docs.log.writerMissing")}</Notice>
+        <Notice tone="note">{t("admin.docs.log.writerMissing")}</Notice>
       </div>
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">

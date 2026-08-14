@@ -520,7 +520,7 @@ export default function IncomeTaxPage() {
             skeletonRows={2}
           >
             {changeType.data === null ? (
-              <Notice tone="warning">{t("apply.type.missing")}</Notice>
+              <Notice tone="note">{t("apply.type.missing")}</Notice>
             ) : (
               <div className="space-y-3">
                 {changeType.data !== undefined ? (
@@ -663,7 +663,7 @@ export default function IncomeTaxPage() {
               skeletonRows={2}
             >
               {declarationType.data === null ? (
-                <Notice tone="warning">{t("apply.type.missing")}</Notice>
+                <Notice tone="note">{t("apply.type.missing")}</Notice>
               ) : (
                 <div className="space-y-3">
                   {declarationType.data !== undefined ? (

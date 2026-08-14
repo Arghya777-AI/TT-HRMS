@@ -331,7 +331,7 @@ export default function AssetConsumablesPage() {
       </div>
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.assets.consum.gap")}</Notice>
+        <Notice tone="note">{t("admin.assets.consum.gap")}</Notice>
       </div>
 
       <section className="mt-6">

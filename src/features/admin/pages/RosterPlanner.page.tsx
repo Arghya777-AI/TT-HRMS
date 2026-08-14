@@ -455,9 +455,9 @@ export default function RosterPlannerPage() {
       </section>
 
       <div className="mt-4 space-y-2">
-        <Notice tone="info">{t("admin.rosterp.gap.noSlotEdit")}</Notice>
-        <Notice tone="info">{t("admin.rosterp.gap.noEventLink")}</Notice>
-        <Notice tone="info">{t("admin.rosterp.footnote")}</Notice>
+        <Notice tone="note">{t("admin.rosterp.gap.noSlotEdit")}</Notice>
+        <Notice tone="note">{t("admin.rosterp.gap.noEventLink")}</Notice>
+        <Notice tone="note">{t("admin.rosterp.footnote")}</Notice>
       </div>
     </div>
   );

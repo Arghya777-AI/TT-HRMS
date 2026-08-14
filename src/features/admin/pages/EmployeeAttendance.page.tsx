@@ -383,7 +383,7 @@ export default function EmployeeAttendancePage() {
 
             {person.exclude_from_attendance ? (
               <div className="mt-4">
-                <Notice tone="warning">{t("admin.pAtt.excluded")}</Notice>
+                <Notice tone="note">{t("admin.pAtt.excluded")}</Notice>
               </div>
             ) : null}
 

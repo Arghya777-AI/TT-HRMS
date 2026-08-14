@@ -59,6 +59,7 @@ import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
 import { keysCertification } from "./keys/certification";
 import { keysEvents } from "./keys/events";
+import { keysScheduledReports } from "./keys/scheduled-reports";
 import { keysClaims } from "./keys/claims";
 import { keysDocumentOpen } from "./keys/document-open";
 import { keysPunchLocation } from "./keys/punch-location";
@@ -148,6 +149,7 @@ export const en = catalogue({
   ...keysAnalyticsOverview,
   ...keysCertification,
   ...keysEvents,
+  ...keysScheduledReports,
   ...keysClaims,
   ...keysDocumentOpen,
   ...keysPunchLocation,
@@ -756,6 +758,11 @@ export const en = catalogue({
     "“For you” comes from the attendance engine's own row for that date, so it matches your attendance screen exactly.",
 
   // E-16 Notifications
+  "notif.mix.title": "Read against unread",
+  "notif.mix.hint": "Everything in this view, by whether it has been opened.",
+  "notif.mix.unread": "Unread",
+  "notif.mix.read": "Read",
+  "notif.mix.total": "{n} notification(s) in this view",
   "notif.title": "Notifications",
   "notif.subtitle": "Everything the system has told you, newest first.",
   "notif.group.today": "Today",
@@ -5991,6 +5998,12 @@ export const en = catalogue({
     "One row per person per date, expanded by the leave engine; rejected and withdrawn requests are already excluded. “Counts as” is the server's value for the date — half days are 0.5 by the engine's decision, not this screen's.",
 
   // §4 Regularisation Requests — /admin/attendance/regularisations
+  "admin.regq.mix.title": "How much is still waiting",
+  "admin.regq.mix.hint":
+    "Requests to correct a day, by whether anybody has decided them. A large waiting share is usually a sign the gate or the roster is producing bad days faster than they can be corrected.",
+  "admin.regq.mix.pending": "Waiting on a decision",
+  "admin.regq.mix.decided": "Decided",
+  "admin.regq.mix.total": "{n} request(s) in this view",
   "admin.regq.title": "Regularisation Requests",
   "admin.regq.subtitle": "{n} waiting for a decision.",
   "admin.regq.subtitlePlain": "Correction requests, oldest first.",
@@ -8661,6 +8674,12 @@ export const en = catalogue({
   "admin.wf.deleg.title": "Delegations",
   "admin.wf.deleg.subtitle.count": "{n} delegations in this view, counted by the database.",
   "admin.wf.deleg.subtitle.plain": "Temporary transfer of approval authority.",
+  "admin.wf.deleg.mix.title": "Who is approving for somebody else",
+  "admin.wf.deleg.mix.hint":
+    "Delegations that are running, against those that have finished. A register that is mostly running means a lot of decisions are currently being taken on somebody else's behalf.",
+  "admin.wf.deleg.mix.active": "Running now",
+  "admin.wf.deleg.mix.ended": "Finished",
+  "admin.wf.deleg.mix.total": "{n} delegation(s) recorded",
   "admin.wf.deleg.tile.active": "Flagged active",
   "admin.wf.deleg.tile.ended": "Ended",
   "admin.wf.deleg.tile.all": "All on record",

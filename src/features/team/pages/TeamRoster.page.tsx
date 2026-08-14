@@ -448,9 +448,9 @@ export default function TeamRosterPage() {
           </div>
 
           <div className="mt-4 space-y-2">
-            <Notice tone="info">{t("team.roster.gap.noSlotEdit")}</Notice>
-            <Notice tone="info">{t("team.roster.gap.noEventLink")}</Notice>
-            <Notice tone="info">{t("team.roster.footnote")}</Notice>
+            <Notice tone="note">{t("team.roster.gap.noSlotEdit")}</Notice>
+            <Notice tone="note">{t("team.roster.gap.noEventLink")}</Notice>
+            <Notice tone="note">{t("team.roster.footnote")}</Notice>
           </div>
         </>
       )}

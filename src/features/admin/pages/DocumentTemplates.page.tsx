@@ -191,7 +191,7 @@ export default function DocumentTemplatesPage() {
       />
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.docs.tpl.readOnly")}</Notice>
+        <Notice tone="note">{t("admin.docs.tpl.readOnly")}</Notice>
       </div>
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -318,7 +318,7 @@ export default function ReportBuilderPage() {
 
       <div className="space-y-2">
         <Notice tone="info">{t("admin.rbuild.intro")}</Notice>
-        <Notice tone="warning">{t("admin.rbuild.limits")}</Notice>
+        <Notice tone="note">{t("admin.rbuild.limits")}</Notice>
       </div>
 
       {/* ── Starter reports — the seeded saved views ────────────────────────── */}

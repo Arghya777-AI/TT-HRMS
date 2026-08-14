@@ -87,7 +87,7 @@ export default function DocumentEsignPage() {
       />
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.docs.esign.noActions")}</Notice>
+        <Notice tone="note">{t("admin.docs.esign.noActions")}</Notice>
       </div>
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-4">

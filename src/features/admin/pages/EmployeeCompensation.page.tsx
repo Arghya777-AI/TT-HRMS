@@ -372,7 +372,7 @@ export default function EmployeeCompensationPage() {
 
             {person.exclude_from_payroll ? (
               <div className="mt-4">
-                <Notice tone="warning">{t("admin.pComp.excluded")}</Notice>
+                <Notice tone="note">{t("admin.pComp.excluded")}</Notice>
               </div>
             ) : null}
 

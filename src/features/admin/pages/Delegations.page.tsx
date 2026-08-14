@@ -56,6 +56,7 @@ import { fmtCivilDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
@@ -251,6 +252,38 @@ export default function DelegationsPage() {
             : t("admin.wf.deleg.subtitle.plain")
         }
       />
+
+      {/*
+        A delegation is either running or finished, and the two tiles are exactly
+        those — so the split is a partition rather than a selection.
+
+        Worth a bar because the ratio is the question: a register that is mostly
+        ENDED is a healthy history, while one that is mostly ACTIVE means a lot of
+        people are currently approving on somebody else's behalf, which is worth
+        knowing before an audit asks.
+      */}
+      <div className="mt-4">
+        <StatusMixCard
+          title={t("admin.wf.deleg.mix.title")}
+          hint={t("admin.wf.deleg.mix.hint")}
+          format={(v) => formatNumber(v)}
+          totalCaption={(n) => t("admin.wf.deleg.mix.total", { n: formatNumber(n) })}
+          segments={[
+            {
+              key: "active",
+              label: t("admin.wf.deleg.mix.active"),
+              value: counts.active.data,
+              tone: "late",
+            },
+            {
+              key: "ended",
+              label: t("admin.wf.deleg.mix.ended"),
+              value: counts.ended.data,
+              tone: "neutral",
+            },
+          ]}
+        />
+      </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {TILES.map((tile) => {

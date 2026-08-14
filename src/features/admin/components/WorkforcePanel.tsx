@@ -603,7 +603,7 @@ export function WorkforcePanel({ showFilterBar = true }: WorkforcePanelProps = {
           skeletonRows={2}
         >
           {trend.data?.applicable === false ? (
-            <Notice tone="warning">{t("admin.hrwf.trend.noLocation")}</Notice>
+            <Notice tone="note">{t("admin.hrwf.trend.noLocation")}</Notice>
           ) : !trendHasData ? (
             <EmptyState
               icon={Users}

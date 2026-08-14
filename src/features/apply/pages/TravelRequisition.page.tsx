@@ -307,7 +307,7 @@ export default function TravelRequisitionPage() {
             skeletonRows={2}
           >
             {type.data === null ? (
-              <Notice tone="warning">{t("apply.type.missing")}</Notice>
+              <Notice tone="note">{t("apply.type.missing")}</Notice>
             ) : (
               <div className="space-y-3">
                 {type.data !== undefined ? (

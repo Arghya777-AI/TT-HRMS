@@ -455,7 +455,7 @@ export default function PayrollArrearsPage() {
       </section>
 
       <div className="mt-6">
-        <Notice tone="warning">{t("admin.arrears.gap.noWritePath")}</Notice>
+        <Notice tone="note">{t("admin.arrears.gap.noWritePath")}</Notice>
       </div>
     </div>
   );

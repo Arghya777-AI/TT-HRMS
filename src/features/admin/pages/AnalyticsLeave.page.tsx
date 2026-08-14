@@ -544,7 +544,7 @@ export default function AnalyticsLeavePage() {
 
       <div className="mt-6 space-y-3">
         <Notice tone="info">{t("admin.analytics.lv.footnote.sources")}</Notice>
-        <Notice tone="warning">{t("admin.analytics.lv.footnote.gaps")}</Notice>
+        <Notice tone="note">{t("admin.analytics.lv.footnote.gaps")}</Notice>
       </div>
     </div>
   );

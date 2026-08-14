@@ -568,10 +568,10 @@ export default function AddEmployeePage() {
             consultant from attendance is legitimate. It just cannot be silent.
           */}
           {(values["exclude_from_attendance"] ?? "") === "true" ? (
-            <Notice tone="warning">{t("admin.people.add.review.excludedAttendance")}</Notice>
+            <Notice tone="note">{t("admin.people.add.review.excludedAttendance")}</Notice>
           ) : null}
           {(values["exclude_from_payroll"] ?? "") === "true" ? (
-            <Notice tone="warning">{t("admin.people.add.review.excludedPayroll")}</Notice>
+            <Notice tone="note">{t("admin.people.add.review.excludedPayroll")}</Notice>
           ) : null}
 
           {everyGroup.map((group) => {

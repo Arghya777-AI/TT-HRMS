@@ -546,7 +546,7 @@ export default function PolicyPublicationPage() {
           </Button>
         </div>
         <div className="mt-4">
-          <Notice tone="warning">{t("admin.comms.pol.gapNotice")}</Notice>
+          <Notice tone="note">{t("admin.comms.pol.gapNotice")}</Notice>
         </div>
       </section>
 

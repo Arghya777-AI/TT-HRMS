@@ -388,7 +388,7 @@ export default function TransfersPage() {
       </div>
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.transfers.footnote")}</Notice>
+        <Notice tone="note">{t("admin.transfers.footnote")}</Notice>
       </div>
       <RecordMovementSheet
         open={movingEmployee !== null}

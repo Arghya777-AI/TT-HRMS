@@ -543,7 +543,7 @@ export default function TeamPerformancePage() {
           </FactCard>
 
           <div className="space-y-2">
-            <Notice tone="warning">{t("teamExtra.perf.gap.appraisal")}</Notice>
+            <Notice tone="note">{t("teamExtra.perf.gap.appraisal")}</Notice>
             <Notice tone="info">{t("teamExtra.perf.footnote.oneSource")}</Notice>
             <Notice tone="info">{t("teamExtra.perf.footnote.excludesMe")}</Notice>
           </div>

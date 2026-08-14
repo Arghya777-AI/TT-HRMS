@@ -705,7 +705,7 @@ export default function AnalyticsAttendancePage() {
 
       <div className="mt-6 space-y-3">
         <Notice tone="info">{t("admin.analytics.att.footnote.sources")}</Notice>
-        <Notice tone="warning">{t("admin.analytics.att.footnote.gaps")}</Notice>
+        <Notice tone="note">{t("admin.analytics.att.footnote.gaps")}</Notice>
       </div>
     </div>
   );

@@ -471,7 +471,7 @@ export default function DocumentRepositoryPage() {
       </div>
 
       <div className="mt-4 space-y-2">
-        <Notice tone="warning">{t("admin.docs.repo.noOpen")}</Notice>
+        <Notice tone="note">{t("admin.docs.repo.noOpen")}</Notice>
         <Notice tone="info">{t("admin.docs.repo.footnote")}</Notice>
       </div>
     </div>

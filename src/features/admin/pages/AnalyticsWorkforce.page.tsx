@@ -609,7 +609,7 @@ export default function AnalyticsWorkforcePage() {
 
       <div className="mt-6 space-y-3">
         <Notice tone="info">{t("admin.analytics.wf.footnote.sources")}</Notice>
-        <Notice tone="warning">{t("admin.analytics.wf.footnote.gaps")}</Notice>
+        <Notice tone="note">{t("admin.analytics.wf.footnote.gaps")}</Notice>
       </div>
     </div>
   );

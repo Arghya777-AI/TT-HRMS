@@ -379,7 +379,7 @@ export default function RehirePage() {
       </div>
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.rehire.gapNotice")}</Notice>
+        <Notice tone="note">{t("admin.rehire.gapNotice")}</Notice>
       </div>
 
       <div className="mt-4 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">

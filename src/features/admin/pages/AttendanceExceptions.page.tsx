@@ -380,7 +380,7 @@ export default function AttendanceExceptionsPage() {
         </div>
 
         <div className="mt-3">
-          <Notice tone="warning">{t("admin.exceptions.singleScan.explainer")}</Notice>
+          <Notice tone="note">{t("admin.exceptions.singleScan.explainer")}</Notice>
         </div>
 
         {onDate === null ? (

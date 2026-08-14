@@ -37,6 +37,7 @@ import { SelectField } from "@/features/admin/components/Field";
 import { fmtDateTime } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
+import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import {
   FEED_LIMIT,
   notificationChannelValues,
@@ -313,6 +314,36 @@ export default function NotificationsPage() {
         <Notice tone="warning" className="mt-3">
           {t("notif.unlisted", { count: formatNumber(unlisted.data) })}
         </Notice>
+      ) : null}
+
+      {/*
+        READ AGAINST UNREAD. `unread` is a strict subset of the total, so the
+        remainder is exact — and the proportion is the only thing a person wants
+        from an inbox at a glance.
+      */}
+      {total.data !== undefined && unread.data !== undefined && total.data > 0 ? (
+        <div className="mt-4">
+          <StatusMixCard
+            title={t("notif.mix.title")}
+            hint={t("notif.mix.hint")}
+            format={(v) => formatNumber(v)}
+            totalCaption={(n) => t("notif.mix.total", { n: formatNumber(n) })}
+            segments={[
+              {
+                key: "unread",
+                label: t("notif.mix.unread"),
+                value: unread.data,
+                tone: "late",
+              },
+              {
+                key: "read",
+                label: t("notif.mix.read"),
+                value: Math.max(total.data - unread.data, 0),
+                tone: "present",
+              },
+            ]}
+          />
+        </div>
       ) : null}
 
       <div className="mt-4">

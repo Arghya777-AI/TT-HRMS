@@ -577,7 +577,7 @@ export default function ExitsPage() {
       </div>
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.exits.clearanceGap")}</Notice>
+        <Notice tone="note">{t("admin.exits.clearanceGap")}</Notice>
       </div>
     </div>
   );

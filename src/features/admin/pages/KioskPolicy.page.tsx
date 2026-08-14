@@ -224,7 +224,7 @@ export default function KioskPolicyPage() {
 
       <KioskSectionNav />
 
-      <Notice tone="warning">{t("admin.kiosk.policy.governance")}</Notice>
+      <Notice tone="note">{t("admin.kiosk.policy.governance")}</Notice>
 
       {!isSuper ? (
         <p

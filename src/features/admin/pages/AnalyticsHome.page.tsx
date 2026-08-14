@@ -228,7 +228,7 @@ export default function AnalyticsHomePage() {
           it read as an error somebody had to fix, and a warning triangle that
           never clears is how people learn to ignore warning triangles.
         */}
-        <Notice tone="info">{t("admin.analytics.home.gap")}</Notice>
+        <Notice tone="note">{t("admin.analytics.home.gap")}</Notice>
       </div>
     </div>
   );

@@ -101,7 +101,7 @@ export default function ApiKeysPage() {
         subtitle={t("admin.apiKeys.subtitle")}
       />
 
-      <Notice tone="warning">{t("admin.apiKeys.notice.noClientPath")}</Notice>
+      <Notice tone="note">{t("admin.apiKeys.notice.noClientPath")}</Notice>
 
       <EmptyState
         icon={KeyRound}

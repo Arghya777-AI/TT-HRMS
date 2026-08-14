@@ -475,7 +475,7 @@ export default function DocumentPendingPage() {
       />
 
       <div className="mt-4">
-        <Notice tone="warning">{t("admin.docs.pend.noDecide")}</Notice>
+        <Notice tone="note">{t("admin.docs.pend.noDecide")}</Notice>
       </div>
 
       <div

@@ -282,7 +282,7 @@ export default function BroadcastsPage() {
       />
 
       <div className="mb-6">
-        <Notice tone="warning">{t("admin.comms.bc.transportNotice")}</Notice>
+        <Notice tone="note">{t("admin.comms.bc.transportNotice")}</Notice>
       </div>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

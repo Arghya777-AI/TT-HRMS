@@ -635,7 +635,7 @@ export default function BulkActionsPage() {
 
       <div className="mt-4 space-y-3">
         <Notice tone="info">{t("admin.bulk.footnote")}</Notice>
-        <Notice tone="warning">{t("admin.bulk.gapNote")}</Notice>
+        <Notice tone="note">{t("admin.bulk.gapNote")}</Notice>
       </div>
     </div>
   );

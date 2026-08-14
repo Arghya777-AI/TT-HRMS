@@ -33,11 +33,11 @@
  *      department. `events.api.ts` reads it; nothing recomputes the subtraction.
  *
  * WHAT IS STILL TRUE, and is therefore still not invented here:
- *   * NOTHING ATTACHES A SLOT TO A BOOKING. `roster_slots.event_id` has its
- *     foreign key now but is NULL on every row, so an event's rostered headcount
- *     is genuinely zero until somebody links the two. The view reports that zero
- *     rather than guessing from dates — a slot on the same day as a wedding is
- *     not evidence that it is FOR the wedding.
+ *   * A SLOT COUNTS TOWARDS AN EVENT ONLY WHEN SOMEBODY SAYS SO. 043500 added
+ *     `attach_roster_day_to_event`, so `roster_slots.event_id` is written now and
+ *     coverage is real. It is still never INFERRED: a slot on the same day as a
+ *     wedding is not evidence that it is FOR the wedding, and a day nobody has
+ *     assigned reports zero rather than guessing from dates.
  *   * PLANNED VERSUS PRESENT CANNOT BE JOINED. The engine writes
  *     `attendance_days.roster_slot_id`, but `v_attendance_day_enriched` does not
  *     project it and `roster_slots.attendance_day_id` is never written, so

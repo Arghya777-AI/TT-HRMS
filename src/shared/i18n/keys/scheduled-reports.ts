@@ -21,6 +21,13 @@ export const keysScheduledReports = {
   "admin.asched.col.when": "How often",
   "admin.asched.col.recipients": "Recipients",
   "admin.asched.col.lastSent": "Last sent",
+  "admin.asched.col.download": "Get it now",
+  "admin.asched.dl.now": "Download",
+  "admin.asched.dl.working": "Building…",
+  "admin.asched.dl.failed": "The file could not be built. Nothing was downloaded.",
+  "admin.asched.dl.pii":
+    "Payroll reports leave the system through a governed export that records what left and to whom — not through a browser download.",
+  "admin.asched.dl.unbuilt": "No renderer for this subject yet.",
   "admin.asched.col.state": "State",
 
   "admin.asched.never": "Never sent",

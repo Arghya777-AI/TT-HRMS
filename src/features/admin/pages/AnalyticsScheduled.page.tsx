@@ -34,7 +34,7 @@
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarClock, Cog, Gauge, Plus, UserPlus } from "lucide-react";
+import { CalendarClock, Cog, Download, Gauge, Plus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +73,8 @@ import {
 } from "../hooks/useScheduledReports";
 import { useCompanies } from "../hooks/useMasters";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
+import { RENDERABLE_SUBJECTS, whyNotRenderable } from "../api/report-subjects";
+import { exportReport } from "@/lib/exportReport";
 
 const BLOCKER_ID = "sched-blockers";
 
@@ -155,6 +157,25 @@ export default function AnalyticsScheduledPage() {
       header: t("admin.asched.col.state"),
       width: "8rem",
       render: (row) => <StatusChip status={row.is_enabled ? "on" : "off"} map={STATE_CHIP} />,
+    },
+    {
+      key: "download",
+      header: t("admin.asched.col.download"),
+      width: "11rem",
+      /*
+        THE HALF OF THIS FEATURE THAT WORKS TODAY. Nothing dispatches a schedule,
+        but four of the ten subjects can be rendered on demand — so an
+        administrator can get the muster now, and whoever builds delivery is
+        automating something already known to produce a sensible file rather than
+        something hoped to.
+
+        The other six say why they cannot, and the two reasons are kept apart:
+        payroll subjects are a governed PII egress that must go through a server
+        function writing `export_log` in the same breath, while the rest are
+        simply not built. Collapsing those into one "not available" would lose
+        the distinction that decides who fixes it.
+      */
+      render: (row) => <SubjectDownload subject={row.subject} name={row.name} />,
     },
     {
       key: "actions",
@@ -391,6 +412,71 @@ export default function AnalyticsScheduledPage() {
         </section>
       </div>
     </SubmitAttemptScope>
+  );
+}
+
+/**
+ * Download one subject now, or say why it cannot be.
+ *
+ * Its own component so a failed render sets an error next to the row that failed
+ * rather than a page-level banner that does not say which of twelve schedules
+ * went wrong.
+ */
+function SubjectDownload({
+  subject,
+  name,
+}: {
+  readonly subject: string;
+  readonly name: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const renderable = RENDERABLE_SUBJECTS[subject as keyof typeof RENDERABLE_SUBJECTS];
+  if (renderable === undefined) {
+    const why = whyNotRenderable(subject as never);
+    return (
+      <span className="text-xs text-muted-foreground">
+        {why === "pii" ? t("admin.asched.dl.pii") : t("admin.asched.dl.unbuilt")}
+      </span>
+    );
+  }
+
+  return (
+    <div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailed(false);
+          void renderable
+            .load()
+            .then((r) =>
+              exportReport({
+                title: renderable.title,
+                subtitle: name,
+                columns: r.columns,
+                rows: r.rows as readonly never[],
+                format: "csv",
+                filename: renderable.filename,
+                filters: r.filters,
+              }),
+            )
+            /* Nothing partial can have been written — the engine builds the whole
+               blob before touching the DOM — so the honest report is "no file". */
+            .catch(() => setFailed(true))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <Download className="mr-1.5 size-3.5" aria-hidden />
+        {busy ? t("admin.asched.dl.working") : t("admin.asched.dl.now")}
+      </Button>
+      {failed ? (
+        <p className="mt-1 text-xs text-destructive">{t("admin.asched.dl.failed")}</p>
+      ) : null}
+    </div>
   );
 }
 

@@ -82,8 +82,23 @@ DECLARE
   v_dupes    integer;
 BEGIN
   SELECT count(*) INTO v_total FROM public.kiosk_operators WHERE is_active;
+  /*
+    A NOTICE, NOT AN EXCEPTION — corrected after this migration spent months as a
+    permanent red line in `npm run db:validate`.
+
+    The two checks below are real post-conditions: they assert that what this
+    migration DID actually took (nothing left pinned, no duplicate device-agnostic
+    rows). This one asserted something else entirely — that somebody had seeded
+    operators — which is not this migration's business and is not true of a fresh
+    database. Unpinning zero operators from their devices is a successful no-op,
+    not a failure.
+
+    It mattered because a validator that is always red is a validator nobody
+    reads, and the next genuine failure hides behind the two everybody has learned
+    to scroll past.
+  */
   IF v_total = 0 THEN
-    RAISE EXCEPTION 'migration 074: no active kiosk operators exist — nobody can open a shift at all';
+    RAISE NOTICE 'migration 074: no active kiosk operators to unpin (an empty or freshly built database)';
   END IF;
 
   SELECT count(*) INTO v_pinned

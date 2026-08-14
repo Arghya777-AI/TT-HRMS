@@ -22,6 +22,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { useAuditedMutation, type AuditedMutationResult } from "@/shared/hooks/useAuditedMutation";
 import { shouldRetryQuery } from "@/shared/api/query";
 import type { Holiday } from "../api/org.api";
 import {
@@ -41,6 +42,10 @@ import {
   type EventDayFilters,
   type EventFilters,
   type EventRow,
+  attachRosterDayToEvent,
+  detachRosterDayFromEvent,
+  fetchRosterDayEvents,
+  type RosterDayEvent,
 } from "../api/events.api";
 
 /** Query keys must be plain data; `EventDayFilters` is an interface. */
@@ -202,5 +207,48 @@ export function useCreateEvent(): UseMutationResult<EventRow, Error, CreateEvent
       void client.invalidateQueries({ queryKey: qk.admin.orgAll() });
     },
     retry: false,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Rostering against a booking (043500)
+// -----------------------------------------------------------------------------
+
+/** What each day of these rosters is working towards. */
+export function useRosterDayEvents(
+  rosterIds: readonly string[],
+): UseQueryResult<RosterDayEvent[], Error> {
+  const key = [...rosterIds].sort().join(",");
+  return useQuery({
+    queryKey: qk.admin.orgList("eventRegister", { part: "rosterDays", key }),
+    queryFn: ({ signal }) => fetchRosterDayEvents(rosterIds, signal),
+    enabled: rosterIds.length > 0,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Attach or clear one rostered day.
+ *
+ * Invalidates the org AND team branches: the same fact is read by the event
+ * register, the coverage screen and both roster screens, and a coverage figure
+ * that is right on one of them while stale on another is the disagreement this
+ * codebase keeps designing out.
+ */
+export function useSetRosterDayEvent(): AuditedMutationResult<
+  number,
+  {
+    readonly rosterId: string;
+    readonly slotDate: string;
+    /** Null clears the day — a different function server-side, deliberately. */
+    readonly eventId: string | null;
+  }
+> {
+  return useAuditedMutation({
+    mutationFn: (input, reason) =>
+      input.eventId === null
+        ? detachRosterDayFromEvent(input.rosterId, input.slotDate, reason)
+        : attachRosterDayToEvent(input.rosterId, input.slotDate, input.eventId, reason),
+    invalidate: [qk.admin.all, qk.team.all],
   });
 }

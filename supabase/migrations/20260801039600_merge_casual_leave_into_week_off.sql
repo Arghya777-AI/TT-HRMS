@@ -51,6 +51,7 @@ SELECT set_config(
 
 DO $$
 DECLARE
+  v_actor uuid;
   v_cl       uuid;
   v_mrl      uuid;
   v_before   numeric(12,3);
@@ -113,20 +114,45 @@ BEGIN
   -- ── Retire the type ──────────────────────────────────────────────────────
   -- `ck_lt__deletion_reason` requires deleted_by AND a reason of 10+ characters
   -- whenever deleted_at is set — a soft delete must say who and why or not happen.
-  -- `app.ctx_actor_id()` is NULL in a migration (no JWT), so the owner account is
-  -- named explicitly rather than the column left null.
-  UPDATE public.leave_types
-     SET is_active = false,
-         deleted_at = now(),
-         deleted_by = COALESCE(
+  -- `app.ctx_actor_id()` is NULL in a migration (no JWT), so an owner account is
+  -- resolved instead.
+  SELECT COALESCE(
            app.ctx_actor_id(),
            (SELECT p.id FROM public.profiles p
              JOIN public.user_roles ur ON ur.user_id = p.id
             WHERE ur.role = 'super_admin' AND ur.revoked_at IS NULL AND p.is_active
             ORDER BY p.created_at LIMIT 1)
-         ),
-         deletion_reason = 'merged into the Week-off type (MRL) — migration 039600'
-   WHERE id = v_cl;
+         )
+    INTO v_actor;
+
+  /*
+    ── WHEN THERE IS NOBODY TO NAME ───────────────────────────────────────────
+    Corrected after this migration spent months failing `npm run db:validate`.
+
+    On the deployed database the COALESCE above finds a super-admin and the soft
+    delete is complete. On a FRESH database — a replay, a test harness, a new
+    environment — there are no profiles at all, so it resolved to NULL and
+    `ck_lt__deletion_reason` refused the row. Correctly: a soft delete that cannot
+    say who did it is exactly what that constraint exists to stop.
+
+    So when no actor can be resolved, the type is DEACTIVATED without being
+    soft-deleted. That achieves what the merge is for — CL stops being selectable —
+    while declining to invent an author for the deletion. Retiring it is the
+    migration's business; claiming somebody deleted it is not.
+  */
+  IF v_actor IS NULL THEN
+    UPDATE public.leave_types
+       SET is_active = false
+     WHERE id = v_cl;
+    RAISE NOTICE 'CL deactivated but not soft-deleted: no profile exists to record as the author';
+  ELSE
+    UPDATE public.leave_types
+       SET is_active = false,
+           deleted_at = now(),
+           deleted_by = v_actor,
+           deletion_reason = 'merged into the Week-off type (MRL) — migration 039600'
+     WHERE id = v_cl;
+  END IF;
 
   -- ── Assert, or roll the whole thing back ─────────────────────────────────
   SELECT COALESCE(SUM(available_days), 0) INTO v_after

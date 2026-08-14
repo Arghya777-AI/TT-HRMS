@@ -10764,8 +10764,6 @@ export const en = catalogue({
     "Everybody on this roster can now see their own shifts for the week. Changes after this point are made by an administrator.",
   "team.roster.gap.noSlotEdit":
     "Shifts are added and moved by an administrator, not here. Publishing releases the week as it stands — who may work which shift depends on eligibility, rest gaps and overlapping bookings, and none of that is modelled yet, so this screen will not pretend to decide it.",
-  "team.roster.gap.noEventLink":
-    "Bookings are not shown against this week yet. The event register exists and holds the venue's diary, but nothing attaches a roster slot to a booking, so every slot's event is still empty — an overlay here would be a blank band rather than information.",
   "team.roster.footnote":
     "One row per person per date, exactly as the roster holds it. A weekly off is a slot row; an empty cell is the absence of a row, which no filter can count. Draft slots are visible to you because you manage the person — the employee sees only published ones.",
 
@@ -10852,13 +10850,20 @@ export const en = catalogue({
     "Department names could not be read; the rosters themselves are correct.",
   "admin.rosterp.partial.slotLabels":
     "Names or shift codes could not be read, so those cells show a dash. The slots are correct.",
+  "admin.rosterp.events.title": "What this week is working towards",
+  "admin.rosterp.events.hint":
+    "Assign a whole rostered day to a booking. Everybody working that day counts towards the event's cover; people on a weekly off are passed over, because they are not in.",
+  "admin.rosterp.events.none":
+    "Nothing is booked in this week, so there is nothing to roster against. Bookings are kept in the event register.",
+  "admin.rosterp.events.noneThisDay": "No booking covers this day.",
+  "admin.rosterp.events.unassigned": "Not assigned",
+  "admin.rosterp.events.pickFor": "Assign the roster for {date} to an event",
+  "admin.rosterp.events.attached": "{n} slot(s) counted towards it",
   "admin.rosterp.col.publish": "Publish",
   "admin.rosterp.publish.what":
     "Releases this week to everybody rostered on it. An administrator can publish any week; a manager only one where every person on it reports to them.",
   "admin.rosterp.gap.noSlotEdit":
     "Shifts are not added or moved here. Publishing releases a week as it stands — who may work which shift depends on eligibility, rest gaps and overlapping bookings, and none of that is modelled yet, so this console will not pretend to decide it.",
-  "admin.rosterp.gap.noEventLink":
-    "Bookings are kept in the event register, but no roster slot is attached to one yet, so there is no per-event requirement to plan a week against here.",
   "admin.rosterp.footnote":
     "Rosters are listed by the week they BEGIN — a week starting on a Monday in one month covers days in the next, and widening that predicate would need server-side week arithmetic this table does not offer. Every count on this screen is a Postgres count over the same predicate as the list beside it.",
 

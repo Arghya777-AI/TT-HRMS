@@ -31,9 +31,11 @@
  *    anything. Neither side of the join is readable from a browser, so "present
  *    against plan" stays absent rather than being approximated from dates — which
  *    would silently credit an unrostered person's punches.
- *  * NOTHING ATTACHES A SLOT TO A BOOKING yet, so an event's rostered figure is
- *    honestly zero until somebody links the two. A slot on the same day as a
- *    wedding is not evidence that it is FOR the wedding.
+ *  * A SLOT COUNTS ONLY WHEN SOMEBODY ASSIGNS IT. The roster planner assigns a
+ *    whole rostered day to a booking (043500); nothing is inferred from dates,
+ *    because a slot on the same day as a wedding is not evidence that it is FOR
+ *    the wedding. A day nobody has assigned reads zero, and that zero is a fact
+ *    about the roster rather than about this screen.
  *
  * The department-week half of this screen is unchanged and was always real:
  * `rosters` (one row per department-week, with its publish state) and Postgres

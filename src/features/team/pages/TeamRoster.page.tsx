@@ -20,12 +20,13 @@
  *     one of their own people. That is a whole-roster rule, which is why the server
  *     side is a function and not a widened RLS policy — RLS runs per row, and row
  *     by row a manager could release a week that is only partly theirs.
- *  2. IT DOES NOT SHOW EVENTS — YET. `public.events` exists now (043100), along
- *     with `fk_roster_slots__event`, so the reason this screen gave for years is
- *     spent. What is still true is narrower: nothing yet ATTACHES a slot to a
- *     booking, so `event_id` is NULL on every row and an overlay here would draw
- *     an empty band. The register lives at /admin/org/events; attaching slots to
- *     it belongs on the planner, beside the week it applies to.
+ *  2. IT DOES NOT SHOW EVENTS, AND THAT IS NOW A CHOICE. `public.events` exists
+ *     (043100), and a rostered day can be assigned to a booking (043500) — but
+ *     that is done on the ADMIN planner, beside the week it applies to, and this
+ *     screen deliberately does not duplicate the control. A manager reads their
+ *     week here; whether Saturday is the Sharma wedding is a fact about the
+ *     booking, and putting a second place to change it invites two people to
+ *     disagree about the same day.
  *  3. EVERY NUMBER IS A SERVER COUNT. Each tile is `count=exact` over the SAME
  *     predicate as the grid, so a tile and the week below it cannot disagree.
  *  4. A BLANK CELL IS THE ABSENCE OF A ROW. "Nobody rostered on Thursday" is not a
@@ -449,7 +450,6 @@ export default function TeamRosterPage() {
 
           <div className="mt-4 space-y-2">
             <Notice tone="note">{t("team.roster.gap.noSlotEdit")}</Notice>
-            <Notice tone="note">{t("team.roster.gap.noEventLink")}</Notice>
             <Notice tone="note">{t("team.roster.footnote")}</Notice>
           </div>
         </>

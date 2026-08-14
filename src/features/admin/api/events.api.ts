@@ -44,6 +44,7 @@
  */
 import { z } from "zod";
 import {
+  dbDate,
   dbInt,
   dbIntNullable,
   dbTimestamp,
@@ -57,6 +58,7 @@ import {
   isNull,
   isTrue,
   lte,
+  rpcAudited,
   selectCount,
   selectMany,
   type Filter,
@@ -404,4 +406,83 @@ export function createEvent(input: CreateEventInput, signal?: AbortSignal): Prom
     },
     { columns: EVENT_COLUMNS, ...(signal ? { signal } : {}) },
   );
+}
+
+// -----------------------------------------------------------------------------
+// 4. Rostering against a booking
+// -----------------------------------------------------------------------------
+//
+// Migration 043500. Until it ran, `roster_slots.event_id` had a foreign key and
+// no writer, so every `rostered_headcount` in `v_event_coverage` was zero and
+// four screens said so.
+
+export const ATTACH_ROSTER_DAY_FN = "attach_roster_day_to_event";
+export const DETACH_ROSTER_DAY_FN = "detach_roster_day_from_event";
+export const ROSTER_DAY_EVENTS_VIEW = "v_roster_day_events";
+
+export const rosterDayEventSchema = z.object({
+  roster_id: dbUuid,
+  slot_date: dbDate,
+  event_id: dbUuid,
+  event_code: z.string(),
+  title: z.string(),
+  status: z.string(),
+  slots_attached: dbInt,
+});
+export type RosterDayEvent = z.infer<typeof rosterDayEventSchema>;
+
+/** What each day of one roster is working towards, grouped by Postgres. */
+export function fetchRosterDayEvents(
+  rosterIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<RosterDayEvent[]> {
+  if (rosterIds.length === 0) return Promise.resolve([]);
+  return selectMany(ROSTER_DAY_EVENTS_VIEW, rosterDayEventSchema, {
+    filters: [inList("roster_id", rosterIds)],
+    order: [{ column: "slot_date", ascending: true }],
+    limit: 200,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/**
+ * Attach every working slot on one rostered day to one event.
+ *
+ * Returns how many slots moved, which the caller reports — "12 people are now on
+ * the Sharma wedding" is the confirmation, and a zero means they already were.
+ *
+ * A day, not a slot: a venue says "everyone on Saturday is on the wedding", and
+ * doing that forty times is forty chances to stop halfway and leave a roster
+ * half-attributed. The function does the whole day in one statement.
+ */
+export async function attachRosterDayToEvent(
+  rosterId: string,
+  slotDate: string,
+  eventId: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const rows = await rpcAudited(
+    ATTACH_ROSTER_DAY_FN,
+    { p_roster_id: rosterId, p_slot_date: slotDate, p_event_id: eventId },
+    dbInt,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+  return rows[0] ?? 0;
+}
+
+/** Clear the event from every slot on one rostered day. */
+export async function detachRosterDayFromEvent(
+  rosterId: string,
+  slotDate: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const rows = await rpcAudited(
+    DETACH_ROSTER_DAY_FN,
+    { p_roster_id: rosterId, p_slot_date: slotDate },
+    dbInt,
+    { reason, ...(signal ? { signal } : {}) },
+  );
+  return rows[0] ?? 0;
 }

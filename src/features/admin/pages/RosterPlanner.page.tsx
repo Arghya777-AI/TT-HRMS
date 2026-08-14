@@ -19,10 +19,12 @@
  *    eligibility, rest gaps and overlapping bookings, and none of that is
  *    modelled; a grid that let an admin drag anybody anywhere would be quicker to
  *    build than to trust.
- *  * EVENT REQUIREMENTS. `public.events` exists (043100) and is managed at
- *    /admin/org/events, but nothing here attaches a slot to one yet.
- *    `roster_slots.event_id`
- *    is a bare uuid whose FK the 049 sweep skips, NULL on every row.
+ *  * EVENT REQUIREMENTS. `public.events` exists (043100), is managed at
+ *    /admin/org/events, and a whole rostered day can be assigned to a booking
+ *    from the strip below (043500). That is what finally writes
+ *    `roster_slots.event_id` — a column that carried a deferred foreign key and
+ *    no writer for ninety migrations, which is why every coverage figure in this
+ *    product read zero until now.
  *
  * What IS real, and is therefore what this screen does:
  *  * `rosters` — one row per department-week with status, publisher and publish
@@ -45,7 +47,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
-import { fmtCivilDate, fmtDateTime, nowIstDate } from "@/lib/datetime";
+import { fmtCivilDate, fmtDateTime, istDate, nowIstDate } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import {
@@ -80,6 +82,9 @@ import {
 } from "../hooks/useAttendanceRecords";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
 import { useRefOptions } from "../hooks/useMasters";
+import { useEvents, useRosterDayEvents, useSetRosterDayEvent } from "../hooks/useEventRegister";
+import { istWeekDates } from "@/features/team/api/roster.api";
+import type { RosterDayEvent } from "../api/events.api";
 
 const ROSTER_STATUS_CHIP: Readonly<Record<string, StatusChipEntry>> = {
   draft: { label: t("team.roster.status.draft"), tone: "neutral" },
@@ -190,6 +195,26 @@ export default function RosterPlannerPage() {
   const slots = useRosterSlots(slotFilters, hasRoster);
   const shifts = useRosterShifts(slots.data);
   const grid = useRosterGrid(slots.data);
+
+  /*
+    ── WHAT EACH DAY OF THIS WEEK IS WORKING TOWARDS ──────────────────────────
+    Bookings whose span covers this week, and the events already attached to each
+    rostered day. Both are server reads: the day→event grouping is
+    `v_roster_day_events`, not forty slot rows grouped in a browser.
+  */
+  const weekEvents = useEvents(
+    useMemo(
+      () => ({ from: `${week.from}T00:00:00+05:30`, to: `${week.to}T23:59:59+05:30` }),
+      [week.from, week.to],
+    ),
+  );
+  const dayEvents = useRosterDayEvents(selected === undefined ? [] : [selected.id]);
+  const setDayEvent = useSetRosterDayEvent();
+  const attachedByDate = useMemo(() => {
+    const m = new Map<string, RosterDayEvent>();
+    for (const row of dayEvents.data ?? []) m.set(row.slot_date, row);
+    return m;
+  }, [dayEvents.data]);
 
   const slotCounts: Record<RosterSlotSlice, ReturnType<typeof useRosterSlotCount>> = {
     all: useRosterSlotCount(slotBase, undefined, hasRoster),
@@ -414,6 +439,98 @@ export default function RosterPlannerPage() {
               ))}
             </div>
 
+            {/*
+              ── ROSTERING AGAINST A BOOKING ────────────────────────────────
+              One picker per day rather than per slot. A venue says "everyone on
+              Saturday is on the Sharma wedding", and that sentence is one action:
+              doing it forty times is forty chances to stop halfway and leave a
+              day half-attributed, which reads on the coverage screen as a
+              shortfall and sends somebody chasing staff who are already rostered.
+
+              Only events whose span covers this week are offered, because the
+              server refuses a date outside the event's own call-time-to-end
+              window — offering one that would be refused is a form that sets its
+              user up to fail.
+            */}
+            <div className="mt-4 rounded-md border bg-muted/20 p-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("admin.rosterp.events.title")}
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {(weekEvents.data ?? []).length === 0
+                  ? t("admin.rosterp.events.none")
+                  : t("admin.rosterp.events.hint")}
+              </p>
+
+              {(weekEvents.data ?? []).length === 0 ? null : (
+                <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {istWeekDates(selected.week_start_date).map((date) => {
+                    const attached = attachedByDate.get(date);
+                    /* An event covers this day when the day falls inside its own
+                       span — the same window the server checks, so the picker
+                       never offers something that would be refused. */
+                    const candidates = (weekEvents.data ?? []).filter((e) => {
+                      const from = istDate(e.call_time_at ?? e.starts_at);
+                      const to = istDate(e.ends_at);
+                      return date >= from && date <= to && e.status !== "cancelled";
+                    });
+                    return (
+                      <li key={date} className="rounded-md border bg-background p-2">
+                        <p className="text-xs font-medium">{fmtCivilDate(date)}</p>
+                        {candidates.length === 0 ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t("admin.rosterp.events.noneThisDay")}
+                          </p>
+                        ) : (
+                          <select
+                            aria-label={t("admin.rosterp.events.pickFor", {
+                              date: fmtCivilDate(date),
+                            })}
+                            className="mt-1.5 h-9 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            value={attached?.event_id ?? ""}
+                            disabled={setDayEvent.isPending}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              setDayEvent.mutate({
+                                input: {
+                                  rosterId: selected.id,
+                                  slotDate: date,
+                                  eventId: next === "" ? null : next,
+                                },
+                                reason: `roster planner: ${
+                                  next === "" ? "clear the event on" : "assign an event to"
+                                } ${date}`,
+                              });
+                            }}
+                          >
+                            <option value="">{t("admin.rosterp.events.unassigned")}</option>
+                            {candidates.map((e) => (
+                              <option key={e.id} value={e.id}>
+                                {e.title}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {attached === undefined ? null : (
+                          <p className="num mt-1 text-xs text-muted-foreground">
+                            {t("admin.rosterp.events.attached", {
+                              n: formatNumber(attached.slots_attached),
+                            })}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {setDayEvent.userMessage === null ? null : (
+                <div className="mt-2">
+                  <Notice tone="error">{setDayEvent.userMessage}</Notice>
+                </div>
+              )}
+            </div>
+
             <div className="mt-4">
               <StateBoundary
                 loading={slots.isPending}
@@ -456,7 +573,6 @@ export default function RosterPlannerPage() {
 
       <div className="mt-4 space-y-2">
         <Notice tone="note">{t("admin.rosterp.gap.noSlotEdit")}</Notice>
-        <Notice tone="note">{t("admin.rosterp.gap.noEventLink")}</Notice>
         <Notice tone="note">{t("admin.rosterp.footnote")}</Notice>
       </div>
     </div>

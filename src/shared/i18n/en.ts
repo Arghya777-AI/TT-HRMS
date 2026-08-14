@@ -5133,6 +5133,9 @@ export const en = catalogue({
   "admin.manualPunch.title": "Manual Punch",
   "admin.manualPunch.subtitle": "Record a scan by employee code when the camera at the gate fails.",
   "admin.manualPunch.action.backToLog": "Back to Punch Log",
+  "admin.manualPunch.action.recording": "Recording…",
+  "admin.manualPunch.saved":
+    "The punch is recorded for {date} and flagged for review. The day is being recalculated — every scan is read again, so the arrival and departure may change.",
   "admin.manualPunch.action.record": "Record this punch",
   "admin.manualPunch.action.check": "Check the form",
   "admin.manualPunch.attribution":
@@ -5140,7 +5143,7 @@ export const en = catalogue({
   "admin.manualPunch.attribution.unknown":
     "This punch will be attributed to the signed-in administrator, not to the employee, and audited as a manual admin entry. Your identity could not be read, so sign in again before recording anything.",
   "admin.manualPunch.noEndpoint":
-    "This punch cannot be saved yet. Recording one needs a “{fn}” edge function, and no such function is deployed: attendance_punches accepts no writes from a browser session, void-punch only voids, and kiosk-punch requires a paired device and a live face. The form below validates the complete entry so it is ready the moment that function exists — it will not pretend the punch was recorded.",
+    "Recording is switched off in this build. The form still validates the whole entry, and will not pretend a punch was saved.",
   "admin.manualPunch.peopleFailed":
     "The employee list could not be loaded, so a code cannot be resolved to a name. Retry in a moment — this form will not accept a code it cannot put a face to.",
 
@@ -9980,8 +9983,26 @@ export const en = catalogue({
   "admin.exits.partial.total": "the register total",
   "admin.exits.empty.title": "Nobody in this register",
   "admin.exits.empty.hint": "No employee matches this stage, leaving-date window and settlement state.",
-  "admin.exits.clearanceGap":
-    "There is no clearance-checklist table in this database: no table holds clearance line items and no view aggregates exit dues. The only deployed pieces are the EXIT_CLEARANCE document type and open asset custody, both shown per person above. A real no-dues checklist needs a server table before this screen can show one.",
+  "admin.exits.clearanceScope":
+    "The checklist covers things a leaver hands back and acts somebody completes. It carries no money: notice recovery and the final settlement are payroll arithmetic on a salary figure, and payroll records the answer against the employee.",
+  "admin.exits.clr.title": "No-dues checklist",
+  "admin.exits.clr.hint":
+    "What this person still has to clear before their exit is complete. The asset list above is the evidence for the first line — look at it before ticking.",
+  "admin.exits.clr.notOpened":
+    "No checklist has been opened for this leaver yet. Opening one copies the current template, so a later change to it cannot rewrite what was signed off here.",
+  "admin.exits.clr.open": "Open the checklist",
+  "admin.exits.clr.opening": "Opening…",
+  "admin.exits.clr.clear": "Every mandatory item is settled.",
+  "admin.exits.clr.outstanding": "{n} mandatory item(s) still outstanding.",
+  "admin.exits.clr.optional": "optional",
+  "admin.exits.clr.owner": "Chase: {who}",
+  "admin.exits.clr.notePlaceholder":
+    "Say why in a sentence — at least {n} characters. Whoever picks this up next week only has what you write here.",
+  "admin.exits.clr.cancel": "Cancel",
+  "admin.exits.clr.status.pending": "Pending",
+  "admin.exits.clr.status.cleared": "Cleared",
+  "admin.exits.clr.status.waived": "Waived",
+  "admin.exits.clr.status.blocked": "Blocked",
   "admin.exits.panel.title": "Exit record",
   "admin.exits.panel.openPerson": "Open employee",
   "admin.exits.panel.openHistory": "Field history",

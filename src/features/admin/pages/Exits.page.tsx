@@ -31,9 +31,9 @@
  *
  * @route /admin/people/exits
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Boxes, DoorOpen, Package, Workflow, X } from "lucide-react";
+import { Boxes, ClipboardCheck, DoorOpen, Package, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -52,6 +52,19 @@ import {
 import { t } from "@/shared/i18n/en";
 import { StatusMixCard } from "@/shared/ui/charts/StatusMixCard";
 import { Notice } from "../components/Notice";
+import { CoverageBar } from "@/shared/ui/charts/CoverageBar";
+import {
+  CLEARANCE_REASON_MIN_LENGTH,
+  clearanceStatusValues,
+  needsReason,
+  type ClearanceStatus,
+} from "../api/clearance.api";
+import {
+  useClearanceProgress,
+  useEmployeeClearance,
+  useOpenClearance,
+  useSetClearanceStatus,
+} from "../hooks/useClearance";
 import { PersonCell } from "../components/PersonCell";
 import { ReasonActionButton } from "../components/ReasonActionButton";
 import { SelectField, TextField } from "../components/Field";
@@ -577,7 +590,7 @@ export default function ExitsPage() {
       </div>
 
       <div className="mt-4">
-        <Notice tone="note">{t("admin.exits.clearanceGap")}</Notice>
+        <Notice tone="note">{t("admin.exits.clearanceScope")}</Notice>
       </div>
     </div>
   );
@@ -895,6 +908,206 @@ function ExitPanel({
           </Link>
         </Button>
       </div>
+
+      {/*
+        AFTER custody, deliberately. The asset list is the evidence somebody needs
+        in front of them before they tick "all assets returned" — putting the
+        checklist first would invite attesting to something they have not looked at.
+      */}
+      <ClearanceChecklist employeeId={row.id} />
     </section>
+  );
+}
+
+/** The chips, in the words the screen uses for them. */
+const CLEARANCE_CHIP: Readonly<Record<string, StatusChipEntry>> = {
+  pending: { label: t("admin.exits.clr.status.pending"), tone: "warn" },
+  cleared: { label: t("admin.exits.clr.status.cleared"), tone: "success" },
+  waived: { label: t("admin.exits.clr.status.waived"), tone: "info" },
+  blocked: { label: t("admin.exits.clr.status.blocked"), tone: "danger" },
+};
+
+/**
+ * One leaver's no-dues checklist.
+ *
+ * Its own component so the lines and the progress are read only for the person
+ * actually opened — a register of forty leavers would otherwise fire eighty
+ * queries nobody asked for.
+ */
+function ClearanceChecklist({ employeeId }: { readonly employeeId: string }) {
+  const lines = useEmployeeClearance(employeeId);
+  const progress = useClearanceProgress(employeeId);
+  const open = useOpenClearance();
+  const setStatus = useSetClearanceStatus();
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+
+  const rows = lines.data ?? [];
+  /* NULL progress means no checklist has been opened, which is not the same as an
+     empty one — so the screen offers to open it rather than drawing "0 of 0". */
+  const notOpened = progress.data === null && rows.length === 0;
+
+  return (
+    <div className="mt-6">
+      <h3 className="flex items-center gap-2 font-display text-base font-semibold">
+        <ClipboardCheck className="size-4" aria-hidden />
+        {t("admin.exits.clr.title")}
+      </h3>
+      <p className="mt-1 text-sm text-muted-foreground">{t("admin.exits.clr.hint")}</p>
+
+      {notOpened ? (
+        <div className="mt-3 rounded-md border bg-muted/20 p-4">
+          <p className="text-sm text-muted-foreground">{t("admin.exits.clr.notOpened")}</p>
+          <Button
+            className="mt-3"
+            size="sm"
+            disabled={open.isPending}
+            onClick={() =>
+              open.mutate({
+                input: { employeeId },
+                reason: "exits console: open the no-dues checklist for this leaver",
+              })
+            }
+          >
+            {open.isPending ? t("admin.exits.clr.opening") : t("admin.exits.clr.open")}
+          </Button>
+          {open.userMessage === null ? null : (
+            <div className="mt-2">
+              <Notice tone="error">{open.userMessage}</Notice>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {progress.data === null || progress.data === undefined ? null : (
+            <div className="mt-3 rounded-md border bg-card p-3">
+              <CoverageBar
+                value={progress.data.settled_items}
+                target={progress.data.total_items}
+                title={t("admin.exits.clr.title")}
+                showLabel
+                height={12}
+                /* `is_clear` is the VIEW's answer, not a recount here: every
+                   mandatory line settled, optional ones need not be. */
+                caption={
+                  progress.data.is_clear
+                    ? t("admin.exits.clr.clear")
+                    : t("admin.exits.clr.outstanding", {
+                        n: formatNumber(progress.data.mandatory_outstanding),
+                      })
+                }
+              />
+            </div>
+          )}
+
+          <ul className="mt-3 space-y-2">
+            {rows.map((line) => (
+              <li key={line.id} className="rounded-md border bg-card p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium leading-snug">
+                      {line.label}
+                      {line.is_mandatory ? null : (
+                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                          {t("admin.exits.clr.optional")}
+                        </span>
+                      )}
+                    </p>
+                    {line.owner_hint === null ? null : (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {t("admin.exits.clr.owner", { who: line.owner_hint })}
+                      </p>
+                    )}
+                    {line.note === null ? null : (
+                      <p className="mt-1 text-xs text-muted-foreground">{line.note}</p>
+                    )}
+                  </div>
+                  <StatusChip status={line.status} map={CLEARANCE_CHIP} />
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {clearanceStatusValues.map((status) => (
+                    <Button
+                      key={status}
+                      size="sm"
+                      variant={line.status === status ? "default" : "outline"}
+                      disabled={setStatus.isPending}
+                      onClick={() => {
+                        /*
+                          A waiver or a block needs a sentence, so those open the
+                          box instead of firing. The server refuses them without
+                          one too — this is only so the refusal arrives before the
+                          round trip.
+                        */
+                        if (needsReason(status, "")) {
+                          setNoteFor(line.id);
+                          setNote(line.note ?? "");
+                          return;
+                        }
+                        setStatus.mutate({
+                          input: { clearanceId: line.id, status, note: null },
+                          reason: `exits console: mark "${line.label}" as ${status}`,
+                        });
+                      }}
+                    >
+                      {CLEARANCE_CHIP[status]?.label ?? status}
+                    </Button>
+                  ))}
+                </div>
+
+                {noteFor === line.id ? (
+                  <div className="mt-2">
+                    <textarea
+                      rows={2}
+                      className="w-full rounded-md border border-input bg-background p-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder={t("admin.exits.clr.notePlaceholder", {
+                        n: String(CLEARANCE_REASON_MIN_LENGTH),
+                      })}
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                    />
+                    <div className="mt-1.5 flex gap-1.5">
+                      {(["waived", "blocked"] as const).map((status: ClearanceStatus) => (
+                        <Button
+                          key={status}
+                          size="sm"
+                          variant="outline"
+                          disabled={needsReason(status, note) || setStatus.isPending}
+                          onClick={() => {
+                            setStatus.mutate(
+                              {
+                                input: { clearanceId: line.id, status, note },
+                                reason: `exits console: mark "${line.label}" as ${status}`,
+                              },
+                              {
+                                onSuccess: () => {
+                                  setNoteFor(null);
+                                  setNote("");
+                                },
+                              },
+                            );
+                          }}
+                        >
+                          {CLEARANCE_CHIP[status]?.label ?? status}
+                        </Button>
+                      ))}
+                      <Button size="sm" variant="ghost" onClick={() => setNoteFor(null)}>
+                        {t("admin.exits.clr.cancel")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+
+          {setStatus.userMessage === null ? null : (
+            <div className="mt-2">
+              <Notice tone="error">{setStatus.userMessage}</Notice>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

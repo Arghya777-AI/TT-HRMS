@@ -23,6 +23,7 @@
  */
 import { z } from "zod";
 import {
+  rpcAudited,
   SENSITIVE_REASON_LENGTH,
   dbDate,
   dbDateNullable,
@@ -807,4 +808,54 @@ export function recomputeAttendance(
     recomputeResultSchema,
     { idempotencyKey: idempotencyKey ?? newIdempotencyKey() },
   );
+}
+
+// -----------------------------------------------------------------------------
+// Recording a punch when the gate camera fails (044000)
+// -----------------------------------------------------------------------------
+
+export const RECORD_MANUAL_PUNCH_FN = "record_manual_punch";
+
+export interface ManualPunchInput {
+  readonly employeeId: string;
+  /** An IST wall-clock instant, built with `istWallClockToInstant`. */
+  readonly punchedAt: string;
+  readonly reason: string;
+  /** Provenance only — the engine still decides arrival from the first scan. */
+  readonly direction: "in" | "out" | "undetermined";
+  readonly note: string | null;
+}
+
+/**
+ * Record a manual punch.
+ *
+ * Every rule lives in the function: administrator only, a reason of ten
+ * characters or more, no future time, no hard-locked period, nobody who has left,
+ * and `needs_review` always set. Nothing is re-checked here beyond what the form
+ * needs to refuse before the round trip.
+ *
+ * The day's recompute is NOT requested by this call. `trg_attendance_punches__enqueue`
+ * fires on the insert and writes the priority-3 job, deduped — asking for a second
+ * one would be a second definition of when a day is dirty.
+ */
+export async function recordManualPunch(
+  input: ManualPunchInput,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<{ id: string; ist_date: string }> {
+  const rows = await rpcAudited(
+    RECORD_MANUAL_PUNCH_FN,
+    {
+      p_employee_id: input.employeeId,
+      p_punched_at: input.punchedAt,
+      p_reason: input.reason.trim(),
+      p_direction: input.direction,
+      p_note: input.note === null || input.note.trim() === "" ? null : input.note.trim(),
+    },
+    z.object({ id: dbUuid, ist_date: dbDate }),
+    { reason, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error("The punch was not returned after saving.");
+  return row;
 }

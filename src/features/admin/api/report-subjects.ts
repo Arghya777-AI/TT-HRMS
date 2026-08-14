@@ -41,6 +41,14 @@ import { fetchDayRecords, type DayRow } from "./attendance.api";
 import { fetchCustody, type CustodyRow } from "./assets.api";
 import { fetchCompliance, type ComplianceRow } from "./documents.api";
 import { fetchApprovalRequests, type ApprovalRequestRow } from "./workflow-admin.api";
+import { fetchExceptionQueue, type ExceptionRow } from "./attendance.api";
+import { fetchHeadcountMonthly, type HeadcountMonthlyRow } from "./analytics-workforce.api";
+import {
+  fetchLeaveBalances,
+  fetchLeaveRequests,
+  type LeaveBalance,
+  type LeaveRequest,
+} from "./leave.api";
 import type { ReportSubject } from "./scheduled-reports.api";
 
 /** How many rows one download may carry. Stated, and stated on the file too. */
@@ -117,6 +125,60 @@ const APPROVALS_COLUMNS: readonly ExportColumn<ApprovalRequestRow>[] = [
   { key: "sla_due_at", header: "Due by" },
 ];
 
+const EXCEPTIONS_COLUMNS: readonly ExportColumn<ExceptionRow>[] = [
+  { key: "ist_date", header: "Date" },
+  { key: "exception_kind", header: "Kind" },
+  { key: "severity", header: "Severity" },
+  { key: "description", header: "What happened" },
+  { key: "occurred_at", header: "Raised" },
+];
+
+/*
+  Balances, not entitlement policy. `available_after_pending` is the GENERATED
+  column the screens headline and the submit guard checks, so the file carries the
+  same figure rather than a sum of the components beside it — one number, from one
+  expression, evaluated once in Postgres.
+*/
+const BALANCES_COLUMNS: readonly ExportColumn<LeaveBalance>[] = [
+  { key: "leave_year", header: "Year", align: "right" },
+  { key: "leave_type_code", header: "Type" },
+  { key: "leave_type_name", header: "Leave" },
+  { key: "entitlement_days", header: "Entitled", align: "right" },
+  { key: "availed_days", header: "Used", align: "right" },
+  { key: "pending_days", header: "Held", align: "right" },
+  { key: "available_after_pending", header: "Available", align: "right" },
+];
+
+const LEAVE_TAKEN_COLUMNS: readonly ExportColumn<LeaveRequest>[] = [
+  { key: "request_number", header: "Reference" },
+  { key: "from_date", header: "From" },
+  { key: "to_date", header: "To" },
+  { key: "total_days", header: "Days", align: "right" },
+  { key: "paid_days", header: "Paid", align: "right" },
+  { key: "unpaid_days", header: "Unpaid", align: "right" },
+  { key: "status", header: "Status" },
+  { key: "decided_at", header: "Decided" },
+];
+
+/*
+  HEADCOUNT IS AN AGGREGATE, AND THAT IS THE WHOLE POINT.
+
+  The obvious reading of "headcount" is a list of everybody on roll — which is a
+  bulk dump of the employee master, exactly what the export engine's header
+  excludes. `v_headcount_monthly`'s grain is (year, month, department), so this
+  file carries counts and movements and names nobody. It is also what a person
+  asking for a headcount report actually wants: the shape of the workforce, not a
+  directory they already have.
+*/
+const HEADCOUNT_COLUMNS: readonly ExportColumn<HeadcountMonthlyRow>[] = [
+  { key: "year", header: "Year", align: "right" },
+  { key: "month", header: "Month", align: "right" },
+  { key: "department_name", header: "Department" },
+  { key: "avg_headcount", header: "Average on roll", align: "right" },
+  { key: "joiners", header: "Joined", align: "right" },
+  { key: "exits", header: "Left", align: "right" },
+];
+
 /**
  * The subjects a browser may render, keyed by subject.
  *
@@ -165,6 +227,62 @@ export const RENDERABLE_SUBJECTS: Partial<Record<ReportSubject, RenderableSubjec
     load: async (signal) => ({
       rows: await fetchCompliance({}, SUBJECT_ROW_CAP, signal),
       columns: COMPLIANCE_COLUMNS as readonly ExportColumn<never>[],
+      filters: today(),
+    }),
+  },
+
+  attendance_exceptions: {
+    subject: "attendance_exceptions",
+    title: "Attendance exceptions",
+    filename: "attendance-exceptions",
+    load: async (signal) => ({
+      rows: await fetchExceptionQueue({}, SUBJECT_ROW_CAP, signal),
+      columns: EXCEPTIONS_COLUMNS as readonly ExportColumn<never>[],
+      filters: today(),
+    }),
+  },
+
+  leave_balances: {
+    subject: "leave_balances",
+    title: "Leave balances",
+    filename: "leave-balances",
+    load: async (signal) => ({
+      rows: await fetchLeaveBalances({}, SUBJECT_ROW_CAP, signal),
+      columns: BALANCES_COLUMNS as readonly ExportColumn<never>[],
+      filters: today(),
+    }),
+  },
+
+  leave_taken: {
+    subject: "leave_taken",
+    title: "Leave taken",
+    filename: "leave-taken",
+    load: async (signal) => {
+      /* DECIDED leave only. A pending request is not leave taken, and a file
+         mixing the two would be read as a consumption figure it is not. */
+      const page = await fetchLeaveRequests(
+        { statuses: ["approved"] },
+        SUBJECT_ROW_CAP,
+        null,
+        signal,
+      );
+      return {
+        rows: page.rows,
+        columns: LEAVE_TAKEN_COLUMNS as readonly ExportColumn<never>[],
+        filters: today(),
+      };
+    },
+  },
+
+  headcount: {
+    subject: "headcount",
+    title: "Headcount by department",
+    filename: "headcount",
+    load: async (signal) => ({
+      /* The current IST year. `istToday()` is the sanctioned clock — a browser
+         `new Date().getFullYear()` would roll over at the wrong midnight. */
+      rows: await fetchHeadcountMonthly(Number(istToday().slice(0, 4)), null, signal),
+      columns: HEADCOUNT_COLUMNS as readonly ExportColumn<never>[],
       filters: today(),
     }),
   },

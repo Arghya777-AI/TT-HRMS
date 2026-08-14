@@ -34,8 +34,30 @@ describe("report subjects", () => {
       that tells you who to ask.
     */
     expect(whyNotRenderable("payroll_register")).toBe("pii");
-    expect(whyNotRenderable("leave_balances")).toBe("unbuilt");
+    expect(whyNotRenderable("payroll_statutory")).toBe("pii");
     expect(whyNotRenderable("attendance_muster")).toBeNull();
+  });
+
+  it("renders every subject that is not payroll", () => {
+    /*
+      The eight non-payroll subjects all have a renderer now. If somebody adds a
+      ninth to `ck_schedrep__subject` and forgets the renderer, this fails rather
+      than the screen quietly showing "no renderer yet" forever.
+    */
+    for (const subject of reportSubjectValues) {
+      if (PAYROLL_SUBJECTS.includes(subject)) continue;
+      expect(RENDERABLE_SUBJECTS[subject], `${subject} has no renderer`).toBeDefined();
+    }
+  });
+
+  it("keeps headcount an aggregate rather than an employee list", () => {
+    /*
+      "Headcount" read literally is a dump of the employee master, which the
+      export engine excludes. It is rendered from the monthly aggregate instead,
+      so the file counts people without naming them.
+    */
+    const def = RENDERABLE_SUBJECTS.headcount;
+    expect(def?.title).toMatch(/department/i);
   });
 
   it("only claims subjects that exist in the database vocabulary", () => {

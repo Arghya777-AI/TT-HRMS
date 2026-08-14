@@ -64,6 +64,7 @@ import { fmtCivilDate, fmtDurationHm } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { PersonCell } from "@/features/admin/components/PersonCell";
 import { Notice } from "@/features/admin/components/Notice";
+import { AppraisalPanel } from "../components/AppraisalPanel";
 import { Fact, FactCard, FactGrid, YesNo } from "../components/TeamFacts";
 import { useIstToday, useMyEmployeeId } from "../hooks/useTeamToday";
 import { useTeamRoster } from "../hooks/useTeamDecisions";
@@ -542,8 +543,19 @@ export default function TeamPerformancePage() {
             <Notice tone="info">{t("teamExtra.perf.confirm.notice")}</Notice>
           </FactCard>
 
+          {/*
+            THE REVIEW SITS BELOW THE EVIDENCE, deliberately. A manager scrolls
+            past the hours, the lateness and the overtime before typing a
+            judgement — and nothing on this screen turns one into the other.
+          */}
+          <AppraisalPanel
+            nameOf={(id) =>
+              members.find((m) => m.id === id)?.display_name ?? t("teamExtra.appr.unknownPerson")
+            }
+          />
+
           <div className="space-y-2">
-            <Notice tone="note">{t("teamExtra.perf.gap.appraisal")}</Notice>
+            <Notice tone="note">{t("teamExtra.perf.evidence")}</Notice>
             <Notice tone="info">{t("teamExtra.perf.footnote.oneSource")}</Notice>
             <Notice tone="info">{t("teamExtra.perf.footnote.excludesMe")}</Notice>
           </div>

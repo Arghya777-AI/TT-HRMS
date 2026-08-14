@@ -55,6 +55,7 @@ import {
   fmtCivilDateWeekday,
   fmtDateTime,
   isFutureIstDate,
+  fmtCivilDate,
   istWallClockToInstant,
   nowIstDate,
 } from "@/lib/datetime";
@@ -68,6 +69,7 @@ import { SelectField, TextField } from "../components/Field";
 import {
   MANUAL_PUNCH_FN,
   MANUAL_PUNCH_WRITE_AVAILABLE,
+  useRecordManualPunch,
   normaliseEmployeeCode,
   punchDirectionLabel,
   useDirectionOptions,
@@ -109,6 +111,8 @@ export default function ManualPunchPage() {
   const [direction, setDirection] = useState<ManualPunchDirection>("undetermined");
   const [reason, setReason] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const [saved, setSaved] = useState<{ id: string; ist_date: string } | null>(null);
+  const record = useRecordManualPunch();
 
   const normalised = normaliseEmployeeCode(codeInput);
   const person = normalised === "" ? undefined : index.get(normalised);
@@ -196,6 +200,16 @@ export default function ManualPunchPage() {
             {t("admin.manualPunch.noEndpoint", { fn: MANUAL_PUNCH_FN })}
           </Notice>
         ) : null}
+
+        {saved !== null ? (
+          <Notice tone="success">
+            {t("admin.manualPunch.saved", { date: fmtCivilDate(saved.ist_date) })}
+          </Notice>
+        ) : null}
+
+        {record.userMessage === null ? null : (
+          <Notice tone="error">{record.userMessage}</Notice>
+        )}
 
         {peopleError !== null ? (
           <Notice tone="error">{t("admin.manualPunch.peopleFailed")}</Notice>
@@ -392,16 +406,50 @@ export default function ManualPunchPage() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button
             type="button"
-            disabled={!MANUAL_PUNCH_WRITE_AVAILABLE}
-            onClick={() => setShowErrors(true)}
+            disabled={!MANUAL_PUNCH_WRITE_AVAILABLE || record.isPending}
             title={
               MANUAL_PUNCH_WRITE_AVAILABLE
                 ? undefined
                 : t("admin.manualPunch.submitDisabledHint", { fn: MANUAL_PUNCH_FN })
             }
+            onClick={() => {
+              /*
+                The errors are SHOWN first and the write only follows a complete
+                form — the same order as before, so pressing Record on a half-typed
+                entry still explains itself rather than bouncing off the server.
+              */
+              setShowErrors(true);
+              if (!isComplete || person === undefined || instant === null) return;
+              record.mutate(
+                {
+                  input: {
+                    employeeId: person.id,
+                    punchedAt: instant,
+                    reason: trimmedReason,
+                    direction,
+                    note: null,
+                  },
+                  reason: `manual punch: ${person.code} at ${istDateInput} ${timeInput}`,
+                },
+                {
+                  onSuccess: (row: { id: string; ist_date: string }) => {
+                    setSaved(row);
+                    setShowErrors(false);
+                    /* The code and the confirmation are cleared together: the next
+                       punch is a different person until somebody says otherwise. */
+                    setCodeInput("");
+                    setConfirmedCode(null);
+                    setTimeInput("");
+                    setReason("");
+                  },
+                },
+              );
+            }}
           >
             <ShieldAlert className="mr-2 size-4" aria-hidden />
-            {t("admin.manualPunch.action.record")}
+            {record.isPending
+              ? t("admin.manualPunch.action.recording")
+              : t("admin.manualPunch.action.record")}
           </Button>
           <Button type="button" variant="outline" onClick={() => setShowErrors(true)}>
             {t("admin.manualPunch.action.check")}

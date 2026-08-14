@@ -204,8 +204,68 @@ export const keysTeamExtra = {
     "Everybody reporting to you has been confirmed or sits on another employment status, so there is no confirmation for you to recommend today.",
   "teamExtra.perf.confirm.notice":
     "The recommendation form is not on this screen: this database has no table to record one in, and a form that dropped what you typed would be worse than none. Until it lands, send your recommendation to HR with the dates above.",
-  "teamExtra.perf.gap.appraisal":
-    "There are no appraisal cycles, ratings, goals or 1:1 notes anywhere in this database — the build defers them (D-02-22) and none of those tables exist. So this screen shows no score: what you see is the attendance record the engine actually computed, which is evidence you can take into a review rather than a number nothing stands behind.",
+  // ── /me/performance ─────────────────────────────────────────────────────────
+  "me.perf.title": "My review",
+  "me.perf.subtitle": "What your manager wrote about your work, once they have shared it.",
+  "me.perf.empty.title": "Nothing has been shared with you yet",
+  "me.perf.empty.hint":
+    "A review appears here the moment your manager shares it. Until then there may be one being written that you cannot see.",
+  "me.perf.whenVisible":
+    "A review is only shown here once your manager has shared it. Before that it is a draft, and a draft rating read halfway through is not what anybody decided.",
+  "me.perf.overall": "Overall {n} out of {max}",
+  "me.perf.sharedAt": "Shared with you on {at}",
+  "me.perf.managerWords": "What your manager wrote",
+  "me.perf.youSaid": "you said {n}",
+  "me.perf.theySaid": "they said {n}",
+  "me.perf.ackLabel": "Anything you want on the record",
+  "me.perf.ackHint":
+    "Optional. Acknowledging means you have read this — not that you agree with it. Whatever you write is kept with the review.",
+  "me.perf.ack": "I have read this",
+  "me.perf.acking": "Recording…",
+  "me.perf.ackDone": "Recorded",
+  "me.perf.ackDoneDetail": "Your manager can see that you have read it, along with anything you wrote.",
+  "me.perf.acknowledgedAt": "You recorded reading this on {at}.",
+
+  // ── The appraisal cycle (043900) ────────────────────────────────────────────
+  "teamExtra.appr.title": "Review",
+  "teamExtra.appr.hint":
+    "The judgement you make about somebody, in words and a rating. The attendance figures above are evidence for the conversation — nothing here is calculated from them.",
+  "teamExtra.appr.pickCycle": "Which cycle",
+  "teamExtra.appr.period": "Reviewing {from} to {to}",
+  "teamExtra.appr.noCycle.title": "No review cycle is open",
+  "teamExtra.appr.noCycle.hint":
+    "HR opens a cycle for a period once that period has finished. Until then there is nothing to review against.",
+  "teamExtra.appr.none.title": "Nobody to review in this cycle",
+  "teamExtra.appr.none.hint":
+    "A cycle covers people who were employed at the end of the period. If somebody is missing, their reporting line may have been empty when it opened.",
+  "teamExtra.appr.review": "Write the review",
+  "teamExtra.appr.close": "Close",
+  "teamExtra.appr.noSelf": "No self-assessment yet",
+  "teamExtra.appr.selfIn": "Self-assessment in on {at}",
+  "teamExtra.appr.self": "They said {n}",
+  "teamExtra.appr.theirWords": "In their own words",
+  "teamExtra.appr.rate": "Rate {label} as {n} out of 5",
+  "teamExtra.appr.overall": "Overall",
+  "teamExtra.appr.overallHint":
+    "Your own answer, not an average of the lines above. Somebody strong at the job and difficult with colleagues is not a 3.",
+  "teamExtra.appr.overallRate": "Overall {n} out of 5",
+  "teamExtra.appr.comment": "What you would say to them",
+  "teamExtra.appr.commentHint":
+    "At least {n} characters. This is what they will read, and what you will be asked about later — a number on its own is unusable in the meeting it is for.",
+  "teamExtra.appr.submit": "Submit the review",
+  "teamExtra.appr.submitting": "Submitting…",
+  "teamExtra.appr.blocked": "Give an overall rating and write a few sentences before submitting.",
+  "teamExtra.appr.share": "Share it with them",
+  "teamExtra.appr.sharedAt": "Shared on {at}",
+  "teamExtra.appr.unknownPerson": "Somebody who has left your team",
+  "teamExtra.appr.status.notStarted": "Not started",
+  "teamExtra.appr.status.selfDone": "Self-assessment in",
+  "teamExtra.appr.status.reviewed": "Reviewed, not shared",
+  "teamExtra.appr.status.shared": "Shared",
+  "teamExtra.appr.status.acknowledged": "Acknowledged",
+
+  "teamExtra.perf.evidence":
+    "The figures above are the attendance record the engine computed — evidence for a review, not a score. No rating below is calculated from them, and nothing multiplies the two together.",
   "teamExtra.perf.footnote.oneSource":
     "Every figure comes from the one period-summary function the payslip and the month views also read, called once for this exact window. That is why a quarter here agrees with the three months on Team analytics.",
   "teamExtra.perf.footnote.excludesMe":

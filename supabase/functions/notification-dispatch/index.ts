@@ -90,6 +90,23 @@ const MAX_RETRIES = 5;
 const SETTING_QUIET_START = "notifications.quiet_hours_start";
 const SETTING_QUIET_END = "notifications.quiet_hours_end";
 const SETTING_DIGEST_HOUR = "notifications.digest_hour_ist";
+/**
+ * How old a queued row may be and still be worth sending (043600).
+ *
+ * THE HAZARD: this function was switched off for months while `notifications`
+ * kept queueing. The claim query below caps retries and honours `expires_at`, but
+ * had no age limit and orders by `recorded_at` ASC — so the first run after it was
+ * re-enabled would have worked through the whole backlog, oldest first.
+ *
+ * That is not spam, it is misinformation: "a leave request is waiting for your
+ * approval" about one decided five weeks ago costs somebody an afternoon.
+ *
+ * `expire_stale_notifications()` sweeps the backlog to `suppressed`. This
+ * predicate is the belt to that braces — it holds on the very first run, before
+ * anybody has remembered to sweep.
+ */
+const SETTING_MAX_AGE_HOURS = "notifications.max_age_hours";
+const DEFAULT_MAX_AGE_HOURS = 72;
 
 /**
  * Codes that ring through quiet hours regardless of template flags. Operational
@@ -387,6 +404,8 @@ interface DispatchConfig {
   quietStart: string | null;
   quietEnd: string | null;
   digestHourIst: number;
+  /** Queued rows older than this are left alone — see SETTING_MAX_AGE_HOURS. */
+  maxAgeHours: number;
   fromEmail: string;
   fromName: string;
   /** `comms.sandbox_redirect_to`: deliver everything here instead. NULL = off. */
@@ -402,6 +421,7 @@ async function loadConfig(client: Sql): Promise<DispatchConfig> {
     SETTING_QUIET_START,
     SETTING_QUIET_END,
     SETTING_DIGEST_HOUR,
+    SETTING_MAX_AGE_HOURS,
     "comms.from_email",
     "comms.from_name",
     "comms.sandbox_redirect_to",
@@ -429,6 +449,15 @@ async function loadConfig(client: Sql): Promise<DispatchConfig> {
     );
   }
   const digestHour = Number(settings.get(SETTING_DIGEST_HOUR) ?? "9");
+  /*
+    A misconfigured or missing cap falls back to the default rather than to
+    "unlimited". Reading a bad value as no limit is precisely the failure this
+    guard exists to prevent — and it would fail open, silently, on the one run
+    where it mattered.
+  */
+  const rawMaxAge = Number(settings.get(SETTING_MAX_AGE_HOURS) ?? String(DEFAULT_MAX_AGE_HOURS));
+  const maxAgeHours =
+    Number.isInteger(rawMaxAge) && rawMaxAge >= 1 ? rawMaxAge : DEFAULT_MAX_AGE_HOURS;
 
   return {
     companyId: company?.id ?? null,
@@ -436,6 +465,7 @@ async function loadConfig(client: Sql): Promise<DispatchConfig> {
     quietStart: settings.get(SETTING_QUIET_START) ?? null,
     quietEnd: settings.get(SETTING_QUIET_END) ?? null,
     digestHourIst: Number.isInteger(digestHour) && digestHour >= 0 && digestHour <= 23 ? digestHour : 9,
+    maxAgeHours,
     fromEmail: fromEmail.trim(),
     fromName: (settings.get("comms.from_name") ?? `${company?.name ?? "The Tamarind Tree"} HR`).trim(),
     sandboxRedirectTo: (settings.get("comms.sandbox_redirect_to") ?? "").trim() || null,
@@ -487,7 +517,14 @@ interface FanOutStats {
  */
 function dueInAppRows(
   client: Sql,
-  input: { limit: number; companyId: string | null; profileId: string | null; eventCodes: string[] | null },
+  input: {
+    limit: number;
+    companyId: string | null;
+    profileId: string | null;
+    eventCodes: string[] | null;
+    /** Hours. Carried on the selector so neither claim query can forget it. */
+    maxAgeHours: number;
+  },
 ) {
   return client<InAppRow[]>`
     SELECT n.id,
@@ -531,6 +568,8 @@ function dueInAppRows(
      WHERE n.channel = 'in_app'
        AND n.status = 'queued'
        AND (n.scheduled_for IS NULL OR n.scheduled_for <= now())
+       /* See SETTING_MAX_AGE_HOURS: never send what has been overtaken. */
+       AND n.recorded_at >= now() - make_interval(hours => ${input.maxAgeHours}::integer)
        AND (n.expires_at IS NULL OR n.expires_at > now())
        AND (${input.profileId}::uuid IS NULL
             OR COALESCE(n.profile_id, e.profile_id) = ${input.profileId}::uuid)
@@ -636,7 +675,14 @@ interface EmailRow {
 
 function dueEmailRows(
   client: Sql,
-  input: { limit: number; companyId: string | null; profileId: string | null; eventCodes: string[] | null },
+  input: {
+    limit: number;
+    companyId: string | null;
+    profileId: string | null;
+    eventCodes: string[] | null;
+    /** Hours. Carried on the selector so neither claim query can forget it. */
+    maxAgeHours: number;
+  },
 ) {
   return client<EmailRow[]>`
     SELECT n.id,
@@ -673,6 +719,8 @@ function dueEmailRows(
      WHERE n.channel = 'email'
        AND n.status = 'queued'
        AND (n.scheduled_for IS NULL OR n.scheduled_for <= now())
+       /* See SETTING_MAX_AGE_HOURS: never send what has been overtaken. */
+       AND n.recorded_at >= now() - make_interval(hours => ${input.maxAgeHours}::integer)
        AND (n.expires_at IS NULL OR n.expires_at > now())
        AND n.retry_count < ${MAX_RETRIES}
        AND (${input.profileId}::uuid IS NULL
@@ -834,6 +882,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       companyId: config.companyId,
       profileId: body.profile_id ?? null,
       eventCodes: body.event_codes ?? null,
+      maxAgeHours: config.maxAgeHours,
     };
 
     // ── PASS 1 · fan-out (STEPS 9 + 10: one transaction, audit inside) ───────

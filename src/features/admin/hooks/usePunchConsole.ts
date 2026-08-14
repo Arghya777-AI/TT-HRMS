@@ -31,6 +31,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
+import { recordManualPunch, type ManualPunchInput } from "../api/attendance.api";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery, type Cursor, type Page } from "@/shared/api/query";
 import { newIdempotencyKey } from "@/shared/api/invoke";
 import {
@@ -359,12 +360,40 @@ export function normaliseEmployeeCode(raw: string): string {
  *    `mode: 'face'` under a `.strict()` schema, and it hard-codes
  *    `source = 'kiosk_face'`. An admin browser session cannot satisfy any of
  *    that, and it is the wrong provenance regardless: a manual punch must be
- *    `source = 'manual_admin'`, which is a value nothing currently writes.
+ *    `source = 'manual_admin'`.
  *
- * So the form collects and validates the whole payload and refuses to pretend it
- * was recorded. The missing piece is one edge function.
+ * ── THE MISSING PIECE WAS NOT AN EDGE FUNCTION ─────────────────────────────
+ *
+ * This file said for a long time that "the missing piece is one edge function".
+ * It was not. The edge functions in this product exist to do what Postgres
+ * cannot — call Resend, run a face model, read from storage. Recording a punch is
+ * one INSERT, guarded by checks that are already CHECK constraints, on a table
+ * whose recompute is already queued by its own trigger.
+ *
+ * Migration 044000 added `record_manual_punch`, a definer RPC that does the whole
+ * job: administrator only, a reason of ten characters or more, no future times,
+ * no hard-locked periods, nobody who has left, and `needs_review` always set. It
+ * shipped as SQL, so the gate stopped being broken the night it ran rather than
+ * at the next deployment.
  */
-export const MANUAL_PUNCH_WRITE_AVAILABLE = false;
+export const MANUAL_PUNCH_WRITE_AVAILABLE = true;
 
-/** The endpoint that has to exist before the form can submit. */
-export const MANUAL_PUNCH_FN = "manual-punch";
+/** The RPC that records it. */
+export const MANUAL_PUNCH_FN = "record_manual_punch";
+
+/**
+ * Record a manual punch.
+ *
+ * Invalidates the attendance branch: the punch log, the day records and the
+ * exception queue all read rows this call creates, and the recompute the trigger
+ * queues will change the day again a moment later.
+ */
+export function useRecordManualPunch(): AuditedMutationResult<
+  { id: string; ist_date: string },
+  ManualPunchInput
+> {
+  return useAuditedMutation({
+    mutationFn: (input, reason) => recordManualPunch(input, reason),
+    invalidate: [qk.admin.all],
+  });
+}

@@ -1,5 +1,9 @@
 -- =============================================================================
--- 20260801044200 — an administrator must be able to read back the row they wrote
+-- 20260817100000 — an administrator must be able to read back the row they wrote
+--
+-- DATED AFTER THE 6-7 AUGUST MIGRATIONS ON PURPOSE. Those create
+-- `app.visible_employee_ids()` and rewrite the policies this file corrects, so a
+-- number in the 0801 series would run BEFORE the function existed and fail.
 -- =============================================================================
 --
 -- REPORTED FROM PRODUCTION: a super admin pressing "Create employee" is told
@@ -64,7 +68,7 @@
 
 BEGIN;
 
-SELECT set_config('app.reason', 'migration 044200: let an administrator read back a row they just inserted, so INSERT ... RETURNING stops failing — creating an employee has been impossible since the read policies became set membership', true);
+SELECT set_config('app.reason', 'migration 044200 (20260817100000): let an administrator read back a row they just inserted, so INSERT ... RETURNING stops failing — creating an employee has been impossible since the read policies became set membership', true);
 SELECT set_config('app.source', 'migration', true);
 
 -- -----------------------------------------------------------------------------
@@ -145,13 +149,13 @@ BEGIN
     WHEN OTHERS THEN
       IF SQLERRM <> 'UNDO_OK' THEN
         RAISE EXCEPTION
-          'migration 044200 did not fix it: INSERT ... RETURNING still fails (% — %)',
+          'migration 044200 (20260817100000) did not fix it: INSERT ... RETURNING still fails (% — %)',
           SQLSTATE, SQLERRM;
       END IF;
   END;
   RESET ROLE;
 
-  RAISE NOTICE 'migration 044200: an administrator can create an employee and read it back';
+  RAISE NOTICE 'migration 044200 (20260817100000): an administrator can create an employee and read it back';
 END $verify$;
 
 COMMIT;

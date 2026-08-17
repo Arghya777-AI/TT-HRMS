@@ -2458,6 +2458,7 @@ export const en = catalogue({
     "No legal entity is readable on this sign-in, so new rows cannot be created here.",
   "admin.master.superOnly": "Only a super admin can change this. You are seeing it read-only.",
   "admin.master.range": "{from} to {to}",
+  "admin.master.selectOne": "Select one…",
   "admin.master.yes": "Yes",
   "admin.master.no": "No",
   "admin.master.dow.0": "Sunday",

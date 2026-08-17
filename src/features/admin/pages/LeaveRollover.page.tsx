@@ -302,7 +302,13 @@ export default function AdminLeaveRolloverPage() {
         subtitle={t("adminLeave.rollover.subtitle")}
       />
 
-      <Notice tone="warning" className="mb-5">
+      {/*
+        A NOTE, NOT A WARNING. There is nothing here for an administrator to fix:
+        the rollover job does not exist on this deployment, which is a fact about
+        the build rather than about their leave data. Drawn in amber behind a
+        triangle it read as an error somebody had to chase.
+      */}
+      <Notice tone="note" className="mb-5">
         <p className="font-medium">{t("adminLeave.rollover.noEngine.title")}</p>
         <p className="mt-1">{t("adminLeave.rollover.noEngine.body")}</p>
       </Notice>

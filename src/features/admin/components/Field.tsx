@@ -123,7 +123,29 @@ export function SelectField({
         onChange={(event) => onChange(event.target.value)}
         className={cn(CONTROL_CLASS, error !== undefined && "border-destructive")}
       >
-        {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
+        {/*
+          ── A SELECT MUST NEVER DISPLAY A VALUE THE FORM HAS NOT GOT ──────────
+          A required select was rendered with no placeholder option, on the
+          reasonable-sounding grounds that an empty choice should not be offered.
+          But `value` is "" until somebody picks, no option matches "", and a
+          native <select> in that state shows its FIRST option. So the control
+          read "Sunday Off" while the form held nothing — and then said "This one
+          is required" directly underneath it.
+
+          Nobody can debug that from the screen: the field looks answered.
+
+          So an empty option is always rendered while nothing is chosen. On a
+          required field it is `disabled`, which keeps the original intent — you
+          cannot go back to nothing — without letting the control misreport
+          itself.
+        */}
+        {placeholder !== undefined ? (
+          <option value="">{placeholder}</option>
+        ) : value === "" ? (
+          <option value="" disabled>
+            {t("admin.master.selectOne")}
+          </option>
+        ) : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

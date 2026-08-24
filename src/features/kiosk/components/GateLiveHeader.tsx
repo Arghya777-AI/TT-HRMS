@@ -25,7 +25,8 @@
  * regardless of what this shows.
  */
 import { useEffect, useState } from "react";
-import { ScanFace, Wifi, WifiOff } from "lucide-react";
+import { ScanFace, Volume2, VolumeX, Wifi, WifiOff } from "lucide-react";
+import { chimeReady, chimeSupported, isMuted, playChime, primeChime, setMuted } from "@/shared/audio/chime";
 import { cn } from "@/lib/utils";
 import { fmtDate, fmtWeekday, nowInstantIso, nowIstClock } from "@/lib/datetime";
 
@@ -63,6 +64,89 @@ function useGateNow(): { clock: string; date: string; weekday: string } {
     return () => window.clearInterval(id);
   }, []);
   return value;
+}
+
+/**
+ * SoundButton — mute toggle, and the thing that unlocks audio on iOS.
+ *
+ * Two jobs in one control, because they are the same tap.
+ *
+ * Safari refuses to produce sound until the page has been interacted with, and a wall-mounted
+ * gate is interacted with by nobody: the person who walks up is recognised without touching
+ * it. So a terminal that was reloaded and then left alone would be permanently, silently mute
+ * — and "the sound does not work" is indistinguishable, from across a foyer, from "the sound
+ * is off". This button says which, and fixes it: while audio is locked it reads ENABLE SOUND,
+ * and tapping it is the gesture that unlocks the context.
+ *
+ * It plays the confirmation tone on unlock, so whoever tapped it knows it worked without
+ * waiting for the next person to arrive.
+ */
+function SoundButton(): React.JSX.Element | null {
+  const [muted, setMutedState] = useState(isMuted);
+  const [ready, setReady] = useState(chimeReady);
+
+  /*
+    The context can be unlocked by ANY tap on the page — the unlock listeners in `chime.ts`
+    are global — so this button's label cannot be driven by its own clicks alone. Polling is
+    the honest way to notice: the AudioContext has no state-change event that is reliable
+    across Safari versions, and one check a second costs nothing next to a camera loop.
+  */
+  useEffect(() => {
+    const id = window.setInterval(() => setReady(chimeReady()), 1_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Nothing to offer on a browser with no Web Audio at all; a dead control is worse than none.
+  if (!chimeSupported()) return null;
+
+  const locked = !muted && !ready;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (muted) {
+          setMuted(false);
+          setMutedState(false);
+          // Unmuting is itself a gesture, so take the chance to unlock as well.
+          primeChime();
+          playChime("recorded");
+          setReady(chimeReady());
+          return;
+        }
+        if (locked) {
+          primeChime();
+          playChime("recorded");
+          setReady(chimeReady());
+          return;
+        }
+        setMuted(true);
+        setMutedState(true);
+      }}
+      aria-label={
+        muted
+          ? "Sound is off. Turn the attendance chime on."
+          : locked
+            ? "Tap to enable the attendance chime on this device."
+            : "Sound is on. Turn the attendance chime off."
+      }
+      className={cn(
+        "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider",
+        locked
+          ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40"
+          : muted
+            ? "bg-neutral-800 text-neutral-400"
+            : "bg-neutral-800/70 text-neutral-300",
+      )}
+    >
+      {muted ? (
+        <VolumeX className="size-4" aria-hidden />
+      ) : (
+        <Volume2 className="size-4" aria-hidden />
+      )}
+      {locked ? "Enable sound" : null}
+    </button>
+  );
 }
 
 export function GateLiveHeader({
@@ -139,6 +223,8 @@ export function GateLiveHeader({
             {weekday} · {date}
           </p>
         </div>
+
+        <SoundButton />
 
         {action}
       </div>

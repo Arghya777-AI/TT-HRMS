@@ -24,6 +24,7 @@ import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import { istToday } from "@/lib/datetime";
+import { playChime } from "@/shared/audio/chime";
 import {
   fetchSelfPunchEligibility,
   fetchSelfPunchState,
@@ -81,7 +82,23 @@ export function useSelfPunch(): UseMutationResult<SelfPunchOutcome, Error, SelfP
   return useMutation({
     mutationFn: (request: SelfPunchRequest) => selfPunch(request),
     retry: false,
-    onSuccess: () => {
+    onSuccess: (outcome) => {
+      /*
+        The same tones the gate uses, from the same module, so an employee punching on their
+        phone and the terminal at the door agree about what "recorded" sounds like.
+
+        Mapped from `kind` rather than through `chimeForOutcome`, because this path's outcome is
+        a discriminated union rather than the kiosk's flag object — and a refusal here is a
+        SETTLED outcome that arrives through onSuccess (see the note above), so it must not be
+        allowed to sound like a success.
+      */
+      playChime(
+        outcome.kind === "recorded"
+          ? "recorded"
+          : outcome.kind === "already_recorded"
+            ? "duplicate"
+            : "error",
+      );
       void queryClient.invalidateQueries({ queryKey: qk.attendance.all });
       if (employeeId === null) return;
       void queryClient.invalidateQueries({ queryKey: qk.home.today(employeeId, istToday()) });

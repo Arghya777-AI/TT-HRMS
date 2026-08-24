@@ -62,6 +62,7 @@ import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
 import { uuid } from "../lib/uuid";
+import { chimeForOutcome, playChime } from "@/shared/audio/chime";
 import type { EngineStatus } from "../lib/engine";
 
 /** How many accepted scans stay on screen. Five fits a phone without scrolling. */
@@ -475,13 +476,28 @@ export function GateScanScreen({
                 ? { kind: "queued", at: performance.now() }
                 : { kind: "error", detail: t("kiosk.gate.queueFull"), at: performance.now() },
             );
+            /*
+              A held scan gets its own sound, not the success one. For the person at the gate
+              it IS a success — they are recorded and can walk on — but a gate that sounded
+              identical whether it reached the server or not would hide an outage for as long
+              as nobody happened to look at the screen.
+            */
+            playChime(queued ? "queued" : "error");
             return;
           }
 
           setPhase({ kind: "error", detail: result.error.detail, at: performance.now() });
+          playChime("error");
           return;
         }
         setPhase({ kind: "result", outcome: result.data, at: performance.now() });
+        /*
+          The sound people are actually listening for. `chimeForOutcome` decides, in one shared
+          place, so the gate and the web punch cannot drift into disagreeing about what a
+          duplicate sounds like — and so a debounced re-scan does not sound like a second
+          successful punch to somebody who scanned twice.
+        */
+        playChime(chimeForOutcome(result.data));
         setScanCount((prev) => prev + 1);
         setLastScanAt(nowInstantIso());
         if (result.data.matched) {

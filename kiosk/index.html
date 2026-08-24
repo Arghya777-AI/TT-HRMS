@@ -55,6 +55,143 @@
       })();
     </script>
 
+    <!--
+      ── RUNTIME POLYFILLS FOR iOS 12.5.7 (SAFARI 12.1) ──────────────────────────
+      `build.target: "safari12"` lowers SYNTAX. It never adds a runtime API, and esbuild
+      says so explicitly. These are the five the shipped gate bundle actually reaches for
+      and Safari 12.1 does not have — counted in the built output, not guessed from a
+      compatibility table:
+
+        Array.prototype.at      Safari 15.4   ×3   the one that would definitely throw
+        Promise.allSettled      Safari 13     ×1
+        Object.fromEntries      Safari 12.1   ×2   present on 12.1, absent on 12.0
+        globalThis              Safari 12.1   ×2   same
+        queueMicrotask          Safari 12.1   ×2   same
+
+      ES5 only, and inline in the head above the hoisted module, for the same reason as the
+      error reporter: it has to be running before the code that needs it, and it must not
+      itself be the thing that fails to parse. Every definition is guarded, so a modern
+      browser reads this and does nothing.
+    -->
+    <script>
+      (function () {
+        /* globalThis — everything below may want it, so it goes first. */
+        if (typeof globalThis !== "object" || globalThis === null) {
+          Object.defineProperty(Object.prototype, "__magic__", {
+            get: function () {
+              return this;
+            },
+            configurable: true
+          });
+          /* eslint-disable no-undef */
+          __magic__.globalThis = __magic__;
+          delete Object.prototype.__magic__;
+        }
+
+        var G = typeof globalThis === "object" ? globalThis : window;
+
+        /* Array.prototype.at / String.prototype.at — negative indices count from the end. */
+        function at(index) {
+          var length = this.length;
+          var i = Math.trunc(index) || 0;
+          if (i < 0) i += length;
+          if (i < 0 || i >= length) return undefined;
+          return this[i];
+        }
+        if (!Array.prototype.at) {
+          Object.defineProperty(Array.prototype, "at", {
+            value: at,
+            writable: true,
+            configurable: true
+          });
+        }
+        if (!String.prototype.at) {
+          Object.defineProperty(String.prototype, "at", {
+            value: at,
+            writable: true,
+            configurable: true
+          });
+        }
+
+        /* Promise.allSettled — never rejects; one result object per input. */
+        if (G.Promise && !G.Promise.allSettled) {
+          G.Promise.allSettled = function (values) {
+            var wrapped = Array.prototype.map.call(values, function (item) {
+              return G.Promise.resolve(item).then(
+                function (value) {
+                  return { status: "fulfilled", value: value };
+                },
+                function (reason) {
+                  return { status: "rejected", reason: reason };
+                }
+              );
+            });
+            return G.Promise.all(wrapped);
+          };
+        }
+
+        /* Object.fromEntries — accepts any iterable of [key, value] pairs. */
+        if (!Object.fromEntries) {
+          Object.fromEntries = function (entries) {
+            var out = {};
+            Array.prototype.forEach.call(
+              Array.from ? Array.from(entries) : entries,
+              function (pair) {
+                out[pair[0]] = pair[1];
+              }
+            );
+            return out;
+          };
+        }
+
+        /*
+          queueMicrotask — a resolved promise is a real microtask, so ordering is right.
+          The rethrow is deliberate: the spec reports the exception globally rather than
+          turning it into an unhandled rejection, and the error reporter above is listening.
+        */
+        if (typeof G.queueMicrotask !== "function") {
+          G.queueMicrotask = function (callback) {
+            G.Promise.resolve().then(callback).catch(function (error) {
+              setTimeout(function () {
+                throw error;
+              }, 0);
+            });
+          };
+        }
+
+        /*
+          ── DOES FLEXBOX `gap` WORK? ────────────────────────────────────────────
+          `gap` in a FLEX container is Safari 14.1. In a GRID container it is Safari 10.1.
+          That gap between the two is why this is measured in JavaScript rather than asked
+          with `@supports (gap: 1px)`: on Safari 12 that query answers YES — truthfully,
+          about grid — and every flex gap in the app is then silently zero. The gate's whole
+          layout is flex, so the screen arrives with every element touching its neighbour.
+
+          The measurement: a column flex box with a 1px gap and two zero-height children is
+          1px tall where gap works and 0px where it does not. Cheap, unambiguous, and it asks
+          the browser about the exact property in the exact context rather than trusting a
+          version table.
+        */
+        try {
+          var probe = document.createElement("div");
+          probe.style.cssText =
+            "display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden";
+          probe.appendChild(document.createElement("div"));
+          probe.appendChild(document.createElement("div"));
+          document.documentElement.appendChild(probe);
+          var supported = probe.scrollHeight === 1;
+          probe.parentNode.removeChild(probe);
+          if (!supported) {
+            // className, not classList.add: Safari 12 has classList, but this runs before
+            // anything else and a string write cannot fail on an older engine either.
+            document.documentElement.className += " no-flex-gap";
+          }
+        } catch (e) {
+          /* A failed probe must not stop the gate booting. Gaps stay as they are. */
+        }
+      })();
+    </script>
+
 
     <!--
       ═══════════════════════════════════════════════════════════════════════════
@@ -134,6 +271,36 @@
         color: #fca5a5;
         font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
       }
+
+      /*
+        FLEX-GAP FALLBACK — only ever active when the probe above found gap broken.
+
+        Margin on every child but the first reproduces `gap` for a single-line flex
+        container, which is what the gate's layouts are. Scoped to `.flex` so grid
+        containers, where Safari 12 honours gap properly, are left alone; `:not(.flex-col)`
+        splits the axis, because Tailwind puts the direction in the markup and CSS cannot
+        otherwise ask. Sizes are Tailwind's own scale, and only the steps the gate actually
+        uses are here — an unused rule is a rule nobody checked.
+
+        Known limit: a WRAPPING row gets a stray left margin on the first item of each new
+        line. Nothing in the gate wraps, and a small misalignment on a browser this old is a
+        better outcome than every control touching its neighbour.
+      */
+      .no-flex-gap .flex.gap-0\.5:not(.flex-col) > * + * { margin-left: 0.125rem; }
+      .no-flex-gap .flex.flex-col.gap-0\.5 > * + * { margin-top: 0.125rem; }
+      .no-flex-gap .flex.gap-1\.5:not(.flex-col) > * + * { margin-left: 0.375rem; }
+      .no-flex-gap .flex.flex-col.gap-1\.5 > * + * { margin-top: 0.375rem; }
+      .no-flex-gap .flex.gap-2:not(.flex-col) > * + * { margin-left: 0.5rem; }
+      .no-flex-gap .flex.flex-col.gap-2 > * + * { margin-top: 0.5rem; }
+      .no-flex-gap .flex.gap-2\.5:not(.flex-col) > * + * { margin-left: 0.625rem; }
+      .no-flex-gap .flex.flex-col.gap-2\.5 > * + * { margin-top: 0.625rem; }
+      .no-flex-gap .flex.gap-3:not(.flex-col) > * + * { margin-left: 0.75rem; }
+      .no-flex-gap .flex.flex-col.gap-3 > * + * { margin-top: 0.75rem; }
+      .no-flex-gap .flex.gap-5:not(.flex-col) > * + * { margin-left: 1.25rem; }
+      .no-flex-gap .flex.flex-col.gap-5 > * + * { margin-top: 1.25rem; }
+      .no-flex-gap .flex.gap-x-2 > * + * { margin-left: 0.5rem; }
+      .no-flex-gap .flex.gap-x-3 > * + * { margin-left: 0.75rem; }
+      .no-flex-gap .flex.flex-col.gap-y-1 > * + * { margin-top: 0.25rem; }
     </style>
 
     <meta name="robots" content="noindex, nofollow" />

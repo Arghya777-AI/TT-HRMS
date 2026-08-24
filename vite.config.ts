@@ -18,7 +18,29 @@ export default defineConfig({
   },
   build: {
     sourcemap: true,
-    target: "es2020",
+    /**
+     * SAFARI 12, BECAUSE THE GATE TABLET IS AN iPAD ON iOS 12.5.7.
+     *
+     * iOS 12.5.7 is the terminal release for the iPad Air 1, iPad mini 2/3 and iPhone 5s —
+     * hardware that is perfectly good for a wall-mounted scanner and will never get another
+     * major iOS. It ships Safari 12.1, which predates OPTIONAL CHAINING and NULLISH
+     * COALESCING (both Safari 13.1).
+     *
+     * At `es2020` esbuild left those in, and the shipped gate bundle carried 52 `?.` and 85
+     * `??`. A module that fails to PARSE runs nothing at all, so the terminal was a black
+     * screen with no error — there is no runtime yet in which an error could be thrown. That
+     * is the whole of why the link "did not open in Safari".
+     *
+     * Set for the WHOLE build, not just the gate entry: Vite resolves one target per build,
+     * and the gate shares its React and vendor chunks with the HR app. Transpiling those
+     * twice is not an option, and lowering them costs a few KB of gzip against a terminal
+     * that otherwise cannot run.
+     *
+     * Syntax is all this fixes. Runtime APIs that Safari 12 lacks are polyfilled in
+     * `kiosk/index.html` before the module loads — esbuild lowers syntax and never adds a
+     * polyfill.
+     */
+    target: "safari12",
     rollupOptions: {
       /**
        * TWO APPS, ONE REPOSITORY.

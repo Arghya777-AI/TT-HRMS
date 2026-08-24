@@ -15,6 +15,48 @@
     <meta name="theme-color" content="#0A0A0A" />
 
     <!--
+      Deliberately ES5, deliberately inline, and FIRST IN THE HEAD.
+
+      Its whole job is to report failures that stop the module from running at all, so it
+      cannot itself use anything that might not parse — no arrow functions, no const, no
+      template literals. An inline classic script also runs even when the module script is
+      rejected outright for unsupported syntax, which is the exact case on an older Safari.
+
+      IT LIVES IN THE HEAD, ABOVE EVERYTHING, and that position is load-bearing. Vite hoists
+      the entry module into <head> at build time. A module is deferred by spec, so a body
+      script would still be armed before the module EVALUATES — but not necessarily before it
+      FAILS TO LOAD: a 404 or a dropped connection fires an error event on the script element
+      as soon as the fetch settles, which can be while the head is still being parsed. Armed
+      here, nothing can fail earlier than the listener exists.
+    -->
+    <script>
+      (function () {
+        function show(label, detail) {
+          var box = document.getElementById("kiosk-boot-error");
+          var note = document.getElementById("kiosk-boot-note");
+          if (!box) return;
+          if (note) note.textContent = "The app could not start on this browser.";
+          box.hidden = false;
+          box.textContent = label + ": " + detail;
+        }
+        window.addEventListener("error", function (event) {
+          // A failed script/stylesheet fires error on the ELEMENT, with no message.
+          var target = event.target;
+          if (target && target !== window && (target.src || target.href)) {
+            show("Could not load", String(target.src || target.href));
+            return;
+          }
+          show("Error", (event.message || "unknown") + " (" + (event.filename || "") + ":" + (event.lineno || 0) + ")");
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          show("Failed", (reason && (reason.message || reason)) + "");
+        });
+      })();
+    </script>
+
+
+    <!--
       ═══════════════════════════════════════════════════════════════════════════
       THIS IS A SEPARATE APP, NOT A PAGE OF THE HR APP
       ═══════════════════════════════════════════════════════════════════════════
@@ -131,40 +173,6 @@
         on in Settings → Safari → Advanced, then reload.
       </p>
     </noscript>
-
-    <!--
-      Deliberately ES5, deliberately inline, deliberately BEFORE the module.
-
-      Its whole job is to report failures that stop the module from running at all, so it
-      cannot itself use anything that might not parse — no arrow functions, no const, no
-      template literals. An inline classic script also runs even when the module script is
-      rejected outright for unsupported syntax, which is the exact case on an older Safari.
-    -->
-    <script>
-      (function () {
-        function show(label, detail) {
-          var box = document.getElementById("kiosk-boot-error");
-          var note = document.getElementById("kiosk-boot-note");
-          if (!box) return;
-          if (note) note.textContent = "The app could not start on this browser.";
-          box.hidden = false;
-          box.textContent = label + ": " + detail;
-        }
-        window.addEventListener("error", function (event) {
-          // A failed script/stylesheet fires error on the ELEMENT, with no message.
-          var target = event.target;
-          if (target && target !== window && (target.src || target.href)) {
-            show("Could not load", String(target.src || target.href));
-            return;
-          }
-          show("Error", (event.message || "unknown") + " (" + (event.filename || "") + ":" + (event.lineno || 0) + ")");
-        }, true);
-        window.addEventListener("unhandledrejection", function (event) {
-          var reason = event.reason;
-          show("Failed", (reason && (reason.message || reason)) + "");
-        });
-      })();
-    </script>
 
     <script type="module" src="/src/kiosk/main.tsx"></script>
   </body>

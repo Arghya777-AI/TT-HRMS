@@ -96,6 +96,27 @@ function post(message: unknown): boolean {
   }
 }
 
+/**
+ * Ask the shell to make the attendance sound.
+ *
+ * ── WHY THE APP PLAYS IT AND NOT THE WEB LAYER ───────────────────────────────
+ * Safari — and WKWebView with it — refuses to produce sound until the page has been
+ * interacted with. A wall-mounted gate is touched by nobody: the person walking up is
+ * recognised without contact. So inside the shell, Web Audio would be reliably mute until
+ * somebody remembered to tap the screen, which is the one thing an unattended terminal
+ * cannot depend on.
+ *
+ * Native audio has no such rule. The shell also puts its audio session in the playback
+ * category, so the chime is heard even when the iPad has been muted from Control Centre —
+ * which, on a device left on a wall for a month, it eventually will be.
+ *
+ * Returns false when there is no shell, and the caller falls back to Web Audio.
+ */
+export function nativePlaySound(kind: string): boolean {
+  if (!isNativeShell()) return false;
+  return post({ op: "playSound", kind });
+}
+
 export type CameraFacing = "front" | "back";
 
 /** Ask the shell to start its capture session and show the preview. */

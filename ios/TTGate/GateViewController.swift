@@ -46,6 +46,7 @@ final class GateViewController: UIViewController {
     private static let bridgeVersion = 1
 
     private let camera = CameraController()
+    private let sound = SoundController()
     private var webView: WKWebView!
 
     // MARK: - Lifecycle
@@ -196,6 +197,16 @@ extension GateViewController: WKScriptMessageHandler {
 
         case "stopCamera":
             camera.stop()
+
+        case "playSound":
+            /*
+              The web layer decides WHEN and WHICH; the shell decides HOW. Native audio is not
+              subject to the autoplay rule that keeps Web Audio mute on an untouched
+              wall-mounted terminal, and its session ignores a muted device — neither of which
+              the page can do anything about from inside a WebView.
+            */
+            let kind = (body["kind"] as? String) ?? "recorded"
+            sound.play(kind: kind)
 
         case "grabFrame":
             // Off the main thread: the JPEG encode is the most expensive thing this shell

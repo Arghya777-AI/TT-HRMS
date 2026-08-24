@@ -156,6 +156,7 @@ function bindUnlock(): void {
 
 /** Whether this browser can make a sound at all. */
 export function chimeSupported(): boolean {
+  if (typeof window !== "undefined" && window.TTGateNative !== undefined) return true;
   return contextCtor() !== null;
 }
 
@@ -167,7 +168,12 @@ export function chimeSupported(): boolean {
  * would otherwise be reported as "the sound does not work".
  */
 export function chimeReady(): boolean {
-  return context !== null && context.state === "running" && !isMuted();
+  if (isMuted()) return false;
+  // Inside the shell the sound is native, so it is ready the moment the shell exists — there
+  // is no context to unlock and no gesture to wait for. Reporting otherwise would leave the
+  // gate showing "Enable sound" permanently in the app, where it does nothing.
+  if (typeof window !== "undefined" && window.TTGateNative !== undefined) return true;
+  return context !== null && context.state === "running";
 }
 
 export function isMuted(): boolean {
@@ -187,6 +193,25 @@ export function setMuted(muted: boolean): void {
   } catch {
     // Not persisting a preference is survivable; failing to punch is not.
   }
+}
+
+/**
+ * Bind the unlock listeners now, before any sound is requested.
+ *
+ * `playChime` binds them too, but only on the FIRST punch — so the very first arrival at a
+ * freshly loaded gate was always silent, because the listeners that would have unlocked audio
+ * did not exist while people were tapping the screen during setup. Called from the gate's
+ * entry point, the first tap of the session unlocks, whenever and wherever it happens.
+ *
+ * Cheap and idempotent: it creates the context and attaches four passive listeners that remove
+ * themselves once the context is running.
+ */
+export function initChime(): void {
+  if (typeof window === "undefined") return;
+  // No context needed in the shell — audio is native there, and creating one would attach
+  // listeners for something that never plays.
+  if (window.TTGateNative !== undefined) return;
+  ensureContext();
 }
 
 /**
@@ -210,6 +235,27 @@ export function primeChime(): void {
  */
 export function playChime(kind: ChimeKind): void {
   if (isMuted()) return;
+
+  /*
+    THE NATIVE SHELL PLAYS IT, IF THERE IS ONE.
+
+    Inside the iOS app, Web Audio is subject to the same autoplay rule as Safari: silent until
+    the page has been touched. A wall-mounted gate is touched by nobody, so the shell's own
+    audio — which has no such restriction, and which is configured to be heard even on a muted
+    iPad — is the only version that reliably makes a noise. Delegating also means the tones do
+    not have to be unlocked once per page load, which is the one manual step this whole module
+    otherwise cannot avoid.
+
+    Imported lazily so the browser build does not pull the bridge into this module's graph:
+    `chime.ts` is used by the HR app too, which has no shell and no business loading one.
+  */
+  if (typeof window !== "undefined" && window.TTGateNative !== undefined) {
+    void import("@/features/kiosk/lib/nativeBridge")
+      .then(({ nativePlaySound }) => nativePlaySound(kind))
+      .catch(() => undefined);
+    return;
+  }
+
   const ctx = ensureContext();
   if (ctx === null) return;
 

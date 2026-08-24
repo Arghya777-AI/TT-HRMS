@@ -63,7 +63,15 @@ describe.skipIf(!iosPresent)("the iOS shell agrees with the web app", () => {
   it("speaks exactly the operations the page sends", () => {
     // A message the shell does not handle is silently dropped by WKWebView: the page waits
     // out its timeout and reports no frame, which reads as a camera fault.
-    for (const op of ["startCamera", "stopCamera", "grabFrame", "cameraPermission"]) {
+    for (const op of [
+      "startCamera",
+      "stopCamera",
+      "grabFrame",
+      "cameraPermission",
+      // The attendance chime. Native plays it because WKWebView inherits Safari's autoplay
+      // rule, and a wall-mounted gate is touched by nobody.
+      "playSound",
+    ]) {
       expect(bridge, `page sends ${op}`).toContain(`op: "${op}"`);
       expect(controller, `shell handles ${op}`).toContain(`case "${op}"`);
     }

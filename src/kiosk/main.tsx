@@ -31,6 +31,7 @@ import { createRoot } from "react-dom/client";
 import KioskPage from "@/features/kiosk/pages/Kiosk.page";
 import "@/index.css";
 import { registerKioskServiceWorker } from "./registerKioskServiceWorker";
+import { initChime } from "@/shared/audio/chime";
 
 const container = document.getElementById("kiosk-root");
 if (container === null) {
@@ -53,3 +54,13 @@ createRoot(container).render(
  * anything at all, on the slowest device in the estate.
  */
 registerKioskServiceWorker();
+
+/*
+  Bind the audio unlock listeners now, not on the first punch.
+
+  Safari will not make a sound until the page has been interacted with, and the taps that
+  happen during setup — pairing, choosing a camera — are the only interaction a wall-mounted
+  gate ever gets. Binding here means those taps count; binding on the first punch meant they
+  had already been missed and the first arrival was always silent.
+*/
+initChime();

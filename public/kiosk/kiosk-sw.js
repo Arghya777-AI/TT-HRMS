@@ -29,9 +29,12 @@
   cached success. Nothing carrying an Authorization header or a device signature is stored.
 */
 
-// Bumped to v2 with the scope fix: the v1 caches were keyed to a shell URL that was never
-// navigated to, so they are stale by construction and the activate handler drops them.
-const VERSION = "v2";
+// v3 with the attendance chime. The bump is what makes an ALREADY-INSTALLED gate pick the
+// change up: a new worker byte-differs, so the browser installs it, `activate` drops every
+// cache not named for this version, and the next navigation refetches the shell rather than
+// replaying a cached one. Without the bump an installed terminal could serve yesterday's
+// bundle for as long as its cache survived.
+const VERSION = "v3";
 const SHELL_CACHE = `kiosk-shell-${VERSION}`;
 const ASSET_CACHE = `kiosk-assets-${VERSION}`;
 const MODEL_CACHE = `kiosk-models-${VERSION}`;

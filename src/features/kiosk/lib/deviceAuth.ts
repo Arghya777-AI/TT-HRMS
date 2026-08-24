@@ -19,6 +19,7 @@
  */
 import { env } from "@/lib/env";
 import { nowInstantIso } from "@/lib/datetime";
+import { uuid } from "./uuid";
 
 const STORE_KEY = "tt-kiosk-device-v1";
 
@@ -162,7 +163,7 @@ export async function deviceCall<T>(
         "x-timestamp": ts,
         "x-nonce": n,
         "x-signature": signature,
-        "x-idempotency-key": crypto.randomUUID(),
+        "x-idempotency-key": uuid(),
         ...(opts.session !== undefined ? { "x-operator-session": opts.session } : {}),
       },
       body: raw,
@@ -228,7 +229,7 @@ export async function pairDevice(
       headers: {
         "Content-Type": "application/json",
         apikey: env.supabasePublishableKey,
-        "x-idempotency-key": crypto.randomUUID(),
+        "x-idempotency-key": uuid(),
       },
       body: JSON.stringify({
         activation_code: activationCode.trim(),
@@ -711,7 +712,7 @@ export function sendPunch(
     state,
     "kiosk-punch",
     {
-      clientEventId: crypto.randomUUID(),
+      clientEventId: uuid(),
       capturedAt: nowInstantIso(),
       descriptor: [...descriptor],
       // OMITTED, not null, when there is no fix: the request schema is `.strict()`

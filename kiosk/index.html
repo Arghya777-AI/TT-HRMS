@@ -54,13 +54,118 @@
         user-select: none;
         -webkit-tap-highlight-color: transparent;
       }
+
+      /* The boot message. Plain CSS, no build step, no Tailwind — it has to render on a
+         browser that could not run the bundle that carries the stylesheet. */
+      #kiosk-boot {
+        box-sizing: border-box;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.75rem;
+        padding: 1.5rem;
+        color: #e5e5e5;
+        font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      #kiosk-boot h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 600;
+      }
+      #kiosk-boot p {
+        margin: 0;
+        max-width: 34rem;
+        color: #a3a3a3;
+      }
+      #kiosk-boot .kiosk-boot-hint {
+        color: #fbbf24;
+      }
+      #kiosk-boot pre {
+        margin: 0.5rem 0 0;
+        padding: 0.75rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border-radius: 0.5rem;
+        background: #1c1917;
+        color: #fca5a5;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
     </style>
 
     <meta name="robots" content="noindex, nofollow" />
     <title>TT Gate — Face Attendance</title>
   </head>
   <body>
-    <div id="kiosk-root"></div>
+    <!--
+      THE ROOT IS NOT EMPTY, AND THAT IS THE POINT.
+
+      This div used to be bare. With a near-black body behind it, ANY failure to mount —
+      an unsupported API on an older Safari, a chunk that did not load, a thrown module —
+      painted a solid black rectangle. Indistinguishable, on the device, from "the link
+      does not open": no error, no text, nothing to report back. A gate terminal is often
+      the one screen with nobody technical in front of it, so it has to say what is wrong
+      in words.
+
+      React's createRoot replaces these children on a successful mount, so this is only
+      ever visible when something actually went wrong.
+    -->
+    <div id="kiosk-root">
+      <div id="kiosk-boot" role="status">
+        <h1>Starting the gate terminal…</h1>
+        <p id="kiosk-boot-note">
+          If this message stays on screen, the app could not start on this browser.
+        </p>
+        <p class="kiosk-boot-hint">
+          Safari on iPhone or iPad needs <strong>iOS 15.4 or newer</strong>. Check
+          Settings → General → Software Update, or open the link in Chrome to compare.
+        </p>
+        <pre id="kiosk-boot-error" hidden></pre>
+      </div>
+    </div>
+
+    <noscript>
+      <p style="color: #fca5a5; font: 16px/1.5 system-ui; padding: 1rem">
+        JavaScript is switched off in this browser, so the gate terminal cannot run. Turn it
+        on in Settings → Safari → Advanced, then reload.
+      </p>
+    </noscript>
+
+    <!--
+      Deliberately ES5, deliberately inline, deliberately BEFORE the module.
+
+      Its whole job is to report failures that stop the module from running at all, so it
+      cannot itself use anything that might not parse — no arrow functions, no const, no
+      template literals. An inline classic script also runs even when the module script is
+      rejected outright for unsupported syntax, which is the exact case on an older Safari.
+    -->
+    <script>
+      (function () {
+        function show(label, detail) {
+          var box = document.getElementById("kiosk-boot-error");
+          var note = document.getElementById("kiosk-boot-note");
+          if (!box) return;
+          if (note) note.textContent = "The app could not start on this browser.";
+          box.hidden = false;
+          box.textContent = label + ": " + detail;
+        }
+        window.addEventListener("error", function (event) {
+          // A failed script/stylesheet fires error on the ELEMENT, with no message.
+          var target = event.target;
+          if (target && target !== window && (target.src || target.href)) {
+            show("Could not load", String(target.src || target.href));
+            return;
+          }
+          show("Error", (event.message || "unknown") + " (" + (event.filename || "") + ":" + (event.lineno || 0) + ")");
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          show("Failed", (reason && (reason.message || reason)) + "");
+        });
+      })();
+    </script>
+
     <script type="module" src="/src/kiosk/main.tsx"></script>
   </body>
 </html>

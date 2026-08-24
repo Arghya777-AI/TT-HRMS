@@ -60,6 +60,7 @@ import { useCamera } from "../hooks/useCamera";
 import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
+import { uuid } from "../lib/uuid";
 import type { EngineStatus } from "../lib/engine";
 
 /** How many accepted scans stay on screen. Five fits a phone without scrolling. */
@@ -419,7 +420,7 @@ export function GateScanScreen({
           const unreachable = result.error.status === 0 || result.error.status >= 500;
           if (unreachable) {
             const queued = await enqueue({
-              clientEventId: crypto.randomUUID(),
+              clientEventId: uuid(),
               capturedAt: capturedAt,
               queuedAt: nowInstantIso(),
               descriptor: [...reading.descriptor],
@@ -452,7 +453,7 @@ export function GateScanScreen({
           setRecent((prev) =>
             [
               {
-                id: crypto.randomUUID(),
+                id: uuid(),
                 displayName: result.data.displayName ?? "",
                 employeeCode: result.data.employeeCode ?? "",
                 punchKind: result.data.punchKind ?? "scan",

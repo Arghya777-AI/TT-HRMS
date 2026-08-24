@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <!--
+      `viewport-fit=cover` plus `user-scalable=no`: a wall-mounted terminal must not be
+      pinch-zoomable. Somebody waiting in a queue will zoom the viewfinder by accident and
+      the next person finds a screen they cannot read and cannot reset.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0A0A0A" />
+
+    <!--
+      ═══════════════════════════════════════════════════════════════════════════
+      THIS IS A SEPARATE APP, NOT A PAGE OF THE HR APP
+      ═══════════════════════════════════════════════════════════════════════════
+      The gate terminal installs as its own icon, with its own name, its own start URL and
+      its own service-worker scope (`/gate/`). Installing the HR app on the tablet at the
+      entrance would give you an icon that opens somebody's payslips; installing this gives
+      you a gate.
+
+      It shares the repository — the face pipeline, the device pairing and the types are the
+      same code — but it is a different build entry and a different installed artifact. The
+      two can sit side by side on the same tablet without either knowing about the other.
+
+      `display: fullscreen` in the manifest and `apple-mobile-web-app-capable` here remove
+      the browser furniture. Locking the tablet so a passer-by cannot leave the app is not
+      something a web page can do — that is Guided Access on iPadOS, or a managed kiosk
+      policy on Android, and it belongs in the installation runbook rather than here.
+    -->
+    <link rel="manifest" href="/kiosk.webmanifest" />
+    <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TT Gate" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!--
+      A gate screen is a fixed installation, not a document. No text selection, no
+      overscroll bounce, and a solid near-black ground so a slow first paint does not flash
+      white in a dark lobby.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0a0a0a;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
+
+    <meta name="robots" content="noindex, nofollow" />
+    <title>TT Gate — Face Attendance</title>
+  </head>
+  <body>
+    <div id="gate-root"></div>
+    <script type="module" src="/src/gate/main.tsx"></script>
+  </body>
+</html>

@@ -20,6 +20,32 @@ export default defineConfig({
     sourcemap: true,
     target: "es2020",
     rollupOptions: {
+      /**
+       * TWO APPS, ONE REPOSITORY.
+       *
+       * `index.html` is the HR product. `gate/index.html` is the gate terminal — a
+       * separate installed app with its own manifest, its own service-worker scope
+       * (`/gate/`) and its own icon on the tablet at the entrance. Installing the HR app
+       * on a wall-mounted screen would give you an icon that opens somebody's payslips.
+       *
+       * They share this repository because they share the code that matters: the face
+       * pipeline, the device pairing and the types are the same files, so a change to the
+       * descriptor contract cannot land in one and miss the other. What they do not share
+       * is the bundle — the gate carries no router, no query client, no auth provider and
+       * no app shell, which is the whole reason this is an entry point rather than a route.
+       */
+      /*
+       * The KEY becomes the emitted entry's filename. `index` is deliberate, not
+       * cosmetic: naming it `main` renamed the HR app's entry chunk from `index-*.js` to
+       * `main-*.js`, which is a change to the existing app's output for no reason —
+       * it invalidates every cached copy and it broke
+       * `features/kiosk/bundleBudget.test.ts`, which asserts the entry's name. Adding a
+       * second app should leave the first one's build byte-for-byte alone.
+       */
+      input: {
+        index: path.resolve(__dirname, "index.html"),
+        gate: path.resolve(__dirname, "gate/index.html"),
+      },
       output: {
         /**
          * NO MANUAL VENDOR SPLITTING. This is deliberate, and it is a fix.

@@ -33,6 +33,14 @@ export interface KioskDeviceState {
   operatorName?: string;
   operatorCode?: string;
   canEnrolFaces?: boolean;
+  /**
+   * Whether this gate needs a guard signed in before it will scan.
+   *
+   * Server-owned — it is read from the pairing response, never chosen here, so an
+   * admin turning attendance unattended in `/admin/kiosk/devices` is the single
+   * place the decision lives. Undefined is treated as `true` at every read site.
+   */
+  requireOperator?: boolean;
   pairedAt: string;
 }
 
@@ -182,6 +190,17 @@ interface PairResponse {
   device_code: string;
   device_name: string;
   device_secret: string;
+  /**
+   * `kiosk_devices.require_operator`, which the activation endpoint has always
+   * returned and this client used to discard.
+   *
+   * FALSE MEANS UNATTENDED: no guard signs in, employees walk up and scan, and
+   * `kiosk-punch` accepts the device HMAC alone (its auth model already treats the
+   * operator session as optional when the device says so). Absent is read as TRUE,
+   * so an older server that does not send the field keeps the attended behaviour
+   * rather than silently opening every gate.
+   */
+  require_operator?: boolean;
 }
 
 /**
@@ -228,6 +247,8 @@ export async function pairDevice(
       deviceCode: parsed.data.device_code,
       deviceName: parsed.data.device_name,
       secret: parsed.data.device_secret,
+      // Absent → attended. See PairResponse.
+      requireOperator: parsed.data.require_operator !== false,
       pairedAt: nowInstantIso(),
     };
     saveDeviceState(state);
@@ -556,6 +577,14 @@ export interface PunchOutcome {
   /** Present on ambiguous matches: the guard picks from these. */
   guardConfirmOptions?: readonly { employeeCode: string; displayName: string }[];
   duplicateSuppressed?: boolean;
+  /**
+   * BATCH ITEMS ONLY. A machine code, present when the server refused this queued scan.
+   *
+   * `kiosk-punch` whitelists exactly this one field for replays so a queue can tell a
+   * finished item from a failed one — its absence is what marks an item done. Never
+   * present on a live single punch, which fails through the HTTP status instead.
+   */
+  error?: string;
 }
 
 /**
@@ -567,6 +596,73 @@ export interface PunchGeo {
   latitude: number;
   longitude: number;
   accuracyMetres?: number;
+}
+
+/**
+ * What the device measured about the capture, mirroring `kiosk-punch`'s `metrics` and
+ * `face-login`'s `ProbeMetrics` field for field. One measurement, one shape.
+ */
+export interface PunchMetrics {
+  detectionScore: number;
+  livenessScore: number;
+  livenessModel?: string;
+  framesAnalysed?: number;
+}
+
+/** One item of a replay batch — the queued shape, ready for the wire. */
+export interface PunchBatchItem {
+  clientEventId: string;
+  capturedAt: string;
+  queuedAt: string;
+  descriptor: readonly number[];
+  geo?: PunchGeo;
+  metrics?: PunchMetrics;
+}
+
+/**
+ * Replay held scans. Up to 25 per call; five is the documented batch size.
+ *
+ * ── THE RESULTS ARE POSITIONAL, AND THAT IS THE CONTRACT ─────────────────────
+ * `kiosk-punch` answers a batch with `{ results: [...] }` in the SAME ORDER as the queue
+ * that was sent, and deliberately does not echo the event ids back — the response
+ * whitelist carries `error` precisely so a queue can tell a failed item from a finished
+ * one, and nothing more. So the caller pairs `results[i]` with `queue[i]`, and must not
+ * reorder the array it sent.
+ *
+ * An item with no `error` was accepted and may be dropped. An item WITH one was refused
+ * for a reason the server has already logged; the queue counts the attempt.
+ */
+export function sendPunchBatch(
+  state: KioskDeviceState,
+  queue: readonly PunchBatchItem[],
+  signal?: AbortSignal,
+): Promise<KioskResult<{ results: readonly PunchOutcome[] }>> {
+  if (state.session === undefined && state.requireOperator !== false) {
+    return Promise.resolve({
+      ok: false,
+      error: { status: 409, code: "NO_OPERATOR", detail: "No guard is signed in." },
+    });
+  }
+  return deviceCall<{ results: readonly PunchOutcome[] }>(
+    state,
+    "kiosk-punch",
+    {
+      queue: queue.map((item) => ({
+        clientEventId: item.clientEventId,
+        capturedAt: item.capturedAt,
+        queuedAt: item.queuedAt,
+        descriptor: [...item.descriptor],
+        // Omitted rather than null against the `.strict()` schema — same as sendPunch.
+        ...(item.geo ? { geo: item.geo } : {}),
+        ...(item.metrics ? { metrics: item.metrics } : {}),
+        mode: "face" as const,
+      })),
+    },
+    {
+      ...(state.session !== undefined ? { session: state.session } : {}),
+      ...(signal ? { signal } : {}),
+    },
+  );
 }
 
 /** THE hot path: one face descriptor → the server's 1:N verdict. */
@@ -582,8 +678,26 @@ export function sendPunch(
    * answers "where" for both paths.
    */
   geo?: PunchGeo | null,
+  /**
+   * Capture quality and the liveness measurement, from `features/auth/lib/liveness.ts`.
+   *
+   * MANDATORY ON AN UNATTENDED GATE and the server enforces that, not this function: with
+   * no guard watching, this measurement is the only thing between a printed photograph and
+   * a punch. Optional on an attended gate, where the guard is the check.
+   */
+  metrics?: PunchMetrics | null,
 ): Promise<KioskResult<PunchOutcome>> {
-  if (state.session === undefined) {
+  /*
+    A missing session is only an error on an ATTENDED gate.
+
+    This guard used to be unconditional, which quietly broke unattended gates completely:
+    `require_operator = false` means no session is ever opened, so every punch was refused
+    here — client-side, before the request was even built — and the screen showed
+    "No guard is signed in" on a terminal that by design has no guard. `deviceCall` already
+    omits the `x-operator-session` header when there is none, and `kiosk-punch` already
+    accepts that for such a device, so there is nothing to send and nothing to refuse.
+  */
+  if (state.session === undefined && state.requireOperator !== false) {
     return Promise.resolve({
       ok: false,
       error: { status: 409, code: "NO_OPERATOR", detail: "No guard is signed in." },
@@ -600,8 +714,15 @@ export function sendPunch(
       // with `geo` optional, and an explicit `null` would fail validation and lose
       // the punch over a missing nicety.
       ...(geo ? { geo } : {}),
+      // Same reasoning as `geo` — omitted rather than null against a `.strict()` schema.
+      ...(metrics ? { metrics } : {}),
       mode: "face",
     },
-    { session: state.session, ...(signal ? { signal } : {}) },
+    // Spread rather than `session: state.session`: passing an explicit `undefined` would
+    // still be a present key, and the header builder tests for `!== undefined`.
+    {
+      ...(state.session !== undefined ? { session: state.session } : {}),
+      ...(signal ? { signal } : {}),
+    },
   );
 }

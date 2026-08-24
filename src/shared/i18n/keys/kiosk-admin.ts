@@ -475,6 +475,17 @@ export const keysKioskAdmin = {
   "admin.kiosk.link.insecure":
     "This page is not on a secure connection, so the camera and location will not work on the gate device either. Serve the app over HTTPS (or open it on the same machine as localhost) before the demo.",
   "kiosk.gate.rule": "First scan = in · last scan = out · every scan is logged",
+  /*
+    Deliberately vague about WHY it failed. A real person who stood unusually still sees
+    the same words as somebody holding up a photograph, because naming the check is
+    telling the second person how to defeat it.
+  */
+  "kiosk.gate.livenessRetry": "Could not confirm a live face. Please look at the camera and try again.",
+  /* The device is offline AND its queue would not accept the scan — storage full or blocked. */
+  "kiosk.gate.queueFull": "This device cannot store the scan. Please tell the guard.",
+  /* Shown on the held-scan card. The time is the real capture time, not the sync time. */
+  "kiosk.gate.queued": "Recorded — will confirm when the network returns",
+  "kiosk.gate.queuedHint": "Saved on this device with the time of your scan.",
   // The guard can see at a glance whether the gate is recording where it is. Every
   // one of these is a NON-blocking state: a scan is recorded in all five.
   "kiosk.gate.location.granted": "Location on · ±{metres} m",

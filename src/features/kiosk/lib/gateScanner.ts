@@ -92,6 +92,16 @@ const STABLE_FRAMES = 2;
 /** Yield between frames so React can paint and the video can advance. */
 const FRAME_GAP_MS = 30;
 
+/**
+ * Spacing between the descriptor frames used for liveness, in milliseconds.
+ *
+ * 500 because that is what the measurement was calibrated at — `LOOP_MS` in
+ * `features/auth/components/FaceSignIn.tsx`, which is where the knees in
+ * `features/auth/lib/liveness.ts` were derived. Changing this number silently
+ * re-scales every one of those knees, so it is not a performance dial.
+ */
+export const LIVENESS_FRAME_GAP_MS = 500;
+
 /** A result card stays up at least this long, however fast the queue moves. */
 export const RESULT_HOLD_MIN_MS = 2_200;
 /**
@@ -130,6 +140,28 @@ export interface GateLoopOptions {
    * with the enrolled template.
    */
   trackInputSize?: number;
+  /**
+   * How many descriptor frames to capture per approach, for the liveness measurement.
+   *
+   * 1 (the default) is the original behaviour: one descriptor, ~204 ms, nothing to compare
+   * it against. 2 or more makes `measureLiveness` possible, at the cost of another
+   * descriptor plus {@link GateLoopOptions.livenessGapMs} of waiting per person.
+   *
+   * An ATTENDED gate should leave this at 1: the guard standing there is the liveness
+   * check, and paying for a second descriptor buys nothing. An UNATTENDED gate needs it,
+   * because otherwise a printed photograph registers somebody's attendance.
+   */
+  livenessFrames?: number;
+  /**
+   * Spacing between those frames, in milliseconds. Defaults to
+   * {@link LIVENESS_FRAME_GAP_MS}.
+   *
+   * This is a CALIBRATION constant, not a tuning knob. `features/auth/lib/liveness.ts`
+   * derived its knees — 0.06 descriptor distance, 0.5° of pose, 0.002 of framing — from
+   * frames 500 ms apart in the face sign-in loop. Halve the spacing and a living person
+   * moves roughly half as much, lands under the knee, and is rejected as a photograph.
+   */
+  livenessGapMs?: number;
   onSignal: (signal: GateSignal) => void;
   /**
    * A descriptor is ready. `firstSeenAt` is `performance.now()` of the first
@@ -137,7 +169,16 @@ export interface GateLoopOptions {
    * latency the client asked to see. Awaited, so nothing is captured while a
    * punch is in flight.
    */
-  onReading: (reading: FaceReading, firstSeenAt: number) => Promise<void>;
+  onReading: (
+    reading: FaceReading,
+    firstSeenAt: number,
+    /**
+     * Every descriptor captured for this approach, oldest first, `reading` last. Length 1
+     * unless `livenessFrames` asked for more. Handed over so the screen can measure
+     * liveness without the scanner needing to know what liveness is.
+     */
+    window: readonly FaceReading[],
+  ) => Promise<void>;
   /** Reports every frame's compute cost, so the screen can show real numbers. */
   onFrameCost?: (phase: "track" | "capture", ms: number) => void;
 }
@@ -253,7 +294,54 @@ export async function runGateLoop(options: GateLoopOptions): Promise<void> {
       continue;
     }
 
-    await options.onReading(frame.reading, firstSeenAt ?? captureStart);
+    /*
+      ── THE LIVENESS WINDOW ───────────────────────────────────────────────────
+      One descriptor cannot be compared with anything, so it cannot prove a living face.
+      When the gate is unattended the screen asks for more than one, and they are spaced
+      at the interval the measurement was calibrated for — see LIVENESS_FRAME_GAP_MS.
+
+      A frame that fails the authoritative gates mid-window is DROPPED rather than
+      abandoning the approach: somebody blinking on the second frame should not have to
+      walk away and come back. If too few survive, `measureLiveness` reports 0 and the
+      screen refuses — which is the correct outcome for "this device could not tell".
+    */
+    const wanted = Math.max(1, Math.trunc(options.livenessFrames ?? 1));
+    const gapMs = options.livenessGapMs ?? LIVENESS_FRAME_GAP_MS;
+    const window: FaceReading[] = [frame.reading];
+    /*
+      Tracked explicitly rather than read back as `window[window.length - 1]`.
+      Under `noUncheckedIndexedAccess` an index is `FaceReading | undefined`, and the
+      non-null assertion that would silence it is exactly the kind of "I know better"
+      that stops being true when somebody later makes the window skippable.
+    */
+    let latest: FaceReading = frame.reading;
+
+    for (let n = 1; n < wanted; n += 1) {
+      await sleep(gapMs);
+      if (options.cancelled()) return;
+      const videoNow = options.video();
+      if (videoNow === null) break;
+      const extraStart = performance.now();
+      const extra = await readFrame(videoNow, {
+        inputSize: DESCRIPTOR_INPUT_SIZE,
+        singlePass: true,
+      }).catch((): FrameVerdict => ({ kind: "no_face" }));
+      options.onFrameCost?.("capture", performance.now() - extraStart);
+      if (options.cancelled()) return;
+      if (extra.kind === "ok") {
+        window.push(extra.reading);
+        latest = extra.reading;
+      }
+    }
+
+    /*
+      The LAST reading is the one that gets matched, not the first.
+
+      It is the freshest, and after a deliberate wait it is also the one taken once the
+      person has settled in front of the camera. `window` is handed over whole so the
+      screen can measure across all of them.
+    */
+    await options.onReading(latest, firstSeenAt ?? captureStart, window);
     firstSeenAt = null;
     await sleep(FRAME_GAP_MS);
   }

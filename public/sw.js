@@ -30,6 +30,14 @@
 
 const VERSION = "v1";
 const ASSET_CACHE = `tt-assets-${VERSION}`;
+/*
+  The face-recognition weights, in their OWN bucket.
+
+  Separate from `tt-assets` on purpose: it is ~6.4 MB, only the gate needs it, and keeping it
+  apart means a future eviction or a deliberate purge can drop the models without also
+  throwing away the app bundle the rest of the product boots from.
+*/
+const MODEL_CACHE = `tt-models-${VERSION}`;
 const SHELL_CACHE = `tt-shell-${VERSION}`;
 const SHELL_URL = "/index.html";
 
@@ -80,9 +88,27 @@ function isStaticFile(url) {
   return (
     url.origin === self.location.origin &&
     /\.(?:png|jpe?g|svg|webp|ico|woff2?|json|webmanifest)$/i.test(url.pathname) &&
-    // The face-recognition model weights are tens of megabytes and only the kiosk needs them.
+    // Models are handled by `isFaceModel` into their own bucket — see below.
     !url.pathname.startsWith("/models/")
   );
+}
+
+/*
+  The face-recognition weights under `/models/`.
+
+  THIS USED TO BE AN EXCLUSION, AND THAT WAS RIGHT UNTIL THE GATE EXISTED. The reasoning was
+  "tens of megabytes and only the kiosk needs them", which is a good argument for keeping them
+  off an employee's phone and a fatal one for a wall-mounted terminal: a gate that reloads
+  during an internet outage — a browser refresh, an OS tab eviction, a power cut — would come
+  back unable to recognise anybody at all, which is precisely the moment it has to work.
+
+  Cache-first and never revalidated, which is safe for one specific reason: these files are
+  immutable weights, and the descriptor they produce must stay byte-identical to the one
+  enrolment produced or every stored template becomes uncomparable. A silently updated model is
+  not a fresher model, it is a broken match. A new model ships as a new path.
+*/
+function isFaceModel(url) {
+  return url.origin === self.location.origin && url.pathname.startsWith("/models/");
 }
 
 async function cacheFirst(request, cacheName) {
@@ -172,6 +198,18 @@ self.addEventListener("fetch", (event) => {
 
   if (isHashedAsset(url)) {
     event.respondWith(cacheFirst(request, ASSET_CACHE));
+    return;
+  }
+
+  /*
+    The recognition weights. Cache-first, so the gate survives a reload with no network.
+
+    Placed ahead of the static-file rule because that rule deliberately excludes `/models/`;
+    without this branch the models would fall through to the network untouched and the gate
+    would be blind offline.
+  */
+  if (isFaceModel(url)) {
+    event.respondWith(cacheFirst(request, MODEL_CACHE));
     return;
   }
 

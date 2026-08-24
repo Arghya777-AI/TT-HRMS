@@ -114,10 +114,25 @@ export default function KioskPage() {
   // guard pairs the phone or keys a PIN.
   const engine = useFaceEngine();
 
+  /**
+   * UNATTENDED GATES SKIP THE GUARD SCREEN.
+   *
+   * `requireOperator` is server-owned: it comes off the pairing response, which reads
+   * `kiosk_devices.require_operator`. When an admin turns it off in
+   * `/admin/kiosk/devices`, this gate becomes a wall-mounted terminal that employees
+   * walk up to — no shift to open, no PIN, no guard. `kiosk-punch` already accepts
+   * that: its auth model makes the operator session optional exactly when the device
+   * row says so, so nothing on the server changes.
+   *
+   * Undefined is read as attended. A device paired against an older server, or a
+   * state blob written before this field existed, keeps asking for a guard rather
+   * than silently opening itself.
+   */
   const [phase, setPhase] = useState<Phase>(() => {
     const device = loadDeviceState();
     if (device === null) return { name: "pairing" };
-    return device.session !== undefined ? { name: "scan", device } : { name: "guard", device };
+    if (device.session !== undefined) return { name: "scan", device };
+    return device.requireOperator === false ? { name: "scan", device } : { name: "guard", device };
   });
 
   /** End of shift, deliberate: tell the server, then wipe the token locally. */
@@ -125,16 +140,27 @@ export default function KioskPage() {
     setPhase((prev) => {
       if (prev.name !== "scan") return prev;
       void closeOperatorSession(prev.device);
-      return { name: "guard", device: clearSession(prev.device) };
+      const device = clearSession(prev.device);
+      // An unattended gate has no shift to end and no sign-in screen to fall back to;
+      // sending it to the guard screen would strand a wall-mounted terminal that
+      // nobody has a PIN for.
+      return device.requireOperator === false
+        ? { name: "scan", device }
+        : { name: "guard", device };
     });
   }, []);
 
   /** The session died on its own (expiry, idle timeout, guard deactivated). Same
    * destination, but nothing is sent — there is nothing left to close. */
   const sessionExpired = useCallback(() => {
-    setPhase((prev) =>
-      prev.name === "scan" ? { name: "guard", device: clearSession(prev.device) } : prev,
-    );
+    setPhase((prev) => {
+      if (prev.name !== "scan") return prev;
+      const device = clearSession(prev.device);
+      // Same reasoning as signOut: an unattended gate keeps scanning.
+      return device.requireOperator === false
+        ? { name: "scan", device }
+        : { name: "guard", device };
+    });
   }, []);
 
   const updateDevice = useCallback((device: KioskDeviceState) => {
@@ -161,7 +187,17 @@ export default function KioskPage() {
   }, []);
 
   if (phase.name === "pairing") {
-    return <PairingScreen onPaired={(device) => setPhase({ name: "guard", device })} />;
+    return (
+      <PairingScreen
+        onPaired={(device) =>
+          setPhase(
+            device.requireOperator === false
+              ? { name: "scan", device }
+              : { name: "guard", device },
+          )
+        }
+      />
+    );
   }
   if (phase.name === "guard") {
     return (

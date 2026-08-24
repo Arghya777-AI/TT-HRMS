@@ -21,8 +21,7 @@
  * own confidence and die with the page. A gate device holds no HR records.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { Camera, Gauge, LogOut, MapPin, ScanFace, ShieldCheck } from "lucide-react";
+import { Camera, Gauge, LogOut, MapPin, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nowInstantIso } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
@@ -32,6 +31,9 @@ import {
   type KioskDeviceState,
   type PunchOutcome,
 } from "../lib/deviceAuth";
+import { measureLiveness } from "@/features/auth/lib/liveness";
+import { enqueue, counts as queueCounts } from "../lib/punchQueue";
+import { flushQueue } from "../lib/punchSync";
 import { faceBackend } from "../lib/facePipeline";
 import {
   GATE_TRACK_INPUT_SIZE,
@@ -44,7 +46,8 @@ import {
 } from "../lib/gateScanner";
 import { signalLine } from "../lib/gateCopy";
 import { CameraChoice } from "../components/CameraChoice";
-import { CameraProblem, IstClock } from "../components/GateChrome";
+import { CameraProblem } from "../components/GateChrome";
+import { GateLiveHeader } from "../components/GateLiveHeader";
 import {
   GateBanner,
   GateResultCard,
@@ -79,6 +82,23 @@ const RECENT_LIMIT = 5;
  * heartbeat happened to notice — with no way for the guard to know they simply
  * need to sign in again.
  */
+/**
+ * Descriptor frames captured per approach on an UNATTENDED gate.
+ *
+ * Two is the minimum that can be compared at all, and the minimum is the right choice:
+ * every extra frame is another ~204 ms descriptor plus a 500 ms wait added to the time a
+ * person stands at the gate, and the signal from a third frame is marginal next to the
+ * signal from having any second frame at all.
+ */
+const LIVENESS_FRAMES_UNATTENDED = 2;
+
+/**
+ * The score a gate scan must reach. 0.70, matching `attendance.liveness_pass_threshold`,
+ * which is what `face-login` already refuses below — the same measurement should not have
+ * two different bars in one product.
+ */
+const LIVENESS_PASS_THRESHOLD = 0.7;
+
 const SESSION_DEAD_CODES: ReadonlySet<string> = new Set([
   "KIOSK_OPERATOR_SESSION_INVALID",
   "KIOSK_OPERATOR_SESSION_IDLE",
@@ -89,6 +109,14 @@ type Phase =
   | { kind: "live" }
   | { kind: "sending" }
   | { kind: "result"; outcome: PunchOutcome; at: number }
+  /**
+   * Held on the device because the server could not be reached.
+   *
+   * Deliberately NOT an `error`: the scan succeeded, the person is recorded, and the only
+   * thing outstanding is the sync. Rendering it as a failure would send somebody to find a
+   * guard over a working punch.
+   */
+  | { kind: "queued"; at: number }
   | { kind: "error"; detail: string; at: number };
 
 /**
@@ -139,6 +167,25 @@ export function GateScanScreen({
   const camera = useCamera(videoRef, { initial: "environment", remember: true });
 
   const [phase, setPhase] = useState<Phase>({ kind: "live" });
+
+  /**
+   * Server-owned; see Kiosk.page.tsx. Undefined means attended.
+   *
+   * Declared HERE, above every effect that reads it. It was originally next to the JSX,
+   * which put it after the scan-loop effect that closes over it — a use-before-declaration
+   * that only surfaced once the project was type-checked properly.
+   */
+  const unattended = device.requireOperator === false;
+
+  /** Scans held on this device. Shown in the header so the state is never a surprise. */
+  const [pending, setPending] = useState(0);
+
+  const refreshPending = useCallback(() => {
+    void queueCounts()
+      .then(({ pending: n }) => setPending(n))
+      .catch(() => undefined);
+  }, []);
+
   const [signal, setSignal] = useState<GateSignal>({ kind: "idle" });
   const [recent, setRecent] = useState<readonly RecentScan[]>([]);
   const [latency, setLatency] = useState<LatencySummary>({
@@ -231,23 +278,100 @@ export function GateScanScreen({
       video: () => videoRef.current,
       paused: () => phaseRef.current.kind === "sending",
       capture: () => phaseRef.current.kind === "live",
+      /*
+        An unattended gate measures liveness; an attended one does not.
+
+        The guard IS the liveness check on an attended gate — a person watching cannot be
+        fooled by a phone held up at the camera — so paying for a second descriptor there
+        buys nothing and slows the queue. Remove the guard and that defence goes with them,
+        so the terminal has to measure it itself.
+      */
+      livenessFrames: unattended ? LIVENESS_FRAMES_UNATTENDED : 1,
       cancelled: () => cancelled,
       onSignal: (next) => {
         if (cancelled) return;
         setSignal(next);
         if (next.kind === "idle") clearIfLaneEmpty();
       },
-      onReading: async (reading, firstSeenAt) => {
+      onReading: async (reading, firstSeenAt, window) => {
         if (cancelled) return;
+
+        /*
+          ── LIVENESS, ON AN UNATTENDED GATE ONLY ──────────────────────────────
+          Enforced HERE rather than on the server, and that is a deliberate limitation
+          worth stating: `kiosk-punch` has no metrics field and a `.strict()` schema, so a
+          liveness score cannot be sent with a punch today. Adding one is a schema change,
+          a column and a migration — a follow-up, not part of this change.
+
+          What this does stop is the threat that actually exists at an unattended gate: an
+          employee holding up a photograph of a colleague. `measureLiveness` scores a still
+          image at ~0 because a printed face has no descriptor drift, no pose change and no
+          framing change between frames. What it does NOT stop is a modified client, and
+          nothing client-side can — that is what device revocation in
+          `/admin/kiosk/devices` is for.
+        */
+        let liveness: ReturnType<typeof measureLiveness> | null = null;
+        if (unattended) {
+          liveness = measureLiveness(
+            window.map((r) => ({
+              descriptor: r.descriptor,
+              yaw: r.quality.yaw,
+              pitch: r.quality.pitch,
+              roll: r.quality.roll,
+              box: r.box,
+            })),
+          );
+          if (liveness.score < LIVENESS_PASS_THRESHOLD) {
+            // Deliberately not "you look like a photograph". A real person who held
+            // unusually still gets the same message, and telling somebody how they failed
+            // a liveness check is telling them how to pass it.
+            setPhase({
+              kind: "error",
+              detail: t("kiosk.gate.livenessRetry"),
+              at: performance.now(),
+            });
+            return;
+          }
+        }
+
         setPhase({ kind: "sending" });
         // `current()` is synchronous and may be null — the punch is sent either
         // way. A gate that waited on a GPS fix would stall the queue, and a punch
         // withheld for want of coordinates would lose the attendance entirely.
+        /*
+          Captured ONCE, before the send, and reused by the queue on failure.
+
+          `readLocation()` and the capture instant must not be re-read in the failure
+          branch: a punch queued at 08:57 that recorded the time it failed at 08:59, or the
+          location the tablet had after being carried indoors, is a punch with the wrong
+          facts on it.
+        */
+        const capturedAt = nowInstantIso();
+        const geo = readLocation() ?? undefined;
+        const metrics =
+          liveness === null
+            ? undefined
+            : {
+                detectionScore: reading.quality.detection_score,
+                livenessScore: liveness.score,
+                livenessModel: liveness.model,
+                framesAnalysed: liveness.framesAnalysed,
+              };
+
         const result = await sendPunch(
           deviceRef.current,
           reading.descriptor,
           undefined,
-          readLocation(),
+          geo ?? null,
+          /*
+            Sent so the SERVER can refuse too, not only this screen.
+
+            The check above stops a photograph at the gate; this makes the same decision
+            enforceable where it cannot be bypassed by a modified client, and writes the
+            score to `secure.face_match_log.liveness_score` as evidence. `kiosk-punch`
+            requires it whenever the device is unattended.
+          */
+          metrics ?? null,
         );
         if (cancelled) return;
         // The number the client asked for: the first frame that saw this face, to
@@ -268,6 +392,45 @@ export function GateScanScreen({
             expiredRef.current();
             return;
           }
+          /*
+            ── UNREACHABLE IS NOT REFUSED ────────────────────────────────────────
+            The distinction the whole offline story turns on. `status === 0` is this
+            client's marker for "could not reach the server"; a 5xx is the server failing
+            rather than the scan being wrong. Neither says anything about the person
+            standing at the gate, so the scan is HELD rather than lost, with its real
+            capture time, and `kiosk-punch` replays it later keeping that instant as
+            `punched_at`. Nobody is marked late because the router rebooted.
+
+            A 4xx is different and is NOT queued: the server looked at this scan and
+            refused it, and asking again with the same bytes will get the same answer.
+            Queueing it would fill the device with scans that can never succeed.
+          */
+          const unreachable = result.error.status === 0 || result.error.status >= 500;
+          if (unreachable) {
+            const queued = await enqueue({
+              clientEventId: crypto.randomUUID(),
+              capturedAt: capturedAt,
+              queuedAt: nowInstantIso(),
+              descriptor: [...reading.descriptor],
+              ...(geo ? { geo } : {}),
+              ...(metrics ? { metrics } : {}),
+            })
+              .then(() => true)
+              .catch(() => false);
+
+            setOnline(false);
+            refreshPending();
+
+            // If the queue itself could not accept it, say so plainly. A gate that
+            // silently drops an arrival is worse than one that admits it cannot.
+            setPhase(
+              queued
+                ? { kind: "queued", at: performance.now() }
+                : { kind: "error", detail: t("kiosk.gate.queueFull"), at: performance.now() },
+            );
+            return;
+          }
+
           setPhase({ kind: "error", detail: result.error.detail, at: performance.now() });
           return;
         }
@@ -300,7 +463,14 @@ export function GateScanScreen({
     // `device` is deliberately absent: see deviceRef above.
     // `readLocation` is stable (see above), so listing it satisfies the linter
     // without ever restarting the detector.
-  }, [scanning, tracker, clearIfLaneEmpty, readLocation]);
+    // `unattended` IS listed, and cannot cause churn: it is a boolean read from the
+    // device row, so it holds the same value for the life of a pairing. On the one
+    // occasion it does flip — an admin switching the gate between attended and
+    // unattended — restarting the loop is exactly right, because the number of
+    // descriptor frames per approach changes with it.
+    // `refreshPending` is a stable useCallback with no deps, so listing it satisfies the
+    // linter without ever restarting the detector — the same argument as `readLocation`.
+  }, [scanning, tracker, clearIfLaneEmpty, readLocation, unattended, refreshPending]);
 
   // Backstop for somebody who stands in front of the camera reading their own
   // name: the card goes even if the lane never clears.
@@ -344,6 +514,18 @@ export function GateScanScreen({
             ? t("kiosk.gate.scan.ambiguousHint")
             : t("kiosk.gate.scan.noMatchHint"),
         };
+      /*
+        A held scan is GOOD news presented calmly. Not "warn", because nothing is wrong
+        with the person or the gate; the punch exists and carries the right time. The tone
+        is the same one an accepted match uses so a queue does not read a green result and
+        an amber one as different outcomes.
+      */
+      case "queued":
+        return {
+          tone: "good",
+          big: t("kiosk.gate.queued"),
+          small: t("kiosk.gate.queuedHint"),
+        };
       case "live": {
         const tone: BannerTone = signal.kind === "many_faces" || signal.kind === "step_closer"
           ? "warn"
@@ -359,33 +541,100 @@ export function GateScanScreen({
     }
   }, [engine.kind, camera.state.status, phase, signal]);
 
+  /*
+    Whether the gate can reach the server right now.
+    `navigator.onLine` is a weak signal — it reports the link, not reachability — so it
+    is the starting value and the events refine it. It is deliberately NOT the only
+    input later: once the offline queue exists, a failed submit is stronger evidence of
+    being offline than the flag is of being online.
+  */
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return () => {
+      window.removeEventListener("online", up);
+      window.removeEventListener("offline", down);
+    };
+  }, []);
+
+  /*
+    ── WHEN A FLUSH IS ATTEMPTED ─────────────────────────────────────────────────
+    On mount (a terminal that was power-cycled mid-outage comes back holding scans), on
+    the `online` event, when the tab becomes visible again, and on a slow timer as the
+    backstop — `navigator.onLine` reports the link rather than reachability, so a gate
+    behind a captive portal or a dead upstream never fires an `online` event at all and
+    the timer is the only thing that recovers it.
+
+    `flushQueue` guards against overlap itself, so all four triggers firing at once is
+    harmless.
+  */
+  useEffect(() => {
+    let cancelled = false;
+    const attempt = () => {
+      if (cancelled) return;
+      void flushQueue(deviceRef.current)
+        .then((outcome) => {
+          if (cancelled || outcome.skipped) return;
+          setPending(outcome.pending);
+          // The lamp follows what the network actually did, not what the browser claims.
+          if (outcome.sent > 0) setOnline(true);
+          else if (outcome.offline) setOnline(false);
+        })
+        .catch(() => undefined);
+    };
+
+    refreshPending();
+    attempt();
+
+    const onOnline = () => attempt();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") attempt();
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(attempt, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(timer);
+    };
+  }, [refreshPending]);
+
   return (
     <div className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-50">
-      <header className="flex items-center justify-between gap-2 border-b border-neutral-800 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <ScanFace className="size-6 shrink-0 text-emerald-400" aria-hidden />
-          <div className="min-w-0">
-            <p className="truncate font-display text-sm font-semibold leading-tight">
-              {t("kiosk.gate.deviceChip", { device: device.deviceName })}
-            </p>
-            <p className="truncate text-xs text-neutral-400">
-              {t("kiosk.gate.guardChip", { name: device.operatorName ?? "" })}
-            </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <IstClock className="text-lg" />
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-11 border-neutral-700 bg-transparent text-neutral-100 hover:bg-neutral-800"
-            onClick={onSignOut}
-          >
-            <LogOut className="mr-1.5 size-4" aria-hidden />
-            {t("kiosk.gate.endShift")}
-          </Button>
-        </div>
-      </header>
+      {/*
+        The standing header. On an unattended gate there is no guard to name and no
+        shift to end, so both disappear rather than render a button that strands a
+        wall-mounted terminal nobody has a PIN for.
+      */}
+      <GateLiveHeader
+        deviceName={t("kiosk.gate.deviceChip", { device: device.deviceName })}
+        operatorName={
+          unattended ? undefined : t("kiosk.gate.guardChip", { name: device.operatorName ?? "" })
+        }
+        online={online}
+        pendingCount={pending}
+        action={
+          unattended ? null : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-11 border-neutral-700 bg-transparent text-neutral-100 hover:bg-neutral-800"
+              onClick={onSignOut}
+            >
+              <LogOut className="mr-1.5 size-4" aria-hidden />
+              {t("kiosk.gate.endShift")}
+            </Button>
+          )
+        }
+      />
 
       <main className="flex flex-1 flex-col gap-3 px-3 py-3">
         {camera.state.status === "failed" && camera.state.failure !== null ? (
@@ -467,10 +716,19 @@ export function GateScanScreen({
             <ShieldCheck className="size-4 shrink-0" aria-hidden />
             {t("kiosk.gate.rule")}
           </span>
+          {/*
+            A plain anchor below, not a router Link.
+
+            The gate is its own installed app now, served from its own entry point; the
+            enrolment desk lives in the HR app. A router Link would try to resolve
+            `/admin/...` inside the gate's own bundle, which has no such route — and it
+            would drag react-router into a bundle that otherwise needs none. A full
+            document navigation is what crossing from one app to the other actually is.
+          */}
           {device.canEnrolFaces === true ? (
-            <Link to="/admin/kiosk/enrolment" className="underline-offset-4 hover:underline">
+            <a href="/admin/kiosk/enrolment" className="underline-offset-4 hover:underline">
               {t("kiosk.scan.enrolLink")}
-            </Link>
+            </a>
           ) : (
             <span className="flex items-center gap-2">
               <Camera className="size-4 shrink-0" aria-hidden />

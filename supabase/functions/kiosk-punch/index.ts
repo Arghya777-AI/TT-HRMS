@@ -75,6 +75,12 @@ const DEFAULT_MIN_MARGIN = 0.06;
 const DEFAULT_DEBOUNCE_SECONDS = 120;
 
 /**
+ * `attendance.liveness_pass_threshold`. The SAME setting and the same default that
+ * `face-login` refuses below — one measurement must not have two bars in one product.
+ */
+const DEFAULT_LIVENESS_PASS = 0.7;
+
+/**
  * spec-kiosk §3.3 `T_far = 0.62` (Euclidean). Below the accept threshold but
  * within this, the guard is offered the top 3 to confirm; beyond it there are no
  * candidates worth showing. There is no column for it yet — see the DB-gap note.
@@ -147,6 +153,30 @@ const PunchItem = z
         latitude: z.number().min(-90).max(90),
         longitude: z.number().min(-180).max(180),
         accuracyMetres: z.number().nonnegative().max(100_000).optional(),
+      })
+      .strict()
+      .optional(),
+    /**
+     * Capture quality and the liveness measurement, from the device that took the frames.
+     *
+     * SHAPE COPIED FROM `face-login`'s `ProbeMetrics` on purpose, field for field: the same
+     * client module produces it (`features/auth/lib/liveness.ts`) and two different shapes
+     * for one measurement is how they drift apart.
+     *
+     * OPTIONAL AT THE SCHEMA AND MANDATORY BY POLICY. An attended gate may omit it — the
+     * guard standing there is the liveness check, and an already-deployed tablet that has
+     * not been updated yet must keep working. An UNATTENDED gate may not: see
+     * `requireLiveness` below, which refuses the punch when it is missing.
+     */
+    metrics: z
+      .object({
+        /** `detection.score` from TinyFaceDetector on the capture frame. */
+        detectionScore: z.number().finite().min(0).max(1),
+        /** `liveness.passive_score` — 0 when the device could not measure. */
+        livenessScore: z.number().finite().min(0).max(1),
+        /** e.g. `frame-motion-heuristic-v1`, recorded so the audit row names what produced it. */
+        livenessModel: z.string().trim().min(1).max(64).optional(),
+        framesAnalysed: z.number().int().min(1).max(240).optional(),
       })
       .strict()
       .optional(),
@@ -454,6 +484,28 @@ async function resolveThresholds(
 }
 
 /**
+ * `attendance.liveness_pass_threshold`, or the documented default.
+ *
+ * Read through `app.setting` — the same accessor `face-login` uses for the same key — so a
+ * site that tightens the bar tightens it for both the gate and the web sign-in, and cannot
+ * end up with a face that is live enough to open the app but not the gate.
+ */
+async function resolveLivenessPass(client: Sql): Promise<number> {
+  try {
+    const rows = await client`
+      SELECT app.setting('attendance.liveness_pass_threshold') AS liveness_pass
+    `;
+    const row = firstRow(rows as unknown as Record<string, unknown>[]);
+    const parsed = Number(row?.liveness_pass ?? Number.NaN);
+    return Number.isFinite(parsed) && parsed > 0 && parsed <= 1 ? parsed : DEFAULT_LIVENESS_PASS;
+  } catch {
+    // A missing or unreadable setting must not open the gate. The default is the same
+    // number the setting ships with, so falling back is a no-op rather than a loosening.
+    return DEFAULT_LIVENESS_PASS;
+  }
+}
+
+/**
  * The business date the `trg_attendance_punches__business_date` trigger will
  * choose, asked of the SAME database functions the trigger uses. Needed only to
  * name the photo folder, which has to exist before the insert.
@@ -496,6 +548,14 @@ interface ProcessInput {
   isReplay: boolean;
   log: Logger;
   client: Sql;
+  /**
+   * `attendance.liveness_pass_threshold`, resolved ONCE per request and passed in.
+   *
+   * A batch may carry 25 items; reading the setting inside the loop would be 25 identical
+   * round trips, and — worse — a setting changed mid-flush would judge the first half of a
+   * queue by one bar and the second half by another.
+   */
+  livenessPass: number;
 }
 
 /**
@@ -503,7 +563,7 @@ interface ProcessInput {
  * steps 7–20 for it.
  */
 async function processPunch(input: ProcessInput): Promise<PunchResult> {
-  const { item, deviceAuth, operator, ctxBase, isReplay, log, client } = input;
+  const { item, deviceAuth, operator, ctxBase, isReplay, log, client, livenessPass } = input;
   const device = deviceAuth.device;
 
   // §4.4 step 7 — descriptor sanity. A non-unit descriptor means the tablet
@@ -533,6 +593,64 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         (Math.abs(skew) <= OFFLINE_SKEW_TRUST_SECONDS ? 0 : skew * 1000);
       const serverMs = nowMs();
       punchedAtOverride = toIso(correctedMs > serverMs ? serverMs : correctedMs);
+    }
+  }
+
+  /*
+    ── LIVENESS, BEFORE THE 1:N ──────────────────────────────────────────────────
+    Placed here on purpose: a scan that cannot prove a live face should not be compared
+    against the roster at all. Matching first and refusing afterwards would write a real
+    employee's identity onto a failed attempt, which is both a worse audit record and a
+    free 1:N oracle for anybody holding up photographs.
+
+    REQUIRED ONLY WHERE IT IS THE ONLY DEFENCE. An attended gate has a guard watching, and
+    `require_operator` says so; there, metrics stay optional and an older tablet keeps
+    working. An UNATTENDED gate has nothing else between a printed photograph and a punch,
+    so the measurement is mandatory and its absence is a refusal rather than a default-pass.
+
+    The threshold is `attendance.liveness_pass_threshold`, the same setting `face-login`
+    reads. `measureLiveness` reports 0 when the device could not measure, so "could not
+    tell" and "told us it was a photo" fail identically — which is correct.
+  */
+  const livenessRequired = device.requireOperator !== true;
+  if (livenessRequired) {
+    const metrics = item.metrics;
+    const detail = metrics === undefined
+      ? "metrics.livenessScore is required on an unattended gate"
+      : metrics.livenessScore < livenessPass
+        ? `liveness_score=${metrics.livenessScore} < ${livenessPass}`
+        : null;
+
+    if (detail !== null) {
+      await insertMatchLog(client, {
+        id: crypto.randomUUID(),
+        attemptedAtOverride: punchedAtOverride,
+        deviceId: device.id,
+        operatorId: operator?.operatorId ?? null,
+        candidateSetSize: 0,
+        outcome: "liveness_failed",
+        matchedEmployeeId: null,
+        bestDistance: null,
+        bestConfidence: null,
+        runnerUpEmployeeId: null,
+        runnerUpDistance: null,
+        margin: null,
+        candidateScores: [],
+        thresholdUsed: livenessPass,
+        modelVersion: metrics?.livenessModel ?? DESCRIPTOR_MODEL,
+        detectorScore: metrics?.detectionScore ?? null,
+        livenessScore: metrics?.livenessScore ?? null,
+        capturePhotoPath: null,
+        latencyMs: 0,
+        producedPunchId: null,
+        ip: ctxBase.ip ?? null,
+        appVersion: device.storedAppVersion,
+        errorDetail: detail,
+      });
+      // Deliberately the same shape as an ordinary no-match: the gate is told the scan did
+      // not produce a punch, and nothing about why. Telling the person in front of the
+      // camera which check they failed is telling them how to pass it.
+      return { matched: false, guardConfirmOptions: [] };
     }
   }
 
@@ -594,6 +712,8 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         candidateScores,
         thresholdUsed: thresholds.minConfidence,
         modelVersion: best?.modelVersion ?? DESCRIPTOR_MODEL,
+        detectorScore: item.metrics?.detectionScore ?? null,
+        livenessScore: item.metrics?.livenessScore ?? null,
         capturePhotoPath: photoPath,
         latencyMs: log.elapsedMs(),
         producedPunchId: null,
@@ -644,6 +764,8 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         candidateScores,
         thresholdUsed: thresholds.minConfidence,
         modelVersion: matched.modelVersion,
+        detectorScore: item.metrics?.detectionScore ?? null,
+        livenessScore: item.metrics?.livenessScore ?? null,
         capturePhotoPath: null,
         latencyMs: log.elapsedMs(),
         producedPunchId: null,
@@ -734,6 +856,8 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         candidateScores,
         thresholdUsed: thresholds.minConfidence,
         modelVersion: matched.modelVersion,
+        detectorScore: item.metrics?.detectionScore ?? null,
+        livenessScore: item.metrics?.livenessScore ?? null,
         capturePhotoPath: photoPath,
         latencyMs: log.elapsedMs(),
         producedPunchId: punchId,
@@ -965,6 +1089,9 @@ interface MatchLogInput {
   candidateScores: unknown;
   thresholdUsed: number;
   modelVersion: string;
+  /** From `metrics`, when the device sent it. Columns already exist on the table. */
+  detectorScore: number | null;
+  livenessScore: number | null;
   capturePhotoPath: string | null;
   latencyMs: number;
   producedPunchId: string | null;
@@ -985,7 +1112,8 @@ async function insertMatchLog(tx: Sql, input: MatchLogInput): Promise<string> {
       id, attempted_at, kiosk_device_id, operator_id, candidate_set_size, outcome,
       matched_employee_id, best_distance, best_confidence,
       runner_up_employee_id, runner_up_distance, margin, candidate_scores,
-      threshold_used, model_version, capture_photo_path, latency_ms,
+      threshold_used, model_version, detector_score, liveness_score,
+      capture_photo_path, latency_ms,
       produced_punch_id, ip, app_version, error_detail
     ) VALUES (
       ${input.id}::uuid,
@@ -1003,6 +1131,8 @@ async function insertMatchLog(tx: Sql, input: MatchLogInput): Promise<string> {
       ${JSON.stringify(input.candidateScores)}::jsonb,
       ${round(input.thresholdUsed)}::numeric,
       ${input.modelVersion}::text,
+      ${round(input.detectorScore)}::numeric,
+      ${round(input.livenessScore)}::numeric,
       ${input.capturePhotoPath}::text,
       ${Math.trunc(input.latencyMs)}::integer,
       ${input.producedPunchId}::uuid,
@@ -1128,6 +1258,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       deviceId: device.id,
     };
 
+    /*
+      Resolved ONCE per request, before either branch — see `ProcessInput.livenessPass`.
+      A batch judged by two different bars because the setting moved mid-flush would be a
+      genuinely baffling audit trail.
+    */
+    const livenessPass = await resolveLivenessPass(client);
+
     let responseBody: unknown;
     if (!isBatch) {
       const result = await processPunch({
@@ -1138,6 +1275,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         isReplay: false,
         log: deviceLog,
         client,
+        livenessPass,
       });
       responseBody = pickWhitelisted(result as unknown as Record<string, unknown>);
     } else {
@@ -1155,6 +1293,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             isReplay: true,
             log: deviceLog,
             client,
+            livenessPass,
           });
           results.push(pickWhitelisted(result as unknown as Record<string, unknown>));
         } catch (itemErr) {

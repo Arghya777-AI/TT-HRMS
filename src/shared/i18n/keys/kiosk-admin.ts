@@ -516,6 +516,22 @@ export const keysKioskAdmin = {
   // Recorded on the device during an outage. Said plainly, because the person is entitled to
   // know their punch has not reached the server yet.
   "kiosk.gate.say.queued": "Your attendance is saved on this device and will be sent shortly.",
+  /*
+    Spoken on a failed scan, over the alarm's tail.
+
+    "Authentication failed" is the client's own wording and it is the right register for a
+    controlled entrance — it says the gate did its job and the person was not identified,
+    rather than implying the machine is broken. "Please try again" is the whole instruction:
+    the overwhelmingly common cause is framing or light, and stepping up and re-scanning fixes
+    it without anybody being fetched.
+  */
+  "kiosk.gate.say.failed": "Authentication failed. Please try again.",
+  /*
+    Kept separate on purpose. A refused request, a queue that is full, a server that answered
+    an error — none of those are an authentication failure, and announcing them as one would
+    send somebody back to the camera to re-scan a face that was never the problem.
+  */
+  "kiosk.gate.say.problem": "There is a problem at this gate. Please try again or ask for help.",
   "kiosk.gate.endShift": "End shift",
   "kiosk.gate.guardChip": "Guard: {name}",
   "kiosk.gate.deviceChip": "{device}",

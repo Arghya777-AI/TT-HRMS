@@ -96,8 +96,9 @@ describe.skipIf(!iosPresent)("the iOS shell agrees with the web app", () => {
       must hear the same thing in the app — a chime that differs between hosts stops being
       information and becomes noise, and the drift would never show up as a failure anywhere.
 
-      Compared as sorted number triples per voice, so formatting and ordering differences do
-      not register as drift but a changed frequency, timing or level does.
+      Compared as sorted freq/at/dur/gain/waveform tuples per voice, so formatting and ordering
+      differences do not register as drift but a changed frequency, timing, level or WAVEFORM
+      does — the waveform being the one that most changes how loud the alarm actually sounds.
     */
     const web = read("src", "shared", "audio", "chime.ts");
     const swift = read("ios", "TTGate", "SoundController.swift");
@@ -107,8 +108,8 @@ describe.skipIf(!iosPresent)("the iOS shell agrees with the web app", () => {
       /(recorded|duplicate|queued|error):\s*\[([\s\S]*?)\],?\n/g,
     )) {
       const notes = [...body!.matchAll(
-        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)/g,
-      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}`);
+        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)(,\s*wave:\s*"(\w+)")?/g,
+      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}/${m[6] ?? "sine"}`);
       if (notes.length > 0) webVoices.set(name!, notes.sort());
     }
 
@@ -117,8 +118,8 @@ describe.skipIf(!iosPresent)("the iOS shell agrees with the web app", () => {
       /"(recorded|duplicate|queued|error)":\s*\[([\s\S]*?)\]/g,
     )) {
       const notes = [...body!.matchAll(
-        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)/g,
-      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}`);
+        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)(,\s*square:\s*(true))?/g,
+      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}/${m[6] === "true" ? "square" : "sine"}`);
       if (notes.length > 0) swiftVoices.set(name!, notes.sort());
     }
 

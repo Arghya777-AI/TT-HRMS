@@ -33,6 +33,16 @@ final class SoundController {
         let at: Double
         let dur: Double
         let gain: Double
+        /// True for a square wave. See the note on the error voice for why it exists.
+        let square: Bool
+
+        init(freq: Double, at: Double, dur: Double, gain: Double, square: Bool = false) {
+            self.freq = freq
+            self.at = at
+            self.dur = dur
+            self.gain = gain
+            self.square = square
+        }
     }
 
     /// Mirrors `VOICES` in chime.ts, note for note. Keep the two in step — a person who learns
@@ -54,15 +64,20 @@ final class SoundController {
             Note(freq: 980, at: 0.2, dur: 0.14, gain: 0.6)
         ],
         /*
-          THREE falling notes at close to full scale — the loudest thing the gate does, and
-          deliberately louder and longer than any success tone. An unrecognised face is the one
-          outcome that needs somebody to DO something, so it must carry across a foyer rather
-          than blend into the successes.
+          A PULSED TWO-TONE ALARM. Mirrors chime.ts, including the reasoning.
+
+          The earlier version fell to 330 Hz on sine waves and was too weak to notice. That was
+          never a gain problem: a tablet speaker has essentially no output below ~500 Hz, so the
+          falling notes walked the sound out of the band the hardware can reproduce. This stays
+          in 700–1000 Hz where a small speaker is most efficient, uses square waves for their
+          much greater perceived loudness, and pulses four times — an interrupted sound holds
+          attention where a steady one becomes background.
         */
         "error": [
-            Note(freq: 560, at: 0, dur: 0.14, gain: 0.98),
-            Note(freq: 430, at: 0.15, dur: 0.16, gain: 0.98),
-            Note(freq: 330, at: 0.32, dur: 0.28, gain: 0.95)
+            Note(freq: 990, at: 0, dur: 0.12, gain: 1.0, square: true),
+            Note(freq: 740, at: 0.15, dur: 0.12, gain: 1.0, square: true),
+            Note(freq: 990, at: 0.3, dur: 0.12, gain: 1.0, square: true),
+            Note(freq: 740, at: 0.45, dur: 0.16, gain: 1.0, square: true)
         ]
     ]
 
@@ -197,8 +212,13 @@ final class SoundController {
                     let remaining = (note.dur - t) / max(note.dur - attack, 0.0001)
                     envelope = max(0, remaining)
                 }
-                // A sine is the only waveform a tablet speaker reproduces without buzzing.
-                let value = sin(2 * Double.pi * note.freq * t)
+                /*
+                  Square by sign of the sine, for the failure tone only. A naive square is full
+                  of aliasing at these frequencies, and for an alarm that is a feature — the
+                  extra harmonic content is exactly what makes it carry.
+                */
+                let phase = sin(2 * Double.pi * note.freq * t)
+                let value = note.square ? (phase >= 0 ? 1.0 : -1.0) : phase
                 samples[index] += value * envelope * note.gain * volume
             }
         }

@@ -111,8 +111,19 @@ export function useSelfPunch(): UseMutationResult<SelfPunchOutcome, Error, SelfP
       } else if (outcome.kind === "already_recorded") {
         announcePunch("duplicate", t("kiosk.gate.say.duplicate"));
       } else {
-        // A refusal arrives through onSuccess (see the note above) and must not sound like one.
-        announcePunch("error", null);
+        /*
+          A refusal arrives through onSuccess (see the note above) and must not sound like one.
+          `unreadable` is the camera failing to read a face — an authentication failure, fixed
+          by trying again. A `refused` outcome is a policy or server decision, where "try
+          again" would be false advice, so it gets the generic line and the screen carries the
+          server's own explanation.
+        */
+        announcePunch(
+          "error",
+          outcome.kind === "unreadable"
+            ? t("kiosk.gate.say.failed")
+            : t("kiosk.gate.say.problem"),
+        );
       }
       void queryClient.invalidateQueries({ queryKey: qk.attendance.all });
       if (employeeId === null) return;

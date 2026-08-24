@@ -491,15 +491,19 @@ export function GateScanScreen({
             */
             announcePunch(
               queued ? "queued" : "error",
-              queued ? t("kiosk.gate.say.queued") : null,
+              queued ? t("kiosk.gate.say.queued") : t("kiosk.gate.say.problem"),
             );
             return;
           }
 
           setPhase({ kind: "error", detail: result.error.detail, at: performance.now() });
-          // Wordless by design: the loud three-note fall is the message, and a sentence over
-          // it would only delay the next person's attempt.
-          announcePunch("error", null);
+          /*
+            A transport or server failure, NOT a rejected face. It gets the alarm and the
+            generic line: telling somebody "authentication failed" when the gate could not
+            reach the server would send them back to the camera to re-scan a face that was
+            never the problem.
+          */
+          announcePunch("error", t("kiosk.gate.say.problem"));
           return;
         }
         setPhase({ kind: "result", outcome: result.data, at: performance.now() });
@@ -531,7 +535,10 @@ export function GateScanScreen({
                 : result.data.punchKind === "out"
                   ? t("kiosk.gate.say.out")
                   : t("kiosk.gate.say.scan")
-              : null;
+              : // Not matched: the face was read and belonged to nobody on file. This is the
+                // one case that is genuinely an authentication failure, and the only one that
+                // is fixed by the person stepping up and scanning again.
+                t("kiosk.gate.say.failed");
         announcePunch(kind, spoken);
         setScanCount((prev) => prev + 1);
         setLastScanAt(nowInstantIso());

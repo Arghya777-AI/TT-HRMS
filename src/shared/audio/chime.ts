@@ -56,6 +56,16 @@ interface Tone {
   dur: number;
   /** 0–1, before the master volume. */
   gain: number;
+  /**
+   * Waveform. Sine unless stated.
+   *
+   * This is the real lever on how LOUD something sounds, as distinct from its amplitude. A
+   * sine puts all its energy in one frequency; a square spreads it across the odd harmonics
+   * too, so at the same peak amplitude it is perceived as far louder and cuts through room
+   * noise. Reserved for the failure tone — a square-wave success chime would be unbearable
+   * several hundred times a day.
+   */
+  wave?: OscillatorType;
 }
 
 /**
@@ -83,17 +93,30 @@ const VOICES: Record<ChimeKind, Tone[]> = {
     { freq: 980, at: 0.2, dur: 0.14, gain: 0.6 },
   ],
   /*
-    THREE falling notes, at close to full scale, and the loudest thing the gate does.
+    A PULSED TWO-TONE ALARM, AND WHY THE PREVIOUS ONE WAS QUIET.
 
-    Asked for explicitly: an unrecognised face must be unmistakable from a distance, because it
-    is the one outcome that needs somebody to DO something — step closer, try again, or find a
-    supervisor. A polite two-note blip was audible only if you were already listening. Louder
-    and longer than every success tone on purpose, so it stands out rather than blending in.
+    It used to fall 560 → 430 → 330 Hz on sine waves, and it was reported as too weak. That
+    was not a gain problem, and raising the gain could never have fixed it: the notes were in
+    the wrong place for the hardware. A tablet speaker is a few millimetres of cone with
+    essentially no low-frequency output — below roughly 500 Hz it is physically inefficient,
+    so a 330 Hz note is nearly inaudible across a foyer however hard it is driven. Falling
+    tones read as "bad" to a listener, but the falling was walking the sound straight out of
+    the band the speaker can actually reproduce.
+
+    So: stay in 700–1000 Hz, where a small speaker is at its most efficient and where human
+    hearing is near its most sensitive; use SQUARE waves, which carry far more perceived
+    loudness than a sine at the same amplitude; and PULSE, four times, because an
+    interrupted sound holds attention where a steady one is dismissed as background. That is
+    the same reasoning every smoke alarm and reversing siren is built on.
+
+    Distinct from every success tone by construction — those are two smooth rising sine notes
+    and this is a harsh alternating buzz. Nobody will confuse them.
   */
   error: [
-    { freq: 560, at: 0, dur: 0.14, gain: 0.98 },
-    { freq: 430, at: 0.15, dur: 0.16, gain: 0.98 },
-    { freq: 330, at: 0.32, dur: 0.28, gain: 0.95 },
+    { freq: 990, at: 0, dur: 0.12, gain: 1.0, wave: "square" },
+    { freq: 740, at: 0.15, dur: 0.12, gain: 1.0, wave: "square" },
+    { freq: 990, at: 0.3, dur: 0.12, gain: 1.0, wave: "square" },
+    { freq: 740, at: 0.45, dur: 0.16, gain: 1.0, wave: "square" },
   ],
 };
 
@@ -304,8 +327,8 @@ export function playChime(kind: ChimeKind): void {
     for (const tone of VOICES[kind]) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      // A sine is the only waveform a small tablet speaker reproduces without buzzing.
-      osc.type = "sine";
+      // Sine for everything except the failure tone — see `Tone.wave`.
+      osc.type = tone.wave ?? "sine";
       osc.frequency.value = tone.freq;
 
       /*

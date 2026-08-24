@@ -29,11 +29,18 @@
   cached success. Nothing carrying an Authorization header or a device signature is stored.
 */
 
-const VERSION = "v1";
+// Bumped to v2 with the scope fix: the v1 caches were keyed to a shell URL that was never
+// navigated to, so they are stale by construction and the activate handler drops them.
+const VERSION = "v2";
 const SHELL_CACHE = `kiosk-shell-${VERSION}`;
 const ASSET_CACHE = `kiosk-assets-${VERSION}`;
 const MODEL_CACHE = `kiosk-models-${VERSION}`;
-const SHELL_URL = "/kiosk/";
+/*
+  The shell is keyed at `/kiosk`, WITHOUT the trailing slash, because that is the URL the
+  gate is actually opened at and the one the manifest names as `start_url`. Keying it at
+  `/kiosk/` cached a document nobody ever navigated to, so the offline fallback missed.
+*/
+const SHELL_URL = "/kiosk";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

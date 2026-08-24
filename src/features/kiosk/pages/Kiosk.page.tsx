@@ -88,18 +88,22 @@
  * including the round trip — and shows it in the footer, last and median.
  *
  * @route-standalone /kiosk
- *   Mounted directly by src/app/routes.tsx, outside the shell and outside the
- *   capability-gated tree — so it is deliberately NOT in PAGE_REGISTRY.
+ *   Mounted by src/kiosk/main.tsx, its OWN Vite entry — outside the shell, the
+ *   router and the capability-gated tree, so it is deliberately NOT in
+ *   PAGE_REGISTRY. The gate is a separate installable app that happens to live in
+ *   this repo; it shares the face engine and nothing else.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   clearDeviceState,
   clearSession,
   closeOperatorSession,
   loadDeviceState,
+  refreshDeviceConfig,
   type KioskDeviceState,
 } from "../lib/deviceAuth";
 import { useFaceEngine } from "../hooks/useFaceEngine";
+import { InstallGateApp } from "../components/InstallGateApp";
 import { PairingScreen } from "../screens/PairingScreen";
 import { GuardSignInScreen } from "../screens/GuardSignInScreen";
 import { GateScanScreen } from "../screens/GateScanScreen";
@@ -134,6 +138,41 @@ export default function KioskPage() {
     if (device.session !== undefined) return { name: "scan", device };
     return device.requireOperator === false ? { name: "scan", device } : { name: "guard", device };
   });
+
+  /**
+   * ASK THE SERVER WHAT THIS GATE IS, ONCE, ON BOOT.
+   *
+   * The initialiser above can only read the flag that was written at pairing, and that
+   * copy goes stale the moment an admin changes the row — or is missing entirely on a
+   * tablet paired before the field was captured, which reads as attended forever. So
+   * the first thing the gate does is re-read the live config and re-route if it moved.
+   *
+   * Only ever moves a gate OUT of the guard screen or INTO it; it never touches a
+   * scan phase that already has an open session, because a guard mid-shift being
+   * bounced by a background fetch is the worse failure. Unreachable server leaves
+   * everything as it was — see `refreshDeviceConfig`.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const device = loadDeviceState();
+    if (device === null) return;
+    void refreshDeviceConfig(device).then((refresh) => {
+      if (cancelled || !refresh.changed) return;
+      setPhase((prev) => {
+        if (prev.name === "pairing") return prev;
+        // A signed-in guard is left alone; the new flag applies at end of shift.
+        if (prev.name === "scan" && prev.device.session !== undefined) {
+          return { name: "scan", device: { ...prev.device, ...refresh.state } };
+        }
+        return refresh.state.requireOperator === false
+          ? { name: "scan", device: refresh.state }
+          : { name: "guard", device: refresh.state };
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** End of shift, deliberate: tell the server, then wipe the token locally. */
   const signOut = useCallback(() => {
@@ -186,8 +225,15 @@ export default function KioskPage() {
     setPhase({ name: "pairing" });
   }, []);
 
-  if (phase.name === "pairing") {
-    return (
+  /*
+    The install bar rides alongside every phase rather than being placed on one of them.
+    A tablet is installed BEFORE it is paired as often as after — whoever mounts it on the
+    wall wants the home-screen icon first — so offering it only on the scan screen would
+    hide it during exactly the setup it belongs to. It renders nothing once the gate is
+    running as an installed app, which is the state a wall terminal spends its life in.
+  */
+  const screen =
+    phase.name === "pairing" ? (
       <PairingScreen
         onPaired={(device) =>
           setPhase(
@@ -197,26 +243,28 @@ export default function KioskPage() {
           )
         }
       />
-    );
-  }
-  if (phase.name === "guard") {
-    return (
+    ) : phase.name === "guard" ? (
       <GuardSignInScreen
         device={phase.device}
         engine={engine}
         onOpen={(device) => setPhase({ name: "scan", device })}
         onUnpaired={unpaired}
       />
+    ) : (
+      <GateScanScreen
+        device={phase.device}
+        engine={engine}
+        onDeviceState={updateDevice}
+        onSignOut={signOut}
+        onSessionExpired={sessionExpired}
+        onUnpaired={unpaired}
+      />
     );
-  }
+
   return (
-    <GateScanScreen
-      device={phase.device}
-      engine={engine}
-      onDeviceState={updateDevice}
-      onSignOut={signOut}
-      onSessionExpired={sessionExpired}
-      onUnpaired={unpaired}
-    />
+    <>
+      {screen}
+      <InstallGateApp />
+    </>
   );
 }

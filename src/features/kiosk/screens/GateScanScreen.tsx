@@ -62,7 +62,8 @@ import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
 import { uuid } from "../lib/uuid";
-import { chimeForOutcome, playChime } from "@/shared/audio/chime";
+import { chimeForOutcome } from "@/shared/audio/chime";
+import { announcePunch } from "@/shared/audio/announce";
 import type { EngineStatus } from "../lib/engine";
 
 /** How many accepted scans stay on screen. Five fits a phone without scrolling. */
@@ -482,12 +483,23 @@ export function GateScanScreen({
               identical whether it reached the server or not would hide an outage for as long
               as nobody happened to look at the screen.
             */
-            playChime(queued ? "queued" : "error");
+            /*
+              A held scan is announced as held, not as recorded. For the person at the gate it
+              IS a success — they can walk on — but they are entitled to know it has not
+              reached the server, and a gate that sounded identical either way would hide an
+              outage for as long as nobody read the screen.
+            */
+            announcePunch(
+              queued ? "queued" : "error",
+              queued ? t("kiosk.gate.say.queued") : null,
+            );
             return;
           }
 
           setPhase({ kind: "error", detail: result.error.detail, at: performance.now() });
-          playChime("error");
+          // Wordless by design: the loud three-note fall is the message, and a sentence over
+          // it would only delay the next person's attempt.
+          announcePunch("error", null);
           return;
         }
         setPhase({ kind: "result", outcome: result.data, at: performance.now() });
@@ -497,7 +509,30 @@ export function GateScanScreen({
           duplicate sounds like — and so a debounced re-scan does not sound like a second
           successful punch to somebody who scanned twice.
         */
-        playChime(chimeForOutcome(result.data));
+        /*
+          THE SPOKEN CONFIRMATION, AND WHY THE DIRECTION IS THE POINT.
+
+          `punchKind` is the server's own ordinal for the day — first live scan is "in", second
+          is "out", later ones are "scan" with no direction. Saying which one aloud is the only
+          way the person walking through can catch the gate having recorded the wrong thing,
+          and they cannot catch it by reading a screen they are already past.
+
+          Never inferred locally. The direction is computed server-side from the punches that
+          actually exist, and a client guess would eventually contradict the record — the worst
+          possible outcome for a sentence whose entire job is to be trusted.
+        */
+        const kind = chimeForOutcome(result.data);
+        const spoken =
+          kind === "duplicate"
+            ? t("kiosk.gate.say.duplicate")
+            : kind === "recorded"
+              ? result.data.punchKind === "in"
+                ? t("kiosk.gate.say.in")
+                : result.data.punchKind === "out"
+                  ? t("kiosk.gate.say.out")
+                  : t("kiosk.gate.say.scan")
+              : null;
+        announcePunch(kind, spoken);
         setScanCount((prev) => prev + 1);
         setLastScanAt(nowInstantIso());
         if (result.data.matched) {

@@ -35,32 +35,45 @@ final class SoundController {
         let gain: Double
     }
 
-    /// Mirrors `VOICES` in chime.ts. Keep the two in step.
+    /// Mirrors `VOICES` in chime.ts, note for note. Keep the two in step — a person who learns
+    /// what the gate sounds like in Safari must hear the same thing in the app.
     private static let voices: [String: [Note]] = [
         // Two rising notes. Reads as "done".
         "recorded": [
-            Note(freq: 880, at: 0, dur: 0.09, gain: 0.5),
-            Note(freq: 1320, at: 0.085, dur: 0.15, gain: 0.5)
+            Note(freq: 880, at: 0, dur: 0.09, gain: 0.9),
+            Note(freq: 1320, at: 0.085, dur: 0.15, gain: 0.9)
         ],
         // One flat note: nothing was written, and it must not sound like a second success.
         "duplicate": [
-            Note(freq: 880, at: 0, dur: 0.16, gain: 0.35)
+            Note(freq: 880, at: 0, dur: 0.16, gain: 0.7)
         ],
-        // Rising, then a soft third note that says "not finished yet".
+        // Rising, then a softer third note that says "not finished yet".
         "queued": [
-            Note(freq: 780, at: 0, dur: 0.09, gain: 0.45),
-            Note(freq: 1170, at: 0.085, dur: 0.1, gain: 0.45),
-            Note(freq: 980, at: 0.2, dur: 0.14, gain: 0.3)
+            Note(freq: 780, at: 0, dur: 0.09, gain: 0.85),
+            Note(freq: 1170, at: 0.085, dur: 0.1, gain: 0.85),
+            Note(freq: 980, at: 0.2, dur: 0.14, gain: 0.6)
         ],
-        // Two falling notes, lower and slower.
+        /*
+          THREE falling notes at close to full scale — the loudest thing the gate does, and
+          deliberately louder and longer than any success tone. An unrecognised face is the one
+          outcome that needs somebody to DO something, so it must carry across a foyer rather
+          than blend into the successes.
+        */
         "error": [
-            Note(freq: 540, at: 0, dur: 0.12, gain: 0.45),
-            Note(freq: 400, at: 0.13, dur: 0.22, gain: 0.45)
+            Note(freq: 560, at: 0, dur: 0.14, gain: 0.98),
+            Note(freq: 430, at: 0.15, dur: 0.16, gain: 0.98),
+            Note(freq: 330, at: 0.32, dur: 0.28, gain: 0.95)
         ]
     ]
 
     private static let sampleRate = 44100.0
-    private static let volume: Double = 0.5
+
+    /// Full scale, matching `VOLUME` in chime.ts.
+    ///
+    /// Worth stating: this is full scale within the DEVICE's own volume. No app can raise an
+    /// iPad's system volume — iOS does not permit it — so a terminal with its hardware volume
+    /// down stays quiet, and that is a physical control to set once when mounting it.
+    private static let volume: Double = 1.0
 
     /// Rendered once per voice and kept.
     ///
@@ -68,6 +81,13 @@ final class SoundController {
     /// would be pointless work on a scan's critical path.
     private var players: [String: AVAudioPlayer] = [:]
     private var sessionReady = false
+
+    /// One synthesiser, reused.
+    ///
+    /// `AVSpeechSynthesizer` must outlive the utterance it is speaking — a local one is
+    /// deallocated the moment the function returns and the speech is cut off mid-word, which is
+    /// the classic way this API appears to "not work".
+    private let speaker = AVSpeechSynthesizer()
 
     // MARK: - Session
 
@@ -112,6 +132,33 @@ final class SoundController {
         player.prepareToPlay()
         players[kind] = player
         return player
+    }
+
+    // MARK: - Speech
+
+    /// Say a line, at full volume, cancelling anything still being said.
+    ///
+    /// Cancelling matters at a gate: at shift change somebody arrives every two or three
+    /// seconds, and queued utterances would fall further behind until the terminal was
+    /// announcing arrivals from a minute ago — confidently wrong about who just walked through,
+    /// which is worse than saying nothing.
+    func speak(text: String) {
+        guard !text.isEmpty else { return }
+        prepareSession()
+        if speaker.isSpeaking {
+            speaker.stopSpeaking(at: .immediate)
+        }
+        let utterance = AVSpeechUtterance(string: text)
+        // en-IN when the device has it; AVSpeechSynthesisVoice returns nil rather than throwing
+        // if it does not, and a nil voice means "use the system default", which is correct.
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-IN")
+            ?? AVSpeechSynthesisVoice(language: "en-GB")
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+        utterance.volume = 1.0
+        // Slightly under default. Heard once, in a foyer, by somebody already walking — the
+        // difference between "inwards" and "outwards" is the only word that matters.
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+        speaker.speak(utterance)
     }
 
     // MARK: - Synthesis

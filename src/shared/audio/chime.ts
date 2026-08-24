@@ -69,29 +69,46 @@ interface Tone {
 const VOICES: Record<ChimeKind, Tone[]> = {
   // Two rising notes, quick and bright. Reads as "done".
   recorded: [
-    { freq: 880, at: 0, dur: 0.09, gain: 0.5 },
-    { freq: 1320, at: 0.085, dur: 0.15, gain: 0.5 },
+    { freq: 880, at: 0, dur: 0.09, gain: 0.9 },
+    { freq: 1320, at: 0.085, dur: 0.15, gain: 0.9 },
   ],
   // One flat note. Deliberately unremarkable: nothing was written, and it should not sound
   // like a second successful punch to somebody who scanned twice.
-  duplicate: [{ freq: 880, at: 0, dur: 0.16, gain: 0.35 }],
+  duplicate: [{ freq: 880, at: 0, dur: 0.16, gain: 0.7 }],
   // Rising like a success, because for the person at the gate it IS one, then a soft third
   // note that says "not finished yet".
   queued: [
-    { freq: 780, at: 0, dur: 0.09, gain: 0.45 },
-    { freq: 1170, at: 0.085, dur: 0.1, gain: 0.45 },
-    { freq: 980, at: 0.2, dur: 0.14, gain: 0.3 },
+    { freq: 780, at: 0, dur: 0.09, gain: 0.85 },
+    { freq: 1170, at: 0.085, dur: 0.1, gain: 0.85 },
+    { freq: 980, at: 0.2, dur: 0.14, gain: 0.6 },
   ],
-  // Two falling notes, lower and slower. Unmistakably not a success, without being alarming
-  // — most "errors" here are a face the camera could not read, not a wrongdoing.
+  /*
+    THREE falling notes, at close to full scale, and the loudest thing the gate does.
+
+    Asked for explicitly: an unrecognised face must be unmistakable from a distance, because it
+    is the one outcome that needs somebody to DO something — step closer, try again, or find a
+    supervisor. A polite two-note blip was audible only if you were already listening. Louder
+    and longer than every success tone on purpose, so it stands out rather than blending in.
+  */
   error: [
-    { freq: 540, at: 0, dur: 0.12, gain: 0.45 },
-    { freq: 400, at: 0.13, dur: 0.22, gain: 0.45 },
+    { freq: 560, at: 0, dur: 0.14, gain: 0.98 },
+    { freq: 430, at: 0.15, dur: 0.16, gain: 0.98 },
+    { freq: 330, at: 0.32, dur: 0.28, gain: 0.95 },
   ],
 };
 
-/** Master volume. A gate is across a foyer; a phone is at arm's length. */
-const VOLUME = 0.5;
+/**
+ * Master volume.
+ *
+ * 1.0 — full scale, on iOS and Android alike, as asked. A gate is heard from across a foyer. The per-note gains stay below 1.0 and the summed samples are
+ * clamped, so overlapping notes cannot wrap into a crack.
+ *
+ * Worth stating plainly: this is full scale WITHIN the device's own volume. No web page or app
+ * can raise an iPad's system volume — that is a deliberate iOS restriction, not a gap here. A
+ * gate whose hardware volume is down will still be quiet, and that is a physical control
+ * somebody has to set once when mounting it.
+ */
+const VOLUME = 1.0;
 
 type Ctor = new () => AudioContext;
 
@@ -152,6 +169,18 @@ function bindUnlock(): void {
   for (const type of ["touchend", "pointerdown", "mousedown", "keydown"] as const) {
     window.addEventListener(type, attempt, { passive: true });
   }
+}
+
+/**
+ * How long a voice lasts, in milliseconds.
+ *
+ * Exported so a spoken announcement can start AFTER the tone rather than over it. The tone's
+ * job is to turn a head; the words are only useful once somebody is listening, and two audio
+ * sources at once make both unintelligible on a small speaker.
+ */
+export function chimeDurationMs(kind: ChimeKind): number {
+  const end = VOICES[kind].reduce((max, tone) => Math.max(max, tone.at + tone.dur), 0);
+  return Math.round(end * 1000);
 }
 
 /** Whether this browser can make a sound at all. */

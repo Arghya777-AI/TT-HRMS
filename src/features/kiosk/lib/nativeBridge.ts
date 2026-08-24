@@ -117,6 +117,20 @@ export function nativePlaySound(kind: string): boolean {
   return post({ op: "playSound", kind });
 }
 
+/**
+ * Ask the shell to speak a line.
+ *
+ * Same reasoning as {@link nativePlaySound}: `speechSynthesis` inside WKWebView inherits
+ * Safari's autoplay rule and honours the device mute, so on an untouched wall-mounted terminal
+ * it is reliably silent. `AVSpeechSynthesizer` behind a `.playback` session has neither
+ * problem. The TEXT is chosen by the web layer — the shell knows nothing about attendance and
+ * has no copy of its own to drift out of date.
+ */
+export function nativeSpeak(text: string): boolean {
+  if (!isNativeShell()) return false;
+  return post({ op: "speak", text });
+}
+
 export type CameraFacing = "front" | "back";
 
 /** Ask the shell to start its capture session and show the preview. */

@@ -89,6 +89,58 @@ describe.skipIf(!iosPresent)("the iOS shell agrees with the web app", () => {
     expect(plistString(appPlist, "NSCameraUsageDescription")).toBeTruthy();
   });
 
+  it("plays the same notes the browser does", () => {
+    /*
+      SoundController.swift says it mirrors chime.ts note for note, and that claim is worth
+      enforcing rather than trusting. Somebody who learns what the gate sounds like in Safari
+      must hear the same thing in the app — a chime that differs between hosts stops being
+      information and becomes noise, and the drift would never show up as a failure anywhere.
+
+      Compared as sorted number triples per voice, so formatting and ordering differences do
+      not register as drift but a changed frequency, timing or level does.
+    */
+    const web = read("src", "shared", "audio", "chime.ts");
+    const swift = read("ios", "TTGate", "SoundController.swift");
+
+    const webVoices = new Map<string, string[]>();
+    for (const [, name, body] of web.matchAll(
+      /(recorded|duplicate|queued|error):\s*\[([\s\S]*?)\],?\n/g,
+    )) {
+      const notes = [...body!.matchAll(
+        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)/g,
+      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}`);
+      if (notes.length > 0) webVoices.set(name!, notes.sort());
+    }
+
+    const swiftVoices = new Map<string, string[]>();
+    for (const [, name, body] of swift.matchAll(
+      /"(recorded|duplicate|queued|error)":\s*\[([\s\S]*?)\]/g,
+    )) {
+      const notes = [...body!.matchAll(
+        /freq:\s*([\d.]+),\s*at:\s*([\d.]+),\s*dur:\s*([\d.]+),\s*gain:\s*([\d.]+)/g,
+      )].map((m) => `${m[1]}/${m[2]}/${m[3]}/${m[4]}`);
+      if (notes.length > 0) swiftVoices.set(name!, notes.sort());
+    }
+
+    // Guard against the regexes silently matching nothing and the test passing vacuously.
+    expect(webVoices.size, "parsed web voices").toBe(4);
+    expect(swiftVoices.size, "parsed swift voices").toBe(4);
+
+    for (const [name, notes] of webVoices) {
+      expect(swiftVoices.get(name), `voice "${name}" differs between web and app`).toEqual(notes);
+    }
+  });
+
+  it("plays at the same master volume as the browser", () => {
+    const web = read("src", "shared", "audio", "chime.ts");
+    const swift = read("ios", "TTGate", "SoundController.swift");
+    const webVol = /const VOLUME = ([\d.]+);/.exec(web);
+    const swiftVol = /static let volume: Double = ([\d.]+)/.exec(swift);
+    expect(webVol).not.toBeNull();
+    expect(swiftVol).not.toBeNull();
+    expect(Number(swiftVol![1])).toBe(Number(webVol![1]));
+  });
+
   it("never reads UIKit off the main thread in the capture path", () => {
     // `grabFrame` runs on a background queue so the JPEG encode does not stutter the
     // preview. Reading UIApplication there is undefined behaviour.

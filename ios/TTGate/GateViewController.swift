@@ -208,6 +208,10 @@ extension GateViewController: WKScriptMessageHandler {
             let kind = (body["kind"] as? String) ?? "recorded"
             sound.play(kind: kind)
 
+        case "speak":
+            // The words come from the web layer, which owns the copy and its translations.
+            sound.speak(text: (body["text"] as? String) ?? "")
+
         case "grabFrame":
             // Off the main thread: the JPEG encode is the most expensive thing this shell
             // does, and doing it on the main thread would visibly stutter the preview.

@@ -498,6 +498,24 @@ export const keysKioskAdmin = {
   "kiosk.gate.location.unavailable": "No location on this device — scans still recorded",
   "kiosk.gate.location.error": "Location unavailable — scans still recorded",
   "kiosk.gate.location.retry": "Try location again",
+  /*
+    SPOKEN LINES. These are read aloud by the terminal, not shown on screen, and that changes
+    how they have to be written:
+      * No punctuation a synthesiser reads oddly, no abbreviations, no numbers.
+      * "inwards"/"outwards" carry the entire meaning and sit at the END, where a listener who
+        is already walking away is most likely to still catch them.
+      * Short. This is heard once, in a foyer, over a person's own footsteps.
+  */
+  "kiosk.gate.say.in": "Thank you. Your inwards attendance is registered.",
+  "kiosk.gate.say.out": "Thank you. Your outwards attendance is registered.",
+  // Third and later scans of a day, where the engine has not assigned a direction.
+  "kiosk.gate.say.scan": "Thank you. Your attendance is registered.",
+  // Recognised, but inside the debounce window — nothing new was written, and saying
+  // "registered" again would tell somebody their second scan counted when it did not.
+  "kiosk.gate.say.duplicate": "Your attendance is already registered.",
+  // Recorded on the device during an outage. Said plainly, because the person is entitled to
+  // know their punch has not reached the server yet.
+  "kiosk.gate.say.queued": "Your attendance is saved on this device and will be sent shortly.",
   "kiosk.gate.endShift": "End shift",
   "kiosk.gate.guardChip": "Guard: {name}",
   "kiosk.gate.deviceChip": "{device}",

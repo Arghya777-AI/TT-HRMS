@@ -24,7 +24,8 @@ import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import { istToday } from "@/lib/datetime";
-import { playChime } from "@/shared/audio/chime";
+import { announcePunch } from "@/shared/audio/announce";
+import { t } from "@/shared/i18n/en";
 import {
   fetchSelfPunchEligibility,
   fetchSelfPunchState,
@@ -92,13 +93,27 @@ export function useSelfPunch(): UseMutationResult<SelfPunchOutcome, Error, SelfP
         SETTLED outcome that arrives through onSuccess (see the note above), so it must not be
         allowed to sound like a success.
       */
-      playChime(
-        outcome.kind === "recorded"
-          ? "recorded"
-          : outcome.kind === "already_recorded"
-            ? "duplicate"
-            : "error",
-      );
+      /*
+        Spoken as well as sounded, and the direction comes from the SERVER's `direction` — the
+        same field the card shows. The button's predicted label is deliberately not consulted:
+        a prediction that disagreed with the record would be announced confidently and wrongly,
+        which is worse than saying nothing at all.
+      */
+      if (outcome.kind === "recorded") {
+        announcePunch(
+          "recorded",
+          outcome.direction === "in"
+            ? t("kiosk.gate.say.in")
+            : outcome.direction === "out"
+              ? t("kiosk.gate.say.out")
+              : t("kiosk.gate.say.scan"),
+        );
+      } else if (outcome.kind === "already_recorded") {
+        announcePunch("duplicate", t("kiosk.gate.say.duplicate"));
+      } else {
+        // A refusal arrives through onSuccess (see the note above) and must not sound like one.
+        announcePunch("error", null);
+      }
       void queryClient.invalidateQueries({ queryKey: qk.attendance.all });
       if (employeeId === null) return;
       void queryClient.invalidateQueries({ queryKey: qk.home.today(employeeId, istToday()) });

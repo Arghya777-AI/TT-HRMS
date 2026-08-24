@@ -2,9 +2,9 @@
   "name": "TT Gate Attendance",
   "short_name": "TT Gate",
   "description": "The face-attendance terminal for a controlled employee entrance at The Tamarind Tree. Installs on the tablet at the gate; works with or without internet.",
-  "id": "/gate/?source=pwa",
-  "start_url": "/gate/?source=pwa",
-  "scope": "/gate/",
+  "id": "/kiosk?source=pwa",
+  "start_url": "/kiosk?source=pwa",
+  "scope": "/kiosk",
   "display": "fullscreen",
   "display_override": [
     "fullscreen",

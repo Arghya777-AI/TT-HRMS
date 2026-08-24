@@ -1,7 +1,7 @@
 /**
  * Register the gate's own service worker.
  *
- * Scoped to `/gate/`, which is what keeps the two installed apps genuinely separate: the HR
+ * Scoped to `/kiosk/`, which is what keeps the two installed apps genuinely separate: the HR
  * app's worker at `/` controls its own pages, this one controls the gate, and neither can
  * take over the other's clients or evict the other's caches.
  *
@@ -15,14 +15,14 @@
  */
 
 /** Where the built worker lands. Its scope is implied by its path. */
-const GATE_SW_URL = "/gate/gate-sw.js";
+const KIOSK_SW_URL = "/kiosk/kiosk-sw.js";
 
-export function registerGateServiceWorker(): void {
+export function registerKioskServiceWorker(): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
   window.addEventListener("load", () => {
     void navigator.serviceWorker
-      .register(GATE_SW_URL, { scope: "/gate/" })
+      .register(KIOSK_SW_URL, { scope: "/kiosk/" })
       .then((registration) => {
         /*
           Check for a new build whenever the terminal is woken up.

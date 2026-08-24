@@ -28,7 +28,6 @@ const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const FirstRun = lazy(() => import("@/pages/FirstRun"));
 const Landing = lazy(() => import("@/pages/Landing"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
-const Kiosk = lazy(() => import("@/features/kiosk/pages/Kiosk.page"));
 
 function RouteFallback() {
   return (
@@ -135,8 +134,16 @@ export default function AppRoutes() {
           }
         />
 
-        {/* Kiosk — chrome-less, its own hostname in production. */}
-        <Route path="/kiosk" element={<Kiosk />} />
+        {/*
+          /kiosk IS NO LONGER A ROUTE OF THIS APP.
+
+          The gate terminal is a separate installed application with its own entry
+          (`kiosk/index.html`), its own manifest and its own service worker, and Vercel
+          now serves /kiosk from that build rather than from this shell. Leaving a route
+          here would mean two different apps answering the same URL depending on whether
+          the visitor arrived by link or by client-side navigation — and the one that won
+          would be this one, which is the bug that made the new terminal unreachable.
+        */}
 
         {/* Legacy + default redirects. */}
         {REDIRECTS.map((r) => (

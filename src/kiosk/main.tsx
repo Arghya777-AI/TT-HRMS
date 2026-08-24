@@ -30,13 +30,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import KioskPage from "@/features/kiosk/pages/Kiosk.page";
 import "@/index.css";
-import { registerGateServiceWorker } from "./registerGateServiceWorker";
+import { registerKioskServiceWorker } from "./registerKioskServiceWorker";
 
-const container = document.getElementById("gate-root");
+const container = document.getElementById("kiosk-root");
 if (container === null) {
   // Loud, not silent: a gate that renders nothing looks identical to a gate that is
   // working but has no one in front of it, and somebody would stand there scanning.
-  throw new Error("gate/index.html is missing #gate-root — the terminal cannot start.");
+  throw new Error("kiosk/index.html is missing #kiosk-root — the terminal cannot start.");
 }
 
 createRoot(container).render(
@@ -52,4 +52,4 @@ createRoot(container).render(
  * first paint is still pending competes with the bundle the screen needs in order to show
  * anything at all, on the slowest device in the estate.
  */
-registerGateServiceWorker();
+registerKioskServiceWorker();

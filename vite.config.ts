@@ -23,9 +23,9 @@ export default defineConfig({
       /**
        * TWO APPS, ONE REPOSITORY.
        *
-       * `index.html` is the HR product. `gate/index.html` is the gate terminal — a
+       * `index.html` is the HR product. `kiosk/index.html` is the gate terminal — a
        * separate installed app with its own manifest, its own service-worker scope
-       * (`/gate/`) and its own icon on the tablet at the entrance. Installing the HR app
+       * (`/kiosk`) and its own icon on the tablet at the entrance. Installing the HR app
        * on a wall-mounted screen would give you an icon that opens somebody's payslips.
        *
        * They share this repository because they share the code that matters: the face
@@ -44,7 +44,7 @@ export default defineConfig({
        */
       input: {
         index: path.resolve(__dirname, "index.html"),
-        gate: path.resolve(__dirname, "gate/index.html"),
+        kiosk: path.resolve(__dirname, "kiosk/index.html"),
       },
       output: {
         /**

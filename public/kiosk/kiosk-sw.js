@@ -1,7 +1,7 @@
 /*
   Service worker for the TT Gate app — a separate installed app from the HR product.
 
-  Scoped to `/gate/`. The HR app's worker at `/` is a different registration with different
+  Scoped to `/kiosk/`. The HR app's worker at `/` is a different registration with different
   caches; neither controls the other's clients.
 
   ── WHAT THIS CACHES, AND WHY IT IS THE OPPOSITE DECISION FROM THE HR APP ────
@@ -30,10 +30,10 @@
 */
 
 const VERSION = "v1";
-const SHELL_CACHE = `gate-shell-${VERSION}`;
-const ASSET_CACHE = `gate-assets-${VERSION}`;
-const MODEL_CACHE = `gate-models-${VERSION}`;
-const SHELL_URL = "/gate/";
+const SHELL_CACHE = `kiosk-shell-${VERSION}`;
+const ASSET_CACHE = `kiosk-assets-${VERSION}`;
+const MODEL_CACHE = `kiosk-models-${VERSION}`;
+const SHELL_URL = "/kiosk/";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -54,7 +54,7 @@ self.addEventListener("activate", (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter((key) => key.startsWith("gate-") && !key.endsWith(VERSION))
+          .filter((key) => key.startsWith("kiosk-") && !key.endsWith(VERSION))
           .map((key) => caches.delete(key)),
       );
       await self.clients.claim();
@@ -74,11 +74,11 @@ function isFaceModel(url) {
   return url.origin === self.location.origin && url.pathname.startsWith("/models/");
 }
 
-function isGateDocument(request, url) {
+function isKioskDocument(request, url) {
   return (
     request.mode === "navigate" &&
     url.origin === self.location.origin &&
-    url.pathname.startsWith("/gate")
+    url.pathname.startsWith("/kiosk")
   );
 }
 
@@ -107,7 +107,7 @@ self.addEventListener("fetch", (event) => {
   // The shell. Network-first so a deploy reaches the terminal, cache as the offline
   // fallback — the shell is the one unhashed file, so serving it cache-first would pin the
   // gate to whichever build it was installed from.
-  if (isGateDocument(request, url)) {
+  if (isKioskDocument(request, url)) {
     event.respondWith(
       (async () => {
         try {

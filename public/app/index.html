@@ -242,6 +242,40 @@
               "This iPad needs the app: on this version of iOS the camera does not work in a Home Screen web app.";
           }
         }
+
+        /*
+          ── IS THERE ACTUALLY A BUILD TO INSTALL? ──────────────────────────────
+          This check exists because its absence wasted a trip to the gate. The SPA catch-all
+          answered a request for the missing .ipa with 3 KB of the HR app's HTML and a 200,
+          so iOS believed it had downloaded an app, failed, and — as it does — said nothing
+          at all on the device. The link looked broken rather than unpublished.
+
+          HEAD and read the length, rather than fetching bytes: a published .ipa is megabytes
+          and there is no reason to download it to find out it exists. A real build cannot
+          plausibly be under 100 KB, and every wrong answer this could receive (the no-build
+          page, an error page, an empty body) is far below that.
+        */
+        var MIN_IPA_BYTES = 100000;
+        function checkBuild() {
+          var xhr = new XMLHttpRequest();
+          xhr.open("HEAD", "/app/TTGate.ipa?cb=" + new Date().getTime(), true);
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            var length = parseInt(xhr.getResponseHeader("content-length") || "0", 10);
+            if (xhr.status === 200 && length >= MIN_IPA_BYTES) return; // A real build. Leave the button alone.
+            install.removeAttribute("href");
+            install.style.background = "#404040";
+            install.style.opacity = "0.7";
+            install.textContent = "No build published yet";
+            status.innerHTML =
+              "<strong>The app has not been built yet.</strong> Nothing to install from this page " +
+              "at the moment — tapping it would fail without saying why, so it is switched off. " +
+              "Use <a href='https://tt-hrms.vercel.app/kiosk'>the web terminal</a> in a Safari tab " +
+              "in the meantime.";
+          };
+          try { xhr.send(); } catch (e) { /* Offline. Leave the page as it is. */ }
+        }
+        checkBuild();
       })();
     </script>
   </body>

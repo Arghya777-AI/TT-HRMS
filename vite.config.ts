@@ -67,6 +67,13 @@ export default defineConfig({
       input: {
         index: path.resolve(__dirname, "index.html"),
         kiosk: path.resolve(__dirname, "kiosk/index.html"),
+        /*
+          The self-test page. A third entry rather than a static file, because it deliberately
+          imports the REAL `facePipeline` — the same `loadFaceModels` and `readFrame` the gate
+          calls. A hand-written copy would report on itself instead of on the gate, which is
+          worse than no test: it would pass on a device that cannot actually recognise anyone.
+        */
+        check: path.resolve(__dirname, "check/index.html"),
       },
       output: {
         /**

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0A0A0A" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Gate self-test — TT Gate</title>
+
+    <!--
+      THE SELF-TEST PAGE. Open this on the gate device before trusting it with attendance.
+      https://tt-hrms.vercel.app/check
+
+      WHY IT EXISTS
+      -------------
+      "It works a bit" is not a state anybody can act on, and on an old iPad it is the only
+      report a person can honestly give: the terminal either shows a face or it does not, and
+      nothing tells them which of a dozen browser capabilities was missing. Safari 12 has no
+      Web Inspector unless a Mac is plugged in, so the usual answer — read the console — is not
+      available to whoever is standing at the gate.
+
+      So the device tests itself and prints the answers in words.
+
+      HOW IT IS BUILT, AND WHY THAT MATTERS
+      -------------------------------------
+      The environment probes below are ES5, inline, and run BEFORE any module. They therefore
+      produce a result even on a browser that cannot parse the app at all — which is exactly
+      the browser whose report is most valuable. The face-engine test is a module, because it
+      deliberately imports THE REAL PIPELINE (`facePipeline.ts`, the same `loadFaceModels` and
+      `readFrame` the gate uses). A reimplementation here would prove nothing about the gate.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0a0a0a;
+        color: #e5e5e5;
+        font: 15px/1.55 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      .wrap {
+        max-width: 44rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.4rem;
+      }
+      .sub {
+        margin: 0 0 1.5rem;
+        color: #a3a3a3;
+        font-size: 0.9rem;
+      }
+      h2 {
+        margin: 1.75rem 0 0.5rem;
+        font-size: 1rem;
+        color: #fafafa;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      td {
+        padding: 0.5rem 0.4rem;
+        border-bottom: 1px solid #1f1f1f;
+        vertical-align: top;
+      }
+      td.k {
+        color: #d4d4d4;
+      }
+      td.v {
+        width: 8.5rem;
+        text-align: right;
+        font-weight: 600;
+      }
+      .pass {
+        color: #34d399;
+      }
+      .fail {
+        color: #f87171;
+      }
+      .warn {
+        color: #fbbf24;
+      }
+      .note {
+        display: block;
+        margin-top: 0.15rem;
+        color: #8a8a8a;
+        font-size: 0.8rem;
+        font-weight: 400;
+        text-align: left;
+      }
+      button,
+      .filebtn {
+        display: inline-block;
+        margin: 0.75rem 0.5rem 0 0;
+        padding: 0.7rem 1.1rem;
+        border: 0;
+        border-radius: 0.6rem;
+        background: #059669;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+      }
+      .filebtn input {
+        display: none;
+      }
+      pre {
+        margin: 0.75rem 0 0;
+        padding: 0.7rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border-radius: 0.5rem;
+        background: #171717;
+        color: #d4d4d4;
+        font: 12px/1.5 ui-monospace, Menlo, monospace;
+      }
+      #verdict {
+        margin: 1.25rem 0 0;
+        padding: 0.9rem 1rem;
+        border: 1px solid #262626;
+        border-radius: 0.7rem;
+        background: #141414;
+      }
+      video,
+      canvas.preview {
+        width: 100%;
+        max-width: 22rem;
+        margin-top: 0.75rem;
+        border-radius: 0.6rem;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Gate self-test</h1>
+      <p class="sub">
+        Run this on the device that will be mounted at the gate. Everything below is measured
+        on this device, in this browser, right now.
+      </p>
+
+      <div id="verdict">Running…</div>
+
+      <h2>This device</h2>
+      <table id="t-device"></table>
+
+      <h2>Can the gate run at all</h2>
+      <table id="t-core"></table>
+
+      <h2>Can it reach a camera</h2>
+      <table id="t-camera"></table>
+
+      <h2>Face recognition</h2>
+      <p class="sub" style="margin: 0">
+        This loads the real recognition models (about 6 MB) and runs the gate's own pipeline.
+        It is the test that matters: everything above can pass and this can still fail.
+      </p>
+      <div id="face-actions"></div>
+      <table id="t-face"></table>
+      <pre id="face-log" hidden></pre>
+
+      <h2>Copy the result</h2>
+      <p class="sub" style="margin: 0">
+        Tap to select, then copy, and send it to IT. It contains no personal data — no image
+        and no face descriptor ever leaves this page.
+      </p>
+      <pre id="summary"></pre>
+    </div>
+
+    <!--
+      ES5, inline, before the module. Produces a report even on a browser that cannot parse
+      the application bundle — which is the browser we most want a report from.
+    -->
+    <script>
+      window.TTCheck = (function () {
+        var rows = [];
+
+        function add(tableId, label, state, value, note) {
+          rows.push({ label: label, state: state, value: value });
+          var table = document.getElementById(tableId);
+          if (!table) return;
+          var tr = table.insertRow(-1);
+          var k = tr.insertCell(0);
+          k.className = "k";
+          k.appendChild(document.createTextNode(label));
+          var v = tr.insertCell(1);
+          v.className = "v " + state;
+          v.appendChild(document.createTextNode(value));
+          if (note) {
+            var span = document.createElement("span");
+            span.className = "note";
+            span.appendChild(document.createTextNode(note));
+            v.appendChild(span);
+          }
+        }
+
+        function yesNo(condition) {
+          return condition ? "pass" : "fail";
+        }
+
+        // ── This device ────────────────────────────────────────────────────────
+        var ua = navigator.userAgent;
+        var m = ua.match(/OS (\d+)[._](\d+)(?:[._](\d+))?/);
+        var iosText = m ? m[1] + "." + m[2] + (m[3] ? "." + m[3] : "") : "not iOS";
+        add("t-device", "iOS version", m ? "pass" : "warn", iosText);
+
+        /*
+          Standalone vs a Safari tab, and it is the single most consequential line on this
+          page for an iOS 12 device: `getUserMedia` does not exist in a Home Screen web app
+          on iOS 12, so a gate installed that way can never see a camera however healthy
+          everything else is.
+        */
+        var standalone =
+          navigator.standalone === true ||
+          (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+          (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches);
+        var nativeShell = typeof window.TTGateNative === "object" && window.TTGateNative !== null;
+        add(
+          "t-device",
+          "Running as",
+          "pass",
+          nativeShell ? "TT Gate app" : standalone ? "Home Screen app" : "Safari tab",
+          nativeShell
+            ? "The native app supplies the camera itself."
+            : standalone && m && parseInt(m[1], 10) < 13
+              ? "On iOS 12 a Home Screen web app CANNOT use the camera. Open in a Safari tab, or install the TT Gate app."
+              : ""
+        );
+        add("t-device", "Screen", "pass", screen.width + "×" + screen.height);
+        add("t-device", "Secure context", yesNo(window.isSecureContext !== false), window.isSecureContext === false ? "no (HTTP)" : "yes (HTTPS)",
+            window.isSecureContext === false ? "Face signing and the camera both require HTTPS." : "");
+
+        // ── Core capability ───────────────────────────────────────────────────
+        add("t-core", "JavaScript modules", "pass", "loaded",
+            "This page's checks ran, so basic scripting works.");
+
+        var poly = [];
+        if (!Array.prototype.at) poly.push("Array.at");
+        if (!Promise.allSettled) poly.push("Promise.allSettled");
+        if (!Object.fromEntries) poly.push("Object.fromEntries");
+        if (typeof queueMicrotask !== "function") poly.push("queueMicrotask");
+        add("t-core", "Polyfills needed by this browser", poly.length ? "warn" : "pass",
+            poly.length ? poly.length + " missing" : "none",
+            poly.length ? "The gate page supplies these: " + poly.join(", ") : "");
+
+        var crypto_ = window.crypto || window.msCrypto;
+        add("t-core", "Web Crypto", yesNo(crypto_ && crypto_.subtle), crypto_ && crypto_.subtle ? "yes" : "no",
+            crypto_ && crypto_.subtle ? "Every punch is signed with this." : "Punches cannot be signed — the gate will not work.");
+        add("t-core", "randomUUID", crypto_ && crypto_.randomUUID ? "pass" : "warn",
+            crypto_ && crypto_.randomUUID ? "native" : "polyfilled",
+            crypto_ && crypto_.randomUUID ? "" : "Expected on iOS below 15.4; the gate fills it in.");
+
+        var idb = false;
+        try { idb = typeof indexedDB !== "undefined"; } catch (e) { idb = false; }
+        add("t-core", "Offline queue (IndexedDB)", idb ? "pass" : "warn", idb ? "yes" : "no",
+            idb ? "" : "Scans taken during an internet outage would be lost.");
+
+        var ls = false;
+        try { localStorage.setItem("__tt", "1"); localStorage.removeItem("__tt"); ls = true; } catch (e) { ls = false; }
+        add("t-core", "Stores its pairing", yesNo(ls), ls ? "yes" : "no",
+            ls ? "" : "The device would ask to be paired again on every reload.");
+
+        add("t-core", "Service worker", "serviceWorker" in navigator ? "pass" : "warn",
+            "serviceWorker" in navigator ? "yes" : "no");
+
+        // Flex gap: measured, because @supports answers about GRID gap on Safari 12 and
+        // would say yes while every flex gap in the app is silently zero.
+        var probe = document.createElement("div");
+        probe.style.cssText = "display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden";
+        probe.appendChild(document.createElement("div"));
+        probe.appendChild(document.createElement("div"));
+        document.documentElement.appendChild(probe);
+        var flexGap = probe.scrollHeight === 1;
+        probe.parentNode.removeChild(probe);
+        add("t-core", "Flexbox gap", flexGap ? "pass" : "warn", flexGap ? "yes" : "no",
+            flexGap ? "" : "Expected below iOS 14.1. The gate substitutes margins.");
+
+        // WebGL, which is what makes recognition fast enough to be usable.
+        var gl = null, gl2 = null;
+        try {
+          var c = document.createElement("canvas");
+          gl2 = c.getContext("webgl2");
+          gl = gl2 || c.getContext("webgl") || c.getContext("experimental-webgl");
+        } catch (e) { gl = null; }
+        add("t-core", "WebGL", yesNo(gl), gl ? (gl2 ? "version 2" : "version 1") : "none",
+            gl ? (gl2 ? "" : "Version 1 is expected below iOS 15 and is enough.")
+               : "Recognition would fall back to the processor and be very slow.");
+
+        // ── Camera ────────────────────────────────────────────────────────────
+        var hasGUM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        add("t-camera", "Camera API present", hasGUM || nativeShell ? "pass" : "fail",
+            nativeShell ? "via the app" : hasGUM ? "yes" : "no",
+            nativeShell
+              ? "The native app opens the camera; the browser API is not needed."
+              : hasGUM
+                ? ""
+                : standalone
+                  ? "This is the Home Screen limitation. Open in a Safari tab, or install the TT Gate app."
+                  : "This browser cannot reach a camera at all.");
+
+        return { add: add, rows: rows, hasGUM: hasGUM, nativeShell: nativeShell, gl: !!gl, iosMajor: m ? parseInt(m[1], 10) : 0 };
+      })();
+    </script>
+
+    <script type="module" src="/src/check/main.ts"></script>
+
+    <!-- If the module cannot even parse, the tables above still stand and this explains the gap. -->
+    <script>
+      setTimeout(function () {
+        var faceTable = document.getElementById("t-face");
+        if (faceTable && faceTable.rows.length === 0) {
+          window.TTCheck.add(
+            "t-face",
+            "Recognition code",
+            "fail",
+            "did not load",
+            "The application bundle could not run in this browser. Send this page's result to IT."
+          );
+          document.getElementById("verdict").innerHTML =
+            "<strong class='fail'>This device cannot run the gate.</strong> The recognition code did not load.";
+        }
+      }, 8000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>No build published — TT Gate</title>
+    <!--
+      Served for anything MISSING under /app.
+
+      Vercel checks the filesystem before it applies rewrites, so this never shadows
+      index.html or manifest.plist — both of which exist. It catches exactly the case that
+      broke the install: a request for TTGate.ipa when no .ipa has been published. Without
+      this, the SPA catch-all answered with 3 KB of the HR app's HTML and a 200, so iOS
+      believed it had downloaded an app and failed with no explanation on the device.
+
+      A wrong answer with a 200 is worse than an error. This is the error.
+    -->
+    <style>
+      html, body { margin:0; background:#0a0a0a; color:#e5e5e5;
+        font:16px/1.6 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
+      .wrap { max-width:34rem; margin:0 auto; padding:3rem 1.25rem; }
+      h1 { font-size:1.3rem; margin:0 0 .75rem; }
+      p { color:#d4d4d4; }
+      a { color:#6ee7b7; }
+      code { background:#262626; color:#fca5a5; padding:.1rem .35rem; border-radius:.3rem;
+        font:0.85em ui-monospace,Menlo,monospace; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>No app build has been published yet</h1>
+      <p>
+        The install page is ready, but the signed app file is not here. Someone needs to
+        archive the app in Xcode, export it for Ad Hoc distribution, and place it at
+        <code>public/app/TTGate.ipa</code>.
+      </p>
+      <p>
+        Until then the gate runs in the browser: open
+        <a href="https://tt-hrms.vercel.app/kiosk">tt-hrms.vercel.app/kiosk</a> in Safari.
+      </p>
+      <p><a href="/app">Back to the install page</a></p>
+    </div>
+  </body>
+</html>

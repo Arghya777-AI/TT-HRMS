@@ -18,6 +18,18 @@
       "destination": "/app/index.html"
     },
     {
+      "source": "/app/(.*)",
+      "destination": "/app/no-build.html"
+    },
+    {
+      "source": "/check/",
+      "destination": "/check/index.html"
+    },
+    {
+      "source": "/check",
+      "destination": "/check/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

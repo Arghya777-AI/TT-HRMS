@@ -603,16 +603,28 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
     employee's identity onto a failed attempt, which is both a worse audit record and a
     free 1:N oracle for anybody holding up photographs.
 
-    REQUIRED ONLY WHERE IT IS THE ONLY DEFENCE. An attended gate has a guard watching, and
-    `require_operator` says so; there, metrics stay optional and an older tablet keeps
-    working. An UNATTENDED gate has nothing else between a printed photograph and a punch,
-    so the measurement is mandatory and its absence is a refusal rather than a default-pass.
+    REQUIRED ON EVERY PUNCH, WITH NO EXEMPTION.
+
+    This used to be waived when `require_operator` was true, on the reasoning that a guard
+    standing at the gate is a better liveness check than any heuristic. That reasoning was
+    sound and is now void: the guard screen has been removed from the terminal, so no punch
+    arriving here has a human watching it, whatever the device row happens to say. Leaving
+    the exemption keyed to that row would have meant every device still flagged attended —
+    which is all of them until somebody runs an UPDATE — silently accepting a printed
+    photograph. The exemption did not become wrong when the flag changed; it became wrong
+    when the guard screen went, so it is gone with it.
+
+    The cost is that a tablet on a build older than the metrics field stops punching. That
+    is the correct direction: an old client failing loudly beats an old client waved through
+    the only check standing between a photograph and an attendance record.
 
     The threshold is `attendance.liveness_pass_threshold`, the same setting `face-login`
     reads. `measureLiveness` reports 0 when the device could not measure, so "could not
     tell" and "told us it was a photo" fail identically — which is correct.
   */
-  const livenessRequired = device.requireOperator !== true;
+  // Unconditional — see above. Kept as a named constant rather than inlined so the
+  // grep for `livenessRequired` still lands on the explanation.
+  const livenessRequired = true;
   if (livenessRequired) {
     const metrics = item.metrics;
     const detail = metrics === undefined
@@ -815,7 +827,7 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
       // day computation ignores it. `is_voided = true` at INSERT is legal: the
       // append-only trigger fires on UPDATE/DELETE only.
       const recent = await tx`
-        SELECT p.id, p.punched_at
+        SELECT p.id, p.punched_at, p.effective_date::text AS effective_date
           FROM public.attendance_punches p
          WHERE p.employee_id = ${matched.employeeId}::uuid
            AND p.is_voided = false
@@ -825,20 +837,49 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
          ORDER BY p.punched_at DESC
          LIMIT 1
       `;
-      const duplicateOf = firstRow(recent as unknown as { id: string; punched_at: Date | string }[]);
+      const duplicateOf = firstRow(
+        recent as unknown as {
+          id: string;
+          punched_at: Date | string;
+          effective_date: string;
+        }[],
+      );
 
-      // `ck_ap__void_fields` demands `voided_by` on a voided row, and the only
-      // person on the scene is the guard. On a `require_operator = false` device
-      // there is nobody to attribute the suppression to, so the duplicate is
-      // written LIVE and flagged for review instead of voided — INV-4 is kept
-      // either way, and a CHECK violation would have lost the event entirely.
-      const voidAttribution = operator?.profileId ?? null;
-      const isDuplicate = duplicateOf !== null && voidAttribution !== null;
-      if (duplicateOf !== null && voidAttribution === null) {
-        log.warn("debounced scan kept live: no operator to attribute the void to", {
-          duplicate_of: duplicateOf.id,
-        });
-      }
+      /*
+        A DEBOUNCED DUPLICATE WRITES NO PUNCH ROW AT ALL. THIS IS THE "TWO INS" BUG.
+
+        It used to write one, voided, pointing at the punch it duplicated — which is what
+        `attendance-self-punch` still does. But `ck_ap__void_fields` demands `voided_by` on
+        any voided row, and the only profile on the scene at a gate was the guard's:
+
+            const voidAttribution = operator?.profileId ?? null;
+            const isDuplicate = duplicateOf !== null && voidAttribution !== null;
+
+        With no guard signed in, `voidAttribution` was null, so `isDuplicate` went FALSE on a
+        scan that WAS a duplicate, and the row was written LIVE with a warning in the log.
+        `compute_attendance_day` filters on `is_voided = false` alone — `duplicate_of_punch_id`
+        is only surfaced as a flag, never used to exclude — so that live row COUNTED. One
+        person scanning twice inside the debounce window got two real punches, which is the
+        double entry that was observed at the gate. Removing the guard screen would have made
+        it happen on every single re-scan rather than only on an unattended device.
+
+        Attributing the void to the employee instead — the convention the web path uses, since
+        there the actor IS the employee — does not close it either: `employees.profile_id` is
+        nullable, so any employee without a linked login (gate staff, most likely) would fall
+        straight back into the same hole.
+
+        So the duplicate is not written. INV-4 is not weakened by that: it is a rule about
+        `secure.face_match_log`, which is written for EVERY attempt whatever the outcome, and
+        this scan lands there as `duplicate_suppressed` carrying its distance, its device, its
+        photograph and its liveness score. What is dropped is a second ATTENDANCE FACT that
+        was never a fact — not evidence. The screen is answered from the original punch, so
+        the person at the gate sees the time they actually checked in.
+
+        It does cost the engine's `v_dup` flag, which read `duplicate_of_punch_id IS NOT NULL`
+        over rows that no longer exist. That flag only ever described a row this endpoint
+        wrote for itself; the suppression is still fully visible in the match log.
+      */
+      const isDuplicate = duplicateOf !== null;
 
       const matchLog = await insertMatchLog(tx, {
         id: matchLogId,
@@ -860,7 +901,9 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         livenessScore: item.metrics?.livenessScore ?? null,
         capturePhotoPath: photoPath,
         latencyMs: log.elapsedMs(),
-        producedPunchId: punchId,
+        // Null on a suppressed duplicate: no punch was produced, and pointing at the
+        // original would claim this scan created a row it merely collided with.
+        producedPunchId: isDuplicate ? null : punchId,
         ip: ctx.ip ?? null,
         appVersion: device.storedAppVersion,
         errorDetail: null,
@@ -871,7 +914,14 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
       // `business_date` is left NULL so the night-shift trigger owns it.
       // `idempotency_key` is the client's event id: migration 050 §4 turns a
       // replay into SQLSTATE 23505 via `attendance_punch_keys`.
-      const insertedRows = await tx`
+      /*
+        The original stands in for the suppressed scan, so everything downstream — the
+        ordinal that picks the word on screen, the time shown, the photo-folder check —
+        reads the punch that actually exists rather than one that was not written.
+      */
+      const insertedRows = isDuplicate
+        ? []
+        : await tx`
         INSERT INTO public.attendance_punches (
           id, employee_id, punched_at, direction, source,
           kiosk_device_id, operator_id, face_match_log_id,
@@ -903,25 +953,33 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
           ${isReplay}::boolean,
           ${item.queuedAt ?? null}::timestamptz,
           ${deviceAuth.clockSkewSeconds}::integer,
-          ${needsReview || duplicateOf !== null}::boolean,
-          ${isDuplicate}::boolean,
-          ${isDuplicate ? voidAttribution : null}::uuid,
-          CASE WHEN ${isDuplicate}::boolean THEN now() ELSE NULL END,
-          ${isDuplicate ? "debounce: duplicate scan inside the policy debounce window" : null}::text,
-          ${duplicateOf?.id ?? null}::uuid,
+          ${needsReview}::boolean,
+          -- Never voided at insert any more. The only row this endpoint used to void was
+          -- the debounced duplicate, and that row is no longer written at all.
+          false::boolean,
+          NULL::uuid,
+          NULL::timestamptz,
+          NULL::text,
+          NULL::uuid,
           ${operator?.profileId ?? null}::uuid,
           ${ctx.requestId}::uuid,
           ${item.clientEventId}::text
         )
         RETURNING id, punched_at, effective_date::text AS effective_date
       `;
-      const punch = firstRow(
-        insertedRows as unknown as {
-          id: string;
-          punched_at: Date | string;
-          effective_date: string;
-        }[],
-      );
+      const punch = isDuplicate && duplicateOf !== null
+        ? {
+          id: duplicateOf.id,
+          punched_at: duplicateOf.punched_at,
+          effective_date: duplicateOf.effective_date,
+        }
+        : firstRow(
+          insertedRows as unknown as {
+            id: string;
+            punched_at: Date | string;
+            effective_date: string;
+          }[],
+        );
       if (punch === null) {
         throw new Error("punch insert returned no row");
       }
@@ -954,7 +1012,9 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
       return { punch, prior, isDuplicate };
     });
 
-    if (written.punch.effective_date !== predictedDate) {
+    // Skipped for a suppressed duplicate: the date compared would be the ORIGINAL punch's,
+    // which says nothing about where this scan's photograph was filed.
+    if (!written.isDuplicate && written.punch.effective_date !== predictedDate) {
       // Cosmetic only — the object and `photo_path` agree, so the storage policy
       // still resolves; the folder just is not the business date. Visible on
       // purpose: it means the prediction above has drifted from the trigger.
@@ -1178,14 +1238,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const deviceAuth = await verifyDevice(req, rawBody, client);
     const device = deviceAuth.device;
 
-    // ── STEP 5 · Authority ────────────────────────────────────────────────────
-    // A tablet holds no capability: `verifyDevice` already refused an unpaired,
-    // suspended or off-network device. The remaining authority is human — an OPEN
-    // guard session, re-read from `kiosk_operators` on every request so
-    // deactivating a guard takes effect on the next scan.
-    const operator = device.requireOperator
-      ? await requireOperatorSession(req, deviceAuth, client)
-      : await requireOperatorSession(req, deviceAuth, client).catch(() => null);
+    /*
+      ── STEP 5 · Authority ──────────────────────────────────────────────────────
+      THE GATE IS UNATTENDED. THE DEVICE IS THE AUTHORITY.
+
+      `verifyDevice` above has already refused an unpaired, suspended, revoked or
+      off-network device, checked the request HMAC against the device secret inside a
+      120-second window, and burned the single-use nonce. That is the authority for a
+      punch, and it is the whole of it.
+
+      This used to branch on `kiosk_devices.require_operator`, demanding an open guard
+      session when the row said true. The guard screen is gone from the terminal — there is
+      no longer any way for a human to open a session at the gate — so branching on the row
+      could only ever produce a device that refuses every punch it is handed. A flag whose
+      true state is unreachable is not a control; it is a trap. Removed rather than left to
+      be flipped, because a gate that cannot record attendance is the worst failure this
+      endpoint has.
+
+      The session is still ACCEPTED when one is presented. `face-enrol` and the admin tools
+      mint operator sessions for their own flows and send them here, and when they do the
+      punch is attributed to that operator exactly as before. Absent is now normal rather
+      than exceptional, so `operator` is simply null and `recorded_by` with it.
+
+      WHAT REPLACED THE GUARD IS BELOW, NOT NOWHERE: liveness is mandatory on every punch,
+      unconditionally, and is enforced before the 1:N runs.
+    */
+    const operator = await requireOperatorSession(req, deviceAuth, client).catch(() => null);
 
     const deviceLog = log.child({
       device_id: device.id,

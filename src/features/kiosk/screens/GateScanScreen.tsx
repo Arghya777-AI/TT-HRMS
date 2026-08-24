@@ -175,7 +175,18 @@ export function GateScanScreen({
    * which put it after the scan-loop effect that closes over it — a use-before-declaration
    * that only surfaced once the project was type-checked properly.
    */
-  const unattended = device.requireOperator === false;
+  /*
+    THE GATE IS ALWAYS UNATTENDED. There is no guard screen any more, so there is no path
+    by which a session could exist and nothing for this to vary on.
+
+    It used to read `device.requireOperator === false`, and leaving it that way would have
+    been quietly harmful in two places rather than merely untidy: the header would offer an
+    "End shift" button for a guard who cannot sign in, and — the real damage — line 289
+    would drop `livenessFrames` from two to one, weakening the only check now standing
+    between a printed photograph and an attendance record. A stale flag must not be able to
+    turn a security control down.
+  */
+  const unattended = true;
 
   /** Scans held on this device. Shown in the header so the state is never a surprise. */
   const [pending, setPending] = useState(0);

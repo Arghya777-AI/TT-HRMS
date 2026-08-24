@@ -258,13 +258,25 @@ describe("kiosk-punch request contract", () => {
     expect(sent[0]!.headers["x-operator-session"]).toBe(DEVICE.session);
   });
 
-  it("refuses locally with NO_OPERATOR when no guard is signed in", async () => {
+  /*
+    THE INVERSE OF WHAT THIS ONCE ASSERTED, AND THE REASON IT WAS INVERTED.
+
+    It used to require a local refusal — `NO_OPERATOR`, nothing sent — whenever no guard
+    session was held. The gate is unattended now: no session is ever opened, so that rule
+    refused every punch on every device and the terminal could not record attendance at all.
+    A client must not pre-emptively reject what the server accepts, and `kiosk-punch` treats
+    the operator session as optional.
+  */
+  it("sends the punch with no operator session, and does not refuse it locally", async () => {
     stubFetch({ body: { matched: false } });
     const { session: _unused, ...noSession } = DEVICE;
     const result = await sendPunch(noSession as KioskDeviceState, DESCRIPTOR);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("NO_OPERATOR");
-    expect(sent).toHaveLength(0);
+    expect(result.ok).toBe(true);
+    expect(sent).toHaveLength(1);
+    // Absent, not empty: an empty header would still assert a session that does not exist.
+    expect(sent[0]!.headers["x-operator-session"]).toBeUndefined();
+    // The device HMAC is still the authority and must be present on every punch.
+    expect(sent[0]!.headers["x-signature"]).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("decides nothing: no direction, no punch kind, no employee is asserted", async () => {

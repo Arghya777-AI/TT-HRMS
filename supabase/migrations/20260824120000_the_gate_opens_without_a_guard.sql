@@ -3,6 +3,20 @@
 --
 -- The gate terminal is now UNATTENDED. No guard signs in; employees walk up and scan.
 --
+-- ── NOTHING DEPENDS ON THIS MIGRATION ANY MORE. IT IS DATA HYGIENE. ──────────
+-- When this was written the flag was load-bearing: `kiosk-punch` branched on the row and
+-- refused a punch without a guard session, so the gate could not work until the row was
+-- flipped. It could not be applied — the remote migration ledger has diverged from the
+-- local files, so `db push` demands `--include-all` and would replay ~31 old migrations —
+-- and a terminal nobody can run is not an acceptable place to leave the client. So the
+-- dependency was removed instead: `kiosk-punch` now treats the operator session as optional
+-- on every request and requires liveness unconditionally, and the gate client has no guard
+-- screen at all.
+--
+-- What is left here is worth applying and safe to skip. Applying it makes
+-- `/admin/kiosk/devices` stop describing every gate as attended, which is now false. It
+-- changes no behaviour in either direction.
+--
 -- `kiosk_devices.require_operator` has defaulted to TRUE since migration 20260801001300,
 -- and the client honours it, so every paired tablet still demanded a PIN before it would
 -- scan anybody. The flag was the right mechanism and the wrong value: nothing in the client

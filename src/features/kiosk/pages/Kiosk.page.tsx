@@ -13,7 +13,11 @@
  *         toggle.
  *   "First, it can ask: Who is at the duty of the security gate? Kindly log in.
  *    The security guy scans his face first with the front camera."
- *       → `screens/GuardSignInScreen.tsx`, front camera forced.
+ *       → BUILT, THEN WITHDRAWN AT THE CLIENT'S INSTRUCTION. `GuardSignInScreen.tsx`
+ *         still exists and is still covered by `kioskContract.test.ts`, because the
+ *         endpoints it speaks to are deployed and used elsewhere — but nothing routes
+ *         to it. The gate no longer asks who is on duty; see THE GUARD SIGN-IN
+ *         DECISION below, which records what that trade cost and what replaced it.
  *   "Then for the rest of the people, he scans using the back camera or the front
  *    camera, whichever is possible. It should recognize very quickly and record
  *    attendance at the gate."
@@ -22,6 +26,24 @@
  * ═════════════════════════════════════════════════════════════════════════════
  * THE GUARD SIGN-IN DECISION, AND ITS SECURITY TRADE-OFF
  * ═════════════════════════════════════════════════════════════════════════════
+ * SUPERSEDED — READ THIS FIRST. There is no guard sign-in at all any more. The
+ * client asked for it removed, repeatedly and unambiguously: the gate is a wall
+ * terminal that employees walk up to, and nobody is on the door to key a PIN.
+ *
+ * The reasoning below is kept because it is still the record of WHY a PIN was
+ * required in the first place, and every one of its four objections still stands
+ * against handing session authority to a face. What changed is that no session is
+ * minted at all — the device HMAC alone authorises a punch, and the defence against
+ * a held-up photograph moved to liveness, which is now mandatory on every punch and
+ * enforced in `kiosk-punch` before the 1:N runs. Point 3 below ("there is no
+ * liveness check in this build") is the sentence that is no longer true, and it was
+ * the load-bearing one.
+ *
+ * What was lost with the guard, stated plainly: a punch no longer names a human who
+ * was present, and an ambiguous match is no longer resolved at the door — it fails
+ * to `/admin/kiosk/match-review` instead.
+ *
+ * ── THE ORIGINAL DECISION, FOR THE RECORD ────────────────────────────────────
  * OPTION (b), CHOSEN: THE FACE IDENTIFIES THE GUARD; THE PIN AUTHORISES THE SHIFT.
  * The front camera names whoever is standing there — searched against the OPERATOR
  * ROSTER for this device only — and the keypad then opens the session with that
@@ -93,24 +115,27 @@
  *   PAGE_REGISTRY. The gate is a separate installable app that happens to live in
  *   this repo; it shares the face engine and nothing else.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   clearDeviceState,
   clearSession,
-  closeOperatorSession,
   loadDeviceState,
-  refreshDeviceConfig,
   type KioskDeviceState,
 } from "../lib/deviceAuth";
 import { useFaceEngine } from "../hooks/useFaceEngine";
 import { InstallGateApp } from "../components/InstallGateApp";
 import { PairingScreen } from "../screens/PairingScreen";
-import { GuardSignInScreen } from "../screens/GuardSignInScreen";
 import { GateScanScreen } from "../screens/GateScanScreen";
 
+/*
+  TWO PHASES. THERE IS NO GUARD PHASE.
+
+  The gate is a wall-mounted terminal: it is paired once by whoever installs it, and from
+  then on it scans. The third phase — "who is on duty at the gate?", a face identification
+  followed by a PIN — is gone, along with the `require_operator` branch that chose it.
+*/
 type Phase =
   | { name: "pairing" }
-  | { name: "guard"; device: KioskDeviceState }
   | { name: "scan"; device: KioskDeviceState };
 
 export default function KioskPage() {
@@ -119,87 +144,35 @@ export default function KioskPage() {
   const engine = useFaceEngine();
 
   /**
-   * UNATTENDED GATES SKIP THE GUARD SCREEN.
+   * PAIRED MEANS READY. NOTHING ELSE IS ASKED.
    *
-   * `requireOperator` is server-owned: it comes off the pairing response, which reads
-   * `kiosk_devices.require_operator`. When an admin turns it off in
-   * `/admin/kiosk/devices`, this gate becomes a wall-mounted terminal that employees
-   * walk up to — no shift to open, no PIN, no guard. `kiosk-punch` already accepts
-   * that: its auth model makes the operator session optional exactly when the device
-   * row says so, so nothing on the server changes.
+   * A stored pairing is the whole of the gate's setup, and it is stored until an admin
+   * revokes the device or the secret is rotated out from under it — so a terminal that was
+   * paired once boots straight into scanning, on this reload and every reload after it.
    *
-   * Undefined is read as attended. A device paired against an older server, or a
-   * state blob written before this field existed, keeps asking for a guard rather
-   * than silently opening itself.
+   * This used to branch on `requireOperator` and send an attended device to the guard
+   * screen. Three separate things had to be true for that branch to ever produce a working
+   * gate — the row, the client's cached copy of the row, and a guard with a PIN — and the
+   * failure of any one of them showed up as a terminal that would not scan.
    */
   const [phase, setPhase] = useState<Phase>(() => {
     const device = loadDeviceState();
-    if (device === null) return { name: "pairing" };
-    if (device.session !== undefined) return { name: "scan", device };
-    return device.requireOperator === false ? { name: "scan", device } : { name: "guard", device };
+    return device === null ? { name: "pairing" } : { name: "scan", device };
   });
 
   /**
-   * ASK THE SERVER WHAT THIS GATE IS, ONCE, ON BOOT.
+   * A LEFTOVER SESSION IS DISCARDED, AND THE GATE KEEPS SCANNING.
    *
-   * The initialiser above can only read the flag that was written at pairing, and that
-   * copy goes stale the moment an admin changes the row — or is missing entirely on a
-   * tablet paired before the field was captured, which reads as attended forever. So
-   * the first thing the gate does is re-read the live config and re-route if it moved.
-   *
-   * Only ever moves a gate OUT of the guard screen or INTO it; it never touches a
-   * scan phase that already has an open session, because a guard mid-shift being
-   * bounced by a background fetch is the worse failure. Unreachable server leaves
-   * everything as it was — see `refreshDeviceConfig`.
+   * Both of these used to end a guard's shift and return to the sign-in screen. Neither
+   * can be triggered from the terminal any more — the "End shift" button went with the
+   * guard, and no session is ever opened to expire. They survive as the landing point for
+   * a token left in localStorage by a build that did open sessions: it is cleared, and the
+   * gate carries on scanning rather than dead-ending on a screen that no longer exists.
    */
-  useEffect(() => {
-    let cancelled = false;
-    const device = loadDeviceState();
-    if (device === null) return;
-    void refreshDeviceConfig(device).then((refresh) => {
-      if (cancelled || !refresh.changed) return;
-      setPhase((prev) => {
-        if (prev.name === "pairing") return prev;
-        // A signed-in guard is left alone; the new flag applies at end of shift.
-        if (prev.name === "scan" && prev.device.session !== undefined) {
-          return { name: "scan", device: { ...prev.device, ...refresh.state } };
-        }
-        return refresh.state.requireOperator === false
-          ? { name: "scan", device: refresh.state }
-          : { name: "guard", device: refresh.state };
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /** End of shift, deliberate: tell the server, then wipe the token locally. */
-  const signOut = useCallback(() => {
-    setPhase((prev) => {
-      if (prev.name !== "scan") return prev;
-      void closeOperatorSession(prev.device);
-      const device = clearSession(prev.device);
-      // An unattended gate has no shift to end and no sign-in screen to fall back to;
-      // sending it to the guard screen would strand a wall-mounted terminal that
-      // nobody has a PIN for.
-      return device.requireOperator === false
-        ? { name: "scan", device }
-        : { name: "guard", device };
-    });
-  }, []);
-
-  /** The session died on its own (expiry, idle timeout, guard deactivated). Same
-   * destination, but nothing is sent — there is nothing left to close. */
-  const sessionExpired = useCallback(() => {
-    setPhase((prev) => {
-      if (prev.name !== "scan") return prev;
-      const device = clearSession(prev.device);
-      // Same reasoning as signOut: an unattended gate keeps scanning.
-      return device.requireOperator === false
-        ? { name: "scan", device }
-        : { name: "guard", device };
-    });
+  const dropSession = useCallback(() => {
+    setPhase((prev) =>
+      prev.name === "scan" ? { name: "scan", device: clearSession(prev.device) } : prev,
+    );
   }, []);
 
   const updateDevice = useCallback((device: KioskDeviceState) => {
@@ -235,28 +208,16 @@ export default function KioskPage() {
   const screen =
     phase.name === "pairing" ? (
       <PairingScreen
-        onPaired={(device) =>
-          setPhase(
-            device.requireOperator === false
-              ? { name: "scan", device }
-              : { name: "guard", device },
-          )
-        }
-      />
-    ) : phase.name === "guard" ? (
-      <GuardSignInScreen
-        device={phase.device}
-        engine={engine}
-        onOpen={(device) => setPhase({ name: "scan", device })}
-        onUnpaired={unpaired}
+        // Paired is ready. Straight to the viewfinder.
+        onPaired={(device) => setPhase({ name: "scan", device })}
       />
     ) : (
       <GateScanScreen
         device={phase.device}
         engine={engine}
         onDeviceState={updateDevice}
-        onSignOut={signOut}
-        onSessionExpired={sessionExpired}
+        onSignOut={dropSession}
+        onSessionExpired={dropSession}
         onUnpaired={unpaired}
       />
     );

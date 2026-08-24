@@ -81,13 +81,25 @@ describe("a dead device pairing sends the kiosk back to pairing", () => {
   it("forgets the dead secret, so a reload does not restore the trap", () => {
     // Without `clearDeviceState()` the next page load reads the same dead secret out
     // of localStorage and lands straight back on the broken screen.
-    const handler = PAGE.slice(PAGE.indexOf("const unpaired = useCallback"), PAGE.indexOf("if (phase.name === \"pairing\")"));
+    // Sliced to the end of the callback rather than to the next `if`: the render was
+    // rewritten from early returns to one expression, so a marker taken from the routing
+    // below silently became -1 and this assertion started reading the whole file.
+    const start = PAGE.indexOf("const unpaired = useCallback");
+    expect(start).toBeGreaterThan(-1);
+    const handler = PAGE.slice(start, PAGE.indexOf("}, []);", start));
     expect(handler).toContain("clearDeviceState()");
     expect(handler).toContain('setPhase({ name: "pairing" })');
   });
 
-  it("passes the handler to both screens", () => {
-    expect(PAGE).toMatch(/onUnpaired=\{unpaired\}/g);
-    expect((PAGE.match(/onUnpaired=\{unpaired\}/g) ?? []).length).toBe(2);
+  /*
+    ONE SCREEN, NOT TWO. The guard sign-in screen is no longer routed — the gate is
+    unattended and boots from pairing straight to scanning — so the scan screen is the only
+    place a dead pairing can now surface. `GuardSignInScreen.tsx` still carries its own
+    recovery path (asserted above) and is still worth keeping correct, but the count here
+    tracks what the page actually mounts.
+  */
+  it("passes the handler to the one screen that is mounted", () => {
+    expect((PAGE.match(/onUnpaired=\{unpaired\}/g) ?? []).length).toBe(1);
+    expect(PAGE).not.toContain("<GuardSignInScreen");
   });
 });

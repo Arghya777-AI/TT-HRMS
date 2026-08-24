@@ -34,11 +34,13 @@ export interface KioskDeviceState {
   operatorCode?: string;
   canEnrolFaces?: boolean;
   /**
-   * Whether this gate needs a guard signed in before it will scan.
+   * `kiosk_devices.require_operator`, as it stood at pairing.
    *
-   * Server-owned — it is read from the pairing response, never chosen here, so an
-   * admin turning attendance unattended in `/admin/kiosk/devices` is the single
-   * place the decision lives. Undefined is treated as `true` at every read site.
+   * NO LONGER READ BY ANYTHING. It is kept because the pairing response sends it and
+   * discarding a server-owned field on the way past is how a client starts lying about
+   * what it was told. The gate does not consult it: there is no guard screen to route
+   * to, and `kiosk-punch` no longer branches on it either. `/admin/kiosk/devices` remains
+   * the place the row is displayed.
    */
   requireOperator?: boolean;
   pairedAt: string;
@@ -566,75 +568,6 @@ export async function closeOperatorSession(state: KioskDeviceState): Promise<voi
   });
 }
 
-/** The subset of the heartbeat answer this client acts on. */
-interface HeartbeatResponse {
-  requireOperator?: boolean;
-  clockSkewSeconds?: number;
-  offlineAllowed?: boolean;
-  queueOverLimit?: boolean;
-}
-
-/** What {@link refreshDeviceConfig} learned, for the screen to act on. */
-export interface DeviceConfigRefresh {
-  /** The state to keep — the same object when nothing changed. */
-  state: KioskDeviceState;
-  /** True when `requireOperator` actually moved, so the caller can re-route. */
-  changed: boolean;
-  /** Device clock minus server clock, in seconds; beyond ±60 offline queueing is unsafe. */
-  clockSkewSeconds?: number;
-  offlineAllowed?: boolean;
-  queueOverLimit?: boolean;
-}
-
-/**
- * Re-read the server-owned device config and persist it.
- *
- * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
- * `requireOperator` used to be written EXACTLY ONCE, at pairing, and read from
- * localStorage forever after. That made a server-owned flag effectively immutable on
- * any tablet already in the field: an admin turning the gate unattended in
- * `/admin/kiosk/devices` changed the row, `kiosk-punch` honoured the row, and the
- * screen went on demanding a guard PIN because its copy of the flag predated the
- * change. Worse, a device paired before the field was captured at all has it
- * `undefined`, which every read site correctly treats as "attended" — so the gate
- * could never become unattended without wiping the browser and re-pairing.
- *
- * `kiosk-heartbeat` already returns `requireOperator` off the live row, so the fix is
- * to ask rather than to remember. Called on gate boot, before the first route
- * decision, and cheap enough to call again whenever the network comes back.
- *
- * ── WHY A FAILURE IS NOT AN ERROR ────────────────────────────────────────────
- * A gate that cannot reach the server must still scan, so an unreachable heartbeat
- * returns the state untouched. The stored flag is the fallback, which is the correct
- * direction: it fails towards whatever the gate was last told, not towards open.
- */
-export async function refreshDeviceConfig(
-  state: KioskDeviceState,
-): Promise<DeviceConfigRefresh> {
-  const result = await deviceCall<HeartbeatResponse>(state, "kiosk-heartbeat", {
-    device_id: state.deviceId,
-    // Honest zero: the queue depth belongs to punchQueue and this call is only ever
-    // made to read config back. `queueDepthAck` is telemetry, not a control input.
-    queue_depth: 0,
-    device_now: nowInstantIso(),
-  });
-
-  if (!result.ok) return { state, changed: false };
-
-  const { requireOperator, clockSkewSeconds, offlineAllowed, queueOverLimit } = result.data;
-
-  // Absent is NOT false. An older server that does not send the field must leave the
-  // gate exactly as it was rather than silently opening it — the same rule the pairing
-  // response follows.
-  if (typeof requireOperator !== "boolean" || requireOperator === state.requireOperator) {
-    return { state, changed: false, clockSkewSeconds, offlineAllowed, queueOverLimit };
-  }
-
-  const next: KioskDeviceState = { ...state, requireOperator };
-  saveDeviceState(next);
-  return { state: next, changed: true, clockSkewSeconds, offlineAllowed, queueOverLimit };
-}
-
 /** What the punch endpoint answers with — the allow-listed fields only. */
 export interface PunchOutcome {
   matched: boolean;
@@ -706,12 +639,13 @@ export function sendPunchBatch(
   queue: readonly PunchBatchItem[],
   signal?: AbortSignal,
 ): Promise<KioskResult<{ results: readonly PunchOutcome[] }>> {
-  if (state.session === undefined && state.requireOperator !== false) {
-    return Promise.resolve({
-      ok: false,
-      error: { status: 409, code: "NO_OPERATOR", detail: "No guard is signed in." },
-    });
-  }
+  /*
+    NO LOCAL OPERATOR CHECK. The gate is unattended and there is no screen on which a guard
+    could sign in, so a client-side refusal here could only ever reject a punch that the
+    server would have accepted — the exact failure that made every scan on a live device
+    come back NO_OPERATOR. The server decides; `kiosk-punch` treats the operator session as
+    optional and always has when nothing presents one.
+  */
   return deviceCall<{ results: readonly PunchOutcome[] }>(
     state,
     "kiosk-punch",
@@ -766,12 +700,13 @@ export function sendPunch(
     omits the `x-operator-session` header when there is none, and `kiosk-punch` already
     accepts that for such a device, so there is nothing to send and nothing to refuse.
   */
-  if (state.session === undefined && state.requireOperator !== false) {
-    return Promise.resolve({
-      ok: false,
-      error: { status: 409, code: "NO_OPERATOR", detail: "No guard is signed in." },
-    });
-  }
+  /*
+    NO LOCAL OPERATOR CHECK. The gate is unattended and there is no screen on which a guard
+    could sign in, so a client-side refusal here could only ever reject a punch that the
+    server would have accepted — the exact failure that made every scan on a live device
+    come back NO_OPERATOR. The server decides; `kiosk-punch` treats the operator session as
+    optional and always has when nothing presents one.
+  */
   return deviceCall<PunchOutcome>(
     state,
     "kiosk-punch",

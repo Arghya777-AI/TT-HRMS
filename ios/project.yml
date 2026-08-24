@@ -1,0 +1,45 @@
+# XcodeGen spec for the TT Gate iOS shell.
+#
+# A generated project rather than a committed .xcodeproj, deliberately: project.pbxproj is a
+# large machine-written file that conflicts on every branch and cannot be reviewed. This is
+# nine lines of intent, and `xcodegen` turns it into the same project every time.
+#
+#   brew install xcodegen && cd ios && xcodegen generate && open TTGate.xcodeproj
+#
+# If you would rather not install it, see README.md — creating the project by hand in Xcode
+# takes about two minutes and the settings that matter are the four below.
+
+name: TTGate
+options:
+  # THE POINT OF THIS WHOLE DIRECTORY. iOS 12.0 is the floor that reaches 12.5.7 hardware.
+  deploymentTarget:
+    iOS: "12.0"
+  createIntermediateGroups: true
+  # Swift 5 is required by the sources and is what every Xcode since 10.2 ships.
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # arm64 only: every device that runs iOS 12.5.7 is A7 or later. armv7 would pull in the
+    # 32-bit slice for hardware that tops out at iOS 10 and cannot run this app anyway.
+    ARCHS: "$(ARCHS_STANDARD)"
+    TARGETED_DEVICE_FAMILY: "1,2"   # iPhone and iPad
+    ENABLE_BITCODE: false
+
+targets:
+  TTGate:
+    type: application
+    platform: iOS
+    sources:
+      - path: TTGate
+    info:
+      path: TTGate/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tamarindtree.ttgate
+        PRODUCT_NAME: TT Gate
+        INFOPLIST_FILE: TTGate/Info.plist
+        # Set your team here, or pick it in Xcode's Signing & Capabilities tab.
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic

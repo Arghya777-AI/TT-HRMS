@@ -267,7 +267,10 @@ function l2Normalise(v: Float32Array): number[] {
  * to reject motion blur.
  */
 function cropMetrics(
-  video: HTMLVideoElement,
+  // A canvas as well as a video: a native iOS shell supplies frames on a canvas because
+  // iOS 12 has no getUserMedia outside Safari. face-api reads either identically, and the
+  // descriptor depends on the PIXELS and the alignment, not on which element held them.
+  video: HTMLVideoElement | HTMLCanvasElement,
   box: { x: number; y: number; width: number; height: number },
 ): { brightness: number; contrast: number; sharpness: number } {
   const side = 64;
@@ -339,12 +342,39 @@ function poseFromLandmarks(pts: { x: number; y: number }[], boxW: number): {
   };
 }
 
+/**
+ * The pixel dimensions of either frame source, and whether it has any yet.
+ *
+ * A `<video>` reports `videoWidth`/`videoHeight` and buffers, so it needs `readyState`. A
+ * `<canvas>` reports `width`/`height` and is ready the moment it has been drawn to. Both
+ * answers feed `face_fraction`, which is part of the framing metrics — so getting the wrong
+ * one would not throw, it would quietly mis-measure how much of the frame a face fills.
+ */
+function sourceSize(source: HTMLVideoElement | HTMLCanvasElement): {
+  width: number;
+  height: number;
+  ready: boolean;
+} {
+  if (source instanceof HTMLCanvasElement) {
+    return { width: source.width, height: source.height, ready: source.width > 0 };
+  }
+  return {
+    width: source.videoWidth,
+    height: source.videoHeight,
+    ready: source.readyState >= 2 && source.videoWidth > 0,
+  };
+}
+
 /** Detect + judge ONE frame. Never throws; a dead camera reads as no_face. */
 export async function readFrame(
-  video: HTMLVideoElement,
+  // A canvas as well as a video: a native iOS shell supplies frames on a canvas because
+  // iOS 12 has no getUserMedia outside Safari. face-api reads either identically, and the
+  // descriptor depends on the PIXELS and the alignment, not on which element held them.
+  video: HTMLVideoElement | HTMLCanvasElement,
   opts: ReadFrameOptions = {},
 ): Promise<FrameVerdict> {
-  if (video.readyState < 2 || video.videoWidth === 0) return { kind: "no_face" };
+  const size = sourceSize(video);
+  if (!size.ready) return { kind: "no_face" };
   const faceapi = await loadFaceModels();
 
   const options = new faceapi.TinyFaceDetectorOptions({
@@ -385,7 +415,7 @@ export async function readFrame(
     face_px: Math.max(1, Math.round(Math.min(box.width, box.height))),
     face_fraction: Math.min(
       1,
-      (box.width * box.height) / (video.videoWidth * video.videoHeight || 1),
+      (box.width * box.height) / (size.width * size.height || 1),
     ),
     yaw: pose.yaw,
     pitch: pose.pitch,
@@ -402,11 +432,13 @@ export async function readFrame(
     reading: {
       descriptor: l2Normalise(single.descriptor),
       quality,
+      // Normalised against the SAME size the framing metrics used, so a native canvas and
+      // a browser video describe the same face identically.
       box: {
-        x: box.x / (video.videoWidth || 1),
-        y: box.y / (video.videoHeight || 1),
-        w: box.width / (video.videoWidth || 1),
-        h: box.height / (video.videoHeight || 1),
+        x: box.x / (size.width || 1),
+        y: box.y / (size.height || 1),
+        w: box.width / (size.width || 1),
+        h: box.height / (size.height || 1),
       },
     },
   };

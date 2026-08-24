@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The over-the-air install manifest. iOS fetches THIS file (never the .ipa directly) when
+  someone taps Install on /app, reads where the .ipa is, and installs it.
+
+  THREE THINGS MUST ALL BE TRUE or the install fails with no explanation on the device:
+    1. This file and the .ipa are both served over HTTPS with a valid certificate.
+       Vercel gives that automatically; a self-hosted copy behind plain HTTP will not work.
+    2. `bundle-identifier` matches the built app EXACTLY — com.tamarindtree.ttgate unless
+       you changed it in ios/project.yml.
+    3. The .ipa is signed with a provisioning profile that NAMES THE TARGET DEVICE.
+       Ad-hoc distribution is device-list based; an unregistered iPad refuses the install and
+       says only "Unable to Install".
+
+  TO PUBLISH A BUILD:
+    a. Archive in Xcode → Distribute App → Ad Hoc → Export.
+    b. Put the exported .ipa at  public/app/TTGate.ipa
+    c. Change nothing here if you kept that filename and the bundle id.
+    d. Commit and push. Vercel serves it, and /app installs it.
+
+  The version strings below are cosmetic — iOS shows them while installing. Keep them in step
+  with CFBundleShortVersionString / CFBundleVersion in ios/TTGate/Info.plist so a device can
+  be identified from its Settings screen.
+-->
+<plist version="1.0">
+<dict>
+  <key>items</key>
+  <array>
+    <dict>
+      <key>assets</key>
+      <array>
+        <dict>
+          <key>kind</key>
+          <string>software-package</string>
+          <key>url</key>
+          <string>https://tt-hrms.vercel.app/app/TTGate.ipa</string>
+        </dict>
+      </array>
+      <key>metadata</key>
+      <dict>
+        <key>bundle-identifier</key>
+        <string>com.tamarindtree.ttgate</string>
+        <key>bundle-version</key>
+        <string>1.0.0</string>
+        <key>kind</key>
+        <string>software</string>
+        <key>title</key>
+        <string>TT Gate</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

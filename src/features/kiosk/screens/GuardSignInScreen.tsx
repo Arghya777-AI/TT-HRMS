@@ -140,7 +140,8 @@ export function GuardSignInScreen({
     // that was torn down would otherwise sit on screen until the next attempt.
     setFaceState((prev) => (prev.kind === "checking" ? { kind: "scanning" } : prev));
     void runGateLoop({
-      video: () => videoRef.current,
+      // Async to match the loop's frame accessor. Always the live element here.
+      video: () => Promise.resolve(videoRef.current),
       paused: () => performance.now() < nextAttemptAt.current,
       cancelled: () => cancelled,
       onSignal: (next) => {

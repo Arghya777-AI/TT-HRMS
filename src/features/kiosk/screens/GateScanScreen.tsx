@@ -57,6 +57,7 @@ import {
 } from "../components/GateResult";
 import { Viewfinder } from "../components/Viewfinder";
 import { useCamera } from "../hooks/useCamera";
+import { useNativeCamera } from "../hooks/useNativeCamera";
 import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
@@ -166,6 +167,32 @@ export function GateScanScreen({
   // The queue is usually scanned with the back camera, but the choice is the
   // guard's and it survives a reload for the rest of the session.
   const camera = useCamera(videoRef, { initial: "environment", remember: true });
+
+  /*
+    ── THE NATIVE SHELL'S CAMERA, WHEN THERE IS ONE ──────────────────────────────
+    Present only inside the iOS app. It exists for one reason: iOS 12 has no
+    `getUserMedia` anywhere outside Safari — not in WKWebView, not in a home-screen web app
+    — so on the iPad generation that ends at 12.5.7 the shell must hold the camera and the
+    web layer must ask it for frames.
+
+    Both hooks are called unconditionally, because hooks must be. `useNativeCamera` reports
+    `present: false` in a browser and does nothing at all; `useCamera` fails harmlessly in
+    the shell, where there is no `getUserMedia` to succeed with. Which one the loop reads is
+    decided below, once, by `native.present`.
+  */
+  const native = useNativeCamera();
+  /*
+    Destructured so the scan-loop effect can depend on these two rather than on `native`.
+    `useNativeCamera` returns a fresh object every render, so listing the object would
+    restart the detector on every paint — the churn the notes on that effect's dependency
+    array exist to prevent. `nativePresent` is a boolean fixed for the life of the process
+    (a page either is or is not inside the shell) and `nativeGrab` is a useCallback keyed
+    only to it, so neither can cause a restart.
+  */
+  const { present: nativePresent, grab: nativeGrab } = native;
+  const cameraLive = native.present
+    ? native.state.status === "live"
+    : camera.state.status === "live";
 
   const [phase, setPhase] = useState<Phase>({ kind: "live" });
 
@@ -277,7 +304,7 @@ export function GateScanScreen({
     });
   }, []);
 
-  const scanning = engine.kind === "ready" && camera.state.status === "live";
+  const scanning = engine.kind === "ready" && cameraLive;
 
   useEffect(() => {
     if (!scanning) return;
@@ -287,7 +314,15 @@ export function GateScanScreen({
     // would stop the gate dead.
     setPhase((prev) => (prev.kind === "sending" ? { kind: "live" } : prev));
     void runGateLoop({
-      video: () => videoRef.current,
+      /*
+        One accessor, two sources. In the shell each iteration pulls a fresh frame across
+        the bridge; in a browser the <video> is already live and this resolves immediately.
+        The loop cannot tell the difference, and neither can `readFrame` — which is the
+        point, because the descriptor has to come out identical either way.
+      */
+      video: nativePresent
+        ? () => nativeGrab()
+        : () => Promise.resolve(videoRef.current),
       paused: () => phaseRef.current.kind === "sending",
       capture: () => phaseRef.current.kind === "live",
       /*
@@ -482,7 +517,19 @@ export function GateScanScreen({
     // descriptor frames per approach changes with it.
     // `refreshPending` is a stable useCallback with no deps, so listing it satisfies the
     // linter without ever restarting the detector — the same argument as `readLocation`.
-  }, [scanning, tracker, clearIfLaneEmpty, readLocation, unattended, refreshPending]);
+    // `nativePresent` and `nativeGrab` are listed in place of the `native` object, which is
+    // rebuilt every render; see the note where they are destructured. Both are stable, so
+    // they satisfy the linter without ever restarting the detector.
+  }, [
+    scanning,
+    tracker,
+    clearIfLaneEmpty,
+    readLocation,
+    unattended,
+    refreshPending,
+    nativePresent,
+    nativeGrab,
+  ]);
 
   // Backstop for somebody who stands in front of the camera reading their own
   // name: the card goes even if the lane never clears.
@@ -654,6 +701,7 @@ export function GateScanScreen({
         ) : null}
 
         <Viewfinder
+          native={nativePresent}
           videoRef={videoRef}
           facing={camera.state.facing}
           dim

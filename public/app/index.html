@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en-IN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0A0A0A" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Install TT Gate — The Tamarind Tree</title>
+
+    <!--
+      Plain HTML with inline CSS, on purpose. This page is opened on the oldest device in the
+      building — often the one that could not run the web app in the first place — so it uses
+      nothing that Safari 12 lacks: no bundle, no framework, no flexbox gap, no custom
+      properties in a media query. It has to work when nothing else does.
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #0a0a0a;
+        color: #e5e5e5;
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      .wrap {
+        max-width: 40rem;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 4rem;
+      }
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.6rem;
+        letter-spacing: -0.01em;
+      }
+      .sub {
+        margin: 0 0 2rem;
+        color: #a3a3a3;
+      }
+      h2 {
+        margin: 2rem 0 0.5rem;
+        font-size: 1.05rem;
+        color: #fafafa;
+      }
+      p {
+        margin: 0 0 0.75rem;
+        color: #d4d4d4;
+      }
+      .card {
+        margin: 0 0 1.25rem;
+        padding: 1rem 1.1rem;
+        border: 1px solid #262626;
+        border-radius: 0.9rem;
+        background: #141414;
+      }
+      .install {
+        display: block;
+        margin: 0.25rem 0 0;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: #059669;
+        color: #fff;
+        font-size: 1.05rem;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+      .install:active {
+        background: #047857;
+      }
+      .muted {
+        color: #a3a3a3;
+        font-size: 0.9rem;
+      }
+      .warn {
+        border-color: #78350f;
+        background: #1c1305;
+      }
+      .warn strong {
+        color: #fbbf24;
+      }
+      ol,
+      ul {
+        margin: 0 0 0.75rem;
+        padding-left: 1.35rem;
+        color: #d4d4d4;
+      }
+      li {
+        margin-bottom: 0.4rem;
+      }
+      code {
+        padding: 0.1rem 0.35rem;
+        border-radius: 0.3rem;
+        background: #262626;
+        color: #fca5a5;
+        font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace;
+        word-break: break-all;
+      }
+      a {
+        color: #6ee7b7;
+      }
+      .rule {
+        margin: 2rem 0 0;
+        border: 0;
+        border-top: 1px solid #262626;
+      }
+      #status {
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>TT Gate</h1>
+      <p class="sub">Face attendance terminal · The Tamarind Tree</p>
+
+      <div class="card">
+        <p><strong>For the gate iPad only.</strong> Everyone else should use the web app.</p>
+        <a class="install" id="install" href="itms-services://?action=download-manifest&amp;url=https://tt-hrms.vercel.app/app/manifest.plist">
+          Install TT Gate
+        </a>
+        <p id="status" class="muted"></p>
+      </div>
+
+      <!--
+        This is not a caveat, it is the operating instruction. Ad-hoc distribution installs
+        only onto devices whose UDID is in the provisioning profile. A person who taps Install
+        on an unregistered iPad gets "Unable to Install" with no reason given, and will
+        reasonably assume the link is broken.
+      -->
+      <div class="card warn">
+        <p>
+          <strong>This iPad must be registered first.</strong> Apple only allows an app
+          outside the App Store onto devices that were named when it was built. If you have
+          not sent us this iPad's identifier, the install will fail with
+          <em>“Unable to Install”</em> and nothing else.
+        </p>
+        <p class="muted">
+          To register it: connect the iPad to a Mac, open Finder, click the iPad, then click
+          under its name until the identifier (UDID) appears — click it and copy, then send it
+          to IT.
+        </p>
+      </div>
+
+      <h2>Do I need this app at all?</h2>
+      <p>
+        Only if this iPad runs <strong>iOS 12</strong>. On iOS 12 Safari can open the gate in a
+        tab, but the camera stops working the moment it is added to the Home Screen — so the
+        app is the only way to get a proper full-screen terminal on that hardware.
+      </p>
+      <p>
+        On <strong>iOS 13.4 or newer</strong> you do not need this. Open
+        <a href="https://tt-hrms.vercel.app/kiosk">tt-hrms.vercel.app/kiosk</a> in Safari and
+        use <em>Share → Add to Home Screen</em>. Same terminal, nothing to install, updates by
+        itself.
+      </p>
+      <p class="muted" id="detected"></p>
+
+      <h2>After it installs</h2>
+      <ol>
+        <li>Open <strong>TT Gate</strong> from the Home Screen.</li>
+        <li>Allow the camera when asked. Attendance cannot be recorded without it.</li>
+        <li>
+          Pair the terminal once, using the code from
+          <code>/admin/kiosk/devices</code>. It stays paired after that.
+        </li>
+        <li>
+          The first launch downloads about 6 MB of recognition models. Do that on Wi-Fi before
+          mounting it on the wall.
+        </li>
+      </ol>
+
+      <h2>If the install fails</h2>
+      <ul>
+        <li>
+          <strong>“Unable to Install”</strong> — this iPad's identifier is not registered. See
+          the note above.
+        </li>
+        <li>
+          <strong>“Untrusted Enterprise Developer”</strong> — go to Settings → General →
+          VPN &amp; Device Management, tap the developer, then Trust.
+        </li>
+        <li>
+          <strong>Nothing happens when you tap Install</strong> — you are not in Safari. Open
+          this page in Safari; other browsers on iOS cannot start an install.
+        </li>
+      </ul>
+
+      <hr class="rule" />
+      <p class="muted">
+        Installs from this page are for The Tamarind Tree's own devices. The app does nothing
+        on its own — it opens the same gate terminal as the website, and every scan is checked
+        by the server exactly as it is in a browser.
+      </p>
+    </div>
+
+    <script>
+      (function () {
+        var status = document.getElementById("status");
+        var detected = document.getElementById("detected");
+        var install = document.getElementById("install");
+        var ua = navigator.userAgent;
+
+        /*
+          Read the iOS version out of the user agent, e.g. "OS 12_5_7" → 12.5.
+          Only the major and minor are needed, and only to choose which advice to show — never
+          to gate the install, because a wrong guess must not block a legitimate device.
+        */
+        var match = ua.match(/OS (\d+)[._](\d+)/);
+        var major = match ? parseInt(match[1], 10) : 0;
+        var minor = match ? parseInt(match[2], 10) : 0;
+        var isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+        // Safari is the only browser on iOS that can begin an itms-services install. Chrome
+        // and Firefox on iOS are WebKit underneath but do not handle the scheme.
+        var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+
+        if (!isIOS) {
+          status.innerHTML =
+            "Open this page on the gate iPad, in Safari. This link cannot install anything on a computer or an Android device.";
+          install.style.opacity = "0.55";
+          return;
+        }
+
+        if (!isSafari) {
+          status.innerHTML =
+            "<strong>Open this page in Safari.</strong> Other browsers on iOS cannot start an install.";
+          return;
+        }
+
+        if (major > 0) {
+          detected.textContent = "This device reports iOS " + major + "." + minor + ".";
+          if (major > 13 || (major === 13 && minor >= 4)) {
+            status.innerHTML =
+              "This iPad is new enough that you probably do not need the app — Add to Home Screen from " +
+              "<a href='https://tt-hrms.vercel.app/kiosk'>the web terminal</a> works and updates itself. " +
+              "Installing is still fine if you prefer an app.";
+          } else {
+            status.textContent =
+              "This iPad needs the app: on this version of iOS the camera does not work in a Home Screen web app.";
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>

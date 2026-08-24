@@ -120,9 +120,38 @@ export type GateSignal =
   | { kind: "guidance"; verdict: FrameVerdict }
   | { kind: "capturing" };
 
+/**
+ * Anything face-api can read pixels out of.
+ *
+ * A `<video>` in a browser; a `<canvas>` when a native iOS shell is supplying the frames,
+ * because iOS 12 has no `getUserMedia` outside Safari and the pixels have to arrive across a
+ * bridge instead. face-api accepts either without conversion, so this widening costs nothing
+ * — and the descriptor is computed from the same crop by the same model either way, which is
+ * the only thing that must not change.
+ */
+export type FrameSource = HTMLVideoElement | HTMLCanvasElement;
+
+/** True once there are pixels worth running a detector over. */
+function hasPixels(source: FrameSource): boolean {
+  // A canvas is ready as soon as it has been drawn to; only a video buffers.
+  if (source instanceof HTMLCanvasElement) return source.width > 0 && source.height > 0;
+  return source.readyState >= 2 && source.videoWidth > 0;
+}
+
 export interface GateLoopOptions {
-  /** Read the live element each frame: React may swap it under us. */
-  video: () => HTMLVideoElement | null;
+  /**
+   * Obtain the frame source for this iteration.
+   *
+   * ASYNC, and that is the whole point of the signature. A `<video>` is already live, so the
+   * browser path resolves immediately with the element. A native shell PULLS: it draws its
+   * own preview and hands over a single frame only when asked, which is a round trip. Making
+   * the accessor async lets both look identical to this loop — nothing below knows or cares
+   * which one it is holding.
+   *
+   * Re-read every iteration rather than captured once: React may swap the element, and a
+   * pulled frame is a different canvas state each time.
+   */
+  video: () => Promise<FrameSource | null>;
   /** `true` while a punch is in flight: the loop does nothing at all. */
   paused: () => boolean;
   /**
@@ -211,8 +240,8 @@ export async function runGateLoop(options: GateLoopOptions): Promise<void> {
   let stable = 0;
   let firstSeenAt: number | null = null;
 
-  const track = async (video: HTMLVideoElement): Promise<TrackVerdict> => {
-    if (video.readyState < 2 || video.videoWidth === 0) return { kind: "none" };
+  const track = async (video: FrameSource): Promise<TrackVerdict> => {
+    if (!hasPixels(video)) return { kind: "none" };
     const detections = await faceapi.detectAllFaces(video, detectorOptions);
     if (detections.length === 0) return { kind: "none" };
     if (detections.length > 1) return { kind: "many", count: detections.length };
@@ -224,7 +253,8 @@ export async function runGateLoop(options: GateLoopOptions): Promise<void> {
   };
 
   while (!options.cancelled()) {
-    const video = options.video();
+    // Awaited: a native shell answers this over a bridge. See `GateLoopOptions.video`.
+    const video = await options.video();
     if (video === null || options.paused()) {
       stable = 0;
       firstSeenAt = null;
@@ -319,7 +349,7 @@ export async function runGateLoop(options: GateLoopOptions): Promise<void> {
     for (let n = 1; n < wanted; n += 1) {
       await sleep(gapMs);
       if (options.cancelled()) return;
-      const videoNow = options.video();
+      const videoNow = await options.video();
       if (videoNow === null) break;
       const extraStart = performance.now();
       const extra = await readFrame(videoNow, {

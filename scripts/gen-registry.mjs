@@ -25,7 +25,7 @@
  * Usage:  node scripts/gen-registry.mjs [--check]
  *   --check  verify registry.ts is up to date without writing (for CI/gates).
  */
-import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,7 +105,29 @@ const byRoute = new Map();
 const problems = [];
 const inferred = [];
 const standalone = [];
-const routerSrc = readFileSync(join(ROOT, "src/app/routes.tsx"), "utf8");
+/*
+  Everything that can MOUNT a standalone page, not just the router.
+
+  This used to read `src/app/routes.tsx` alone, which was correct while the product was
+  one app. The gate terminal is now a second Vite entry (`kiosk/index.html` →
+  `src/kiosk/main.tsx`) that renders its page directly and deliberately has no router at
+  all — so the check reported the kiosk screen as unreachable at the exact moment it
+  became reachable, and failed the build.
+
+  The guarantee is unchanged and still worth having: a page that opts out of the registry
+  must be imported by something that actually mounts it. Only the list of things that
+  count as a mount point has grown. Any future `src/<app>/main.tsx` is picked up without
+  editing this script, which is the point of globbing rather than listing.
+*/
+const mountSources = [
+  join(ROOT, "src/app/routes.tsx"),
+  ...readdirSync(join(ROOT, "src"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(ROOT, "src", entry.name, "main.tsx"))
+    .filter((candidate) => existsSync(candidate)),
+]
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
 
 for (const file of files) {
   const rel = relative(join(ROOT, "src/features"), file).replace(/\.tsx$/, "");
@@ -115,10 +137,10 @@ for (const file of files) {
     // Assert the claim is true: a page that opts out of the registry but that
     // the router never imports is unreachable, which is the exact silent
     // failure this script exists to prevent.
-    if (!routerSrc.includes(rel.replace(/\\/g, "/"))) {
+    if (!mountSources.includes(rel.replace(/\\/g, "/"))) {
       problems.push(
-        `${rel}: marked @route-standalone ${claim.standalone} but src/app/routes.tsx ` +
-          `does not import it — the screen would be unreachable`,
+        `${rel}: marked @route-standalone ${claim.standalone} but no mount point ` +
+          `(src/app/routes.tsx or any src/*/main.tsx) imports it — the screen would be unreachable`,
       );
       continue;
     }

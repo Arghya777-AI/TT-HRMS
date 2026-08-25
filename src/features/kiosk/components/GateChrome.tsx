@@ -13,7 +13,7 @@
  *   * `pb-[env(safe-area-inset-bottom)]` so the last row clears the home bar.
  */
 import type { ReactNode } from "react";
-import { AlertTriangle, ScanFace } from "lucide-react";
+import { AlertTriangle, RotateCcw, ScanFace } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/config/brand";
 import { cn } from "@/lib/utils";
@@ -66,6 +66,26 @@ export function GateFrame({
           ) : null}
         </div>
         {children}
+
+        {/*
+          ── RELOAD, ON EVERY GATE SCREEN THAT USES THIS FRAME ───────────────────
+          The scan screen has its own, larger one where the camera chooser used to be. This is
+          the same escape hatch for the screens reached BEFORE scanning — pairing, chiefly —
+          because an installed gate has no browser chrome and therefore no reload of its own.
+          A tablet that wedges while pairing would otherwise need force-quitting by somebody who
+          knows how.
+
+          `mt-auto` pushes it to the bottom of the frame so it never competes with the task the
+          screen is actually for.
+        */}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-auto flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-neutral-800/70 px-4 text-sm font-semibold text-neutral-200 active:bg-neutral-700"
+        >
+          <RotateCcw className="size-4 shrink-0" aria-hidden />
+          {t("kiosk.gate.reload")}
+        </button>
       </main>
 
       {footer !== undefined ? (

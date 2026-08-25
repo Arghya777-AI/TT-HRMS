@@ -128,6 +128,37 @@ describe("the gate app is installable", () => {
     expect(hostRule?.destination).toBe("/kiosk/index.html");
   });
 
+  it("gives the gate its own reload, because an installed app has none", () => {
+    /*
+      `display: fullscreen` is the point of installing this — and it means there is no address
+      bar and no reload button. A terminal that wedged, or that got slow after a failed scan, had
+      no way back short of somebody force-quitting the app. That is the one recovery a person at
+      the door can perform without knowing anything, so it has to be ON the screen.
+
+      Asserted in both places: the scan screen, where it is large and replaces the camera
+      chooser, and the shared frame, which covers the screens reached before scanning.
+    */
+    expect(manifest.display).toBe("fullscreen");
+    const scan = read("src", "features", "kiosk", "screens", "GateScanScreen.tsx");
+    const frame = read("src", "features", "kiosk", "components", "GateChrome.tsx");
+    expect(scan).toContain("window.location.reload()");
+    expect(frame).toContain("window.location.reload()");
+    // A document reload, not a React remount: remounting leaves the camera track, the face
+    // engine and the scan loop exactly as wedged as they were.
+    expect(scan).not.toMatch(/setKey\(|remount/);
+  });
+
+  it("offers no camera choice, because the rear one faces the wall", () => {
+    const scan = read("src", "features", "kiosk", "screens", "GateScanScreen.tsx");
+    // Front, always. A public screen with a control that breaks it will eventually be pressed.
+    expect(scan).toContain('useCamera(videoRef, { initial: "user", remember: false })');
+    expect(scan).not.toContain("<CameraChoice");
+    // And the native shell must agree, or the app and the browser would frame the same face
+    // differently and produce different descriptors from it.
+    const native = read("src", "features", "kiosk", "hooks", "useNativeCamera.ts");
+    expect(native).toContain('const DEFAULT_FACING: CameraFacing = "front";');
+  });
+
   it("declares the icons and display mode an install needs", () => {
     const sizes = manifest.icons.map((i) => i.sizes);
     expect(sizes).toContain("192x192");

@@ -21,7 +21,7 @@
  * own confidence and die with the page. A gate device holds no HR records.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Database, Gauge, Loader2, LogOut, MapPin, ScanFace, ShieldCheck } from "lucide-react";
+import { Camera, Database, Gauge, Loader2, LogOut, MapPin, RotateCcw, ScanFace, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nowInstantIso, nowIstClock } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
@@ -49,7 +49,6 @@ import {
   type LatencySummary,
 } from "../lib/gateScanner";
 import { signalLine } from "../lib/gateCopy";
-import { CameraChoice } from "../components/CameraChoice";
 import { CameraProblem } from "../components/GateChrome";
 import { GateLiveHeader } from "../components/GateLiveHeader";
 import {
@@ -188,7 +187,18 @@ export function GateScanScreen({
   const videoRef = useRef<HTMLVideoElement>(null);
   // The queue is usually scanned with the back camera, but the choice is the
   // guard's and it survives a reload for the rest of the session.
-  const camera = useCamera(videoRef, { initial: "environment", remember: true });
+  /*
+    FRONT CAMERA, ALWAYS. No choice offered.
+
+    The gate is wall-mounted and the front camera is the one pointing at the person walking up
+    to it. The rear camera faces the wall, so the only thing the switch could do on a mounted
+    terminal was break it — and a public screen with a control that breaks it is a control that
+    will eventually be pressed.
+
+    `remember: false` deliberately: a stored preference from a build that offered the choice must
+    not resurrect the rear camera on a device that has one.
+  */
+  const camera = useCamera(videoRef, { initial: "user", remember: false });
 
   /*
     ── THE NATIVE SHELL'S CAMERA, WHEN THERE IS ONE ──────────────────────────────
@@ -1035,13 +1045,33 @@ export function GateScanScreen({
           ) : null}
         </Viewfinder>
 
-        <CameraChoice
-          facing={camera.state.facing}
-          canSwitch={camera.canSwitch}
-          switching={camera.state.switching}
-          notice={camera.state.notice}
-          onChoose={camera.chooseFacing}
-        />
+        {/*
+          ── RELOAD, WHERE THE CAMERA SWITCH USED TO BE ──────────────────────────
+          Deliberately large and always visible, and it replaces rather than joins the camera
+          chooser: this is the control that matters on a mounted terminal.
+
+          A browser has a reload button in its chrome. An INSTALLED gate does not — the whole
+          point of `display: fullscreen` is that there is no address bar — so until now a
+          terminal that wedged, or that got slow after a failed scan, had no way back short of
+          somebody force-quitting the app. That is the one recovery a person at the door can
+          perform without knowing anything, so it belongs on the screen.
+
+          `location.reload()` and nothing cleverer. Re-mounting React would leave the camera
+          track, the face engine and the scan loop exactly as wedged as they were; a document
+          reload is the only thing that genuinely starts over. Nothing is lost: the pairing is in
+          localStorage and held punches are in IndexedDB, both of which survive it.
+        */}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-800/80 px-4 text-base font-semibold text-neutral-100 active:bg-neutral-700"
+        >
+          <RotateCcw className="size-5 shrink-0" aria-hidden />
+          {t("kiosk.gate.reload")}
+        </button>
+        <p className="px-1 text-[11px] leading-snug text-neutral-500">
+          {t("kiosk.gate.reloadHint")}
+        </p>
 
         <RecentScans scans={recent} />
       </main>

@@ -568,6 +568,15 @@ export const keysKioskAdmin = {
     exists, and it used to report that as a bare number. A venue should not have to take "it
     synced" on trust from a device that cannot show its own records.
   */
+  /*
+    THE RELOAD. A browser has one in its chrome; an installed gate does not — `display:
+    fullscreen` means there is no address bar — so a terminal that wedged had no way back short
+    of force-quitting the app. This is the one recovery somebody at the door can perform without
+    knowing anything about it.
+  */
+  "kiosk.gate.reload": "Reload the gate",
+  "kiosk.gate.reloadHint":
+    "Use this if the screen freezes or a scan is slow to come back. Nothing is lost — this device stays paired and any scans waiting to sync are kept.",
   "kiosk.gate.log.title": "Stored on this device",
   "kiosk.gate.log.subtitle": "Scans held here, and what has already reached the server.",
   "kiosk.gate.log.open": "Stored here ({count})",

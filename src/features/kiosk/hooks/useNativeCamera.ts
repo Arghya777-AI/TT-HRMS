@@ -49,12 +49,14 @@ export interface NativeCamera {
 }
 
 /**
- * Which camera a gate should use by default.
+ * Which camera the gate uses. Front, and only front.
  *
- * `back`, matching the web path's `environment`: a wall-mounted terminal points its rear
- * camera at the person walking up, and the front camera at the wall.
+ * Corrected: the earlier reasoning had this backwards. On a wall-mounted terminal the FRONT
+ * camera is the one facing the person walking up — it is the screen side — and the rear camera
+ * faces the wall. The web path now forces front too, and the two must agree or the app and the
+ * browser would frame people differently and produce different descriptors from the same face.
  */
-const DEFAULT_FACING: CameraFacing = "back";
+const DEFAULT_FACING: CameraFacing = "front";
 
 export function useNativeCamera(): NativeCamera {
   const present = isNativeShell();

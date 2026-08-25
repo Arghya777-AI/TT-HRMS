@@ -39,8 +39,59 @@
 /** Where the built worker lands. Its scope is WIDER than its path — see the header. */
 const KIOSK_SW_URL = "/kiosk/kiosk-sw.js";
 
+/**
+ * Reload once a new worker has taken over.
+ *
+ * ── WHY THE PAGE HAS TO BE TOLD ──────────────────────────────────────────────
+ * `clients.claim()` puts the new worker in charge of this page, but the page is still RUNNING
+ * the bundle it booted with. In a browser tab the next navigation fixes that. An installed PWA
+ * never navigates again — it is opened once and resumed from a frozen state for weeks — so
+ * without this it would hold the old build indefinitely. That is exactly what was reported: the
+ * server updated, the device did not.
+ *
+ * Guarded twice. `reloading` stops a double reload when both the message and `controllerchange`
+ * arrive, which they normally both do. And a gate mid-punch is left alone until it is not: a
+ * reload during a scan would be one lost re-scan, which is small but avoidable.
+ */
+function reloadWhenReplaced(): void {
+  let reloading = false;
+  const reload = () => {
+    if (reloading) return;
+    reloading = true;
+    /*
+      `data-tt-gate-busy` is set by the scan screen while a punch is in flight. Waiting for it
+      to clear costs a second at most and means no reload ever lands between a face and its
+      record.
+    */
+    const waitForIdle = () => {
+      if (document.body.dataset["ttGateBusy"] === "true") {
+        window.setTimeout(waitForIdle, 500);
+        return;
+      }
+      window.location.reload();
+    };
+    waitForIdle();
+  };
+
+  navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
+    const data = event.data as { type?: string } | null;
+    if (data !== null && data.type === "tt-gate-updated") reload();
+  });
+
+  /*
+    The belt to the message's braces. `controllerchange` fires when a new worker takes control,
+    including in cases where the message never arrives — a worker activated while no client was
+    listening, for instance. Only after the first controller exists: on a brand-new install the
+    controller arrives for the first time and reloading then would be a pointless bounce.
+  */
+  if (navigator.serviceWorker.controller !== null) {
+    navigator.serviceWorker.addEventListener("controllerchange", reload);
+  }
+}
+
 export function registerKioskServiceWorker(): void {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  reloadWhenReplaced();
 
   window.addEventListener("load", () => {
     /*
@@ -79,6 +130,18 @@ export function registerKioskServiceWorker(): void {
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "visible") void registration.update();
         });
+
+        /*
+          ── AND ASK ON A TIMER, BECAUSE A WALL TERMINAL IS NEVER "WOKEN" ──────────
+          `visibilitychange` covers a tablet somebody picks up. It does not cover the gate this
+          product is actually for: mounted, never touched, never backgrounded, running the same
+          page for weeks. Nothing there ever triggers an update check, so a deploy would sit on
+          the server indefinitely while the terminal ran whatever it booted with.
+
+          Half an hour. An update check is one conditional GET of a ~6 KB script — cheap enough
+          to be routine, and far more often than anybody would reload it by hand.
+        */
+        window.setInterval(() => void registration.update(), 30 * 60 * 1000);
       })
       .catch(() => {
         /*

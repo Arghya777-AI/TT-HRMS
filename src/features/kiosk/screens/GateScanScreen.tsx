@@ -370,6 +370,22 @@ export function GateScanScreen({
     };
   }, []);
 
+  /*
+    Advertise "a punch is in flight" on the document, for the service-worker reload to respect.
+    See `reloadWhenReplaced` in src/kiosk/registerKioskServiceWorker.ts.
+
+    On the body rather than in React state because the reader is outside React entirely — a
+    worker message handler registered before the app mounted. A dataset flag is the smallest
+    thing both can see, and it costs one attribute write per punch.
+  */
+  useEffect(() => {
+    const busy = phase.kind === "sending";
+    document.body.dataset["ttGateBusy"] = busy ? "true" : "false";
+    return () => {
+      delete document.body.dataset["ttGateBusy"];
+    };
+  }, [phase.kind]);
+
   const clearIfLaneEmpty = useCallback(() => {
     setPhase((prev) => {
       /*

@@ -29,12 +29,22 @@
   cached success. Nothing carrying an Authorization header or a device signature is stored.
 */
 
-// v3 with the attendance chime. The bump is what makes an ALREADY-INSTALLED gate pick the
-// change up: a new worker byte-differs, so the browser installs it, `activate` drops every
-// cache not named for this version, and the next navigation refetches the shell rather than
-// replaying a cached one. Without the bump an installed terminal could serve yesterday's
-// bundle for as long as its cache survived.
-const VERSION = "v3";
+/*
+  ── THE VERSION IS STAMPED BY THE BUILD, NOT BY HAND ────────────────────────────
+  `__TT_BUILD__` is replaced by `scripts/stamp-sw.mjs` after every `vite build` with a hash of
+  the built gate bundle. It is a placeholder in source and a real value in `dist`.
+
+  It used to be a hand-edited "v3", and that is precisely why an installed gate stopped
+  updating. A browser only installs a new worker when the SCRIPT BYTES DIFFER. Three deploys
+  went out — the dwell rule, the offline face bundle, the Android install fix — and none of them
+  touched this file, so every installed terminal kept the worker it already had, never ran
+  `install` or `activate`, and never learned anything had changed.
+
+  Deriving it from the bundle removes the human step: any change to the gate's code changes this
+  worker, so the update path runs by itself. A constant somebody has to remember to increment is
+  a constant that will be forgotten, and the failure is silent.
+*/
+const VERSION = "__TT_BUILD__";
 const SHELL_CACHE = `kiosk-shell-${VERSION}`;
 const ASSET_CACHE = `kiosk-assets-${VERSION}`;
 const MODEL_CACHE = `kiosk-models-${VERSION}`;
@@ -68,6 +78,22 @@ self.addEventListener("activate", (event) => {
           .map((key) => caches.delete(key)),
       );
       await self.clients.claim();
+
+      /*
+        ── TELL THE PAGE, BECAUSE IT WILL NEVER ASK ──────────────────────────────
+        The other half of why an installed gate stopped updating. `clients.claim()` puts this
+        worker in charge of the open page, but the page is still RUNNING the old bundle — and a
+        wall-mounted PWA never navigates again. It is opened once and then resumed from a frozen
+        state for weeks, so the network-first shell handler above never fires and nothing ever
+        reloads.
+
+        So the worker says so, and the client reloads itself when it is safe to. A gate has no
+        unsaved state worth protecting; the worst an immediate reload costs is one re-scan.
+      */
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        client.postMessage({ type: "tt-gate-updated", version: VERSION });
+      }
     })(),
   );
 });

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Tamarind Tree HRMS — Machani Hospitalities LLP. Enterprise HRMS: IST-native attendance via a shared face-scan kiosk, field-level audit, payroll, documents, and a Claude infographic agent.",
+  "description": "Tamarind Tree HRMS \u2014 Machani Hospitalities LLP. Enterprise HRMS: IST-native attendance via a shared face-scan kiosk, field-level audit, payroll, documents, and a Claude infographic agent.",
   "engines": {
     "node": ">=20"
   },
@@ -11,7 +11,7 @@
     "dev": "npm run gen:registry && vite",
     "gen:registry": "node scripts/gen-registry.mjs",
     "check:registry": "node scripts/gen-registry.mjs --check",
-    "build": "npm run gen:registry && tsc -b && vite build",
+    "build": "npm run gen:registry && tsc -b && vite build && node scripts/stamp-sw.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:validate": "node supabase/tests/harness/validate.mjs --continue",
-    "db:engine-test": "node supabase/tests/harness/engine-test.mjs"
+    "db:engine-test": "node supabase/tests/harness/engine-test.mjs",
+    "stamp:sw": "node scripts/stamp-sw.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

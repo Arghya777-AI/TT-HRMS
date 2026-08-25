@@ -60,11 +60,36 @@ function isApplePortable(): boolean {
   return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
 }
 
+/** The event the entry's head script parked for us, if Chrome fired it before React ran. */
+function parkedEvent(): InstallPromptEvent | null {
+  if (typeof window === "undefined") return null;
+  const parked = (window as unknown as { __ttInstallEvent?: InstallPromptEvent | null })
+    .__ttInstallEvent;
+  return parked ?? null;
+}
+
 export function InstallGateApp(): React.JSX.Element | null {
   const [installed, setInstalled] = useState(isInstalled);
-  const [deferred, setDeferred] = useState<InstallPromptEvent | null>(null);
+  /*
+    Seeded from the parked event, not from null.
+
+    Chrome fires `beforeinstallprompt` once and early — routinely before this module has been
+    parsed. Subscribing on mount and starting from null meant the event had already come and
+    gone, `deferred` stayed null, and the bar returned null forever. On Android that presented
+    as the install link simply not existing.
+  */
+  const [deferred, setDeferred] = useState<InstallPromptEvent | null>(parkedEvent);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /*
+    Set when Chrome has had a fair chance to offer the event and has not.
+
+    That happens for real reasons — engagement heuristics, an origin already installed, a
+    browser that does not support it — and in every one of them a person is still standing
+    there wanting to install the app. Rendering nothing tells them nothing; after this flips,
+    the bar shows Chrome's own menu path instead.
+  */
+  const [promptUnavailable, setPromptUnavailable] = useState(false);
 
   useEffect(() => {
     /*
@@ -83,7 +108,17 @@ export function InstallGateApp(): React.JSX.Element | null {
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
     window.addEventListener("appinstalled", onInstalled);
+
+    /*
+      Three seconds is long enough for Chrome to have fired the event if it was going to —
+      it does so as soon as the manifest and worker are validated, which has already happened
+      by the time this page is interactive. After that, silence means it is not coming, and the
+      honest thing is to show the manual route rather than nothing at all.
+    */
+    const id = window.setTimeout(() => setPromptUnavailable(true), 3_000);
+
     return () => {
+      window.clearTimeout(id);
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
       window.removeEventListener("appinstalled", onInstalled);
     };
@@ -92,10 +127,13 @@ export function InstallGateApp(): React.JSX.Element | null {
   if (installed || dismissed) return null;
 
   const apple = isApplePortable();
-  // Chrome has not offered the event and this is not Apple hardware: either the page is
-  // already installable-but-pending or the browser does not support installing. Showing a
-  // button that cannot do anything would be worse than showing nothing.
-  if (!apple && deferred === null) return null;
+  /*
+    Wait, but do not give up. While Chrome may still fire the event there is nothing useful to
+    say, so stay hidden; once `promptUnavailable` flips, fall through and show the manual path.
+    The old code returned null permanently in this branch, which is why an Android tablet that
+    missed the event had no install affordance at all.
+  */
+  if (!apple && deferred === null && !promptUnavailable) return null;
 
   const install = async () => {
     if (deferred === null) return;
@@ -129,6 +167,18 @@ export function InstallGateApp(): React.JSX.Element | null {
             <Share2 className="inline size-3.5 align-[-2px] text-sky-400" aria-label="Share" />{" "}
             Share, then <span className="font-semibold text-neutral-100">Add to Home Screen</span>.
             It then opens full screen with no address bar.
+          </p>
+        ) : deferred === null ? (
+          /*
+            Chrome never offered the prompt. Its own menu still installs, so name the path
+            rather than leaving somebody hunting for a button that was never going to appear.
+          */
+          <p className="min-w-0 flex-1 text-xs leading-snug text-neutral-300">
+            <span className="font-semibold text-neutral-100">Install this gate app:</span> open
+            the browser menu <span className="font-semibold text-neutral-100">⋮</span> and choose{" "}
+            <span className="font-semibold text-neutral-100">Install app</span> — or{" "}
+            <span className="font-semibold text-neutral-100">Add to Home screen</span>. It then
+            opens full screen and works without internet.
           </p>
         ) : (
           <>

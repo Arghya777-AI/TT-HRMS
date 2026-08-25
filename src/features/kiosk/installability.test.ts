@@ -24,6 +24,8 @@ const read = (...parts: string[]) => readFileSync(join(ROOT, ...parts), "utf8");
 const GATE_PATH = "/kiosk";
 
 const manifest = JSON.parse(read("public", "kiosk.webmanifest")) as {
+  id: string;
+  name: string;
   start_url: string;
   scope: string;
   display: string;
@@ -75,6 +77,24 @@ describe("the gate app is installable", () => {
     expect(gate).toBeGreaterThanOrEqual(0);
     expect(catchAll).toBeGreaterThanOrEqual(0);
     expect(gate).toBeLessThan(catchAll);
+  });
+
+  it("installs as its own app, not as the HR one", () => {
+    /*
+      Chrome keys installability on the manifest `id`. Sharing one would make the gate and the
+      HR product the same installed app — and a wall-mounted terminal that opened somebody's
+      payslips is the exact outcome the two-entry build exists to prevent.
+    */
+    const hr = JSON.parse(read("public", "manifest.webmanifest")) as {
+      id: string;
+      scope: string;
+      name: string;
+    };
+    expect(manifest.id).not.toBe(hr.id);
+    expect(manifest.scope).not.toBe(hr.scope);
+    expect(manifest.name).not.toBe(hr.name);
+    // The HR scope must not sit inside the gate's, or one worker could claim both apps.
+    expect(hr.scope.startsWith(manifest.scope)).toBe(false);
   });
 
   it("declares the icons and display mode an install needs", () => {

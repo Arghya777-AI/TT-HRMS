@@ -73,6 +73,32 @@
       itself be the thing that fails to parse. Every definition is guarded, so a modern
       browser reads this and does nothing.
     -->
+    <!--
+      ── CATCH `beforeinstallprompt` BEFORE REACT EXISTS ─────────────────────────
+      Chrome fires this event ONCE, and early — routinely before the module bundle has been
+      parsed, let alone before React has mounted and attached a listener. A component that
+      subscribes on mount is subscribing after the fact: the event is gone, `deferred` stays
+      null, and the install bar never renders at all. Reported from an Android tablet as
+      simply not being able to find the install link, and it was not there to find.
+
+      So it is captured here, in the head, and parked on `window` for the component to collect
+      whenever it gets around to mounting. `preventDefault()` suppresses Chrome's own mini
+      infobar so there is one affordance rather than two.
+    -->
+    <script>
+      (function () {
+        window.__ttInstallEvent = null;
+        window.addEventListener("beforeinstallprompt", function (event) {
+          event.preventDefault();
+          window.__ttInstallEvent = event;
+        });
+        window.addEventListener("appinstalled", function () {
+          window.__ttInstallEvent = null;
+          window.__ttInstalled = true;
+        });
+      })();
+    </script>
+
     <script>
       (function () {
         /* globalThis — everything below may want it, so it goes first. */

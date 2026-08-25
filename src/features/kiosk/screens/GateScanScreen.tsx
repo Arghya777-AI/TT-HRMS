@@ -302,7 +302,18 @@ export function GateScanScreen({
    * passed. This is the "ready for the next person WITHOUT a tap" requirement. */
   const clearIfLaneEmpty = useCallback(() => {
     setPhase((prev) => {
-      if (prev.kind !== "result" && prev.kind !== "error") return prev;
+      /*
+        "queued" BELONGS IN THIS LIST, AND ITS ABSENCE WAS A BUG.
+
+        It was omitted, so a gate that took a punch while offline sat on the queued card
+        forever: the lane emptying cleared a result and an error but not this, and the only way
+        back to scanning was somebody reloading the page. Reported from the field as "offline
+        works but needs a manual refresh every time" — which is exactly what it was.
+
+        An offline punch is a completed outcome like any other. It holds for the same minimum,
+        then the terminal goes back to scanning by itself.
+      */
+      if (prev.kind !== "result" && prev.kind !== "error" && prev.kind !== "queued") return prev;
       return performance.now() - prev.at >= RESULT_HOLD_MIN_MS ? { kind: "live" } : prev;
     });
   }, []);
@@ -585,7 +596,9 @@ export function GateScanScreen({
   // Backstop for somebody who stands in front of the camera reading their own
   // name: the card goes even if the lane never clears.
   useEffect(() => {
-    if (phase.kind !== "result" && phase.kind !== "error") return;
+    // "queued" listed here for the same reason as above — and this is the path that saves a
+    // wall-mounted terminal whose lane never "empties" because nobody walks past it.
+    if (phase.kind !== "result" && phase.kind !== "error" && phase.kind !== "queued") return;
     const id = window.setTimeout(() => setPhase({ kind: "live" }), RESULT_HOLD_MAX_MS);
     return () => window.clearTimeout(id);
   }, [phase]);

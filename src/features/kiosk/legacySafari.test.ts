@@ -127,6 +127,22 @@ describe.skipIf(!built)("the gate entry polyfills what Safari 12.1 lacks", () =>
     expect(html).toContain(".no-flex-gap .flex");
   });
 
+  it("catches beforeinstallprompt before the bundle can miss it", () => {
+    /*
+      Chrome fires the event ONCE and early — routinely before the module has been parsed. A
+      component that subscribes on mount subscribes after the fact, so the install bar renders
+      nothing, forever. Reported from an Android tablet as the install link simply not
+      existing, which it did not.
+
+      The head parks the event on `window` and the component collects it whenever it mounts.
+      The capture has to precede the hoisted module or it can miss the very event it is for.
+    */
+    expect(preludes).toContain("__ttInstallEvent");
+    expect(html.indexOf("__ttInstallEvent")).toBeLessThan(html.indexOf('<script type="module"'));
+    // Without preventDefault Chrome also shows its own mini infobar, so there are two.
+    expect(preludes).toContain("preventDefault");
+  });
+
   it("shows something other than a black screen when the module never runs", () => {
     expect(html).toContain('id="kiosk-boot"');
     expect(html).toContain("<noscript>");

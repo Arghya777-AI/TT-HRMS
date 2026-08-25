@@ -1004,8 +1004,21 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         null;
 
       if (duplicateOf === null && minDwellSeconds > 0) {
+        /*
+          The elapsed comparison is done in SQL, against the DATABASE clock.
+
+          Not a style choice. `punched_at` is stamped by Postgres, so measuring the gap with
+          this isolate's clock compares two different clocks — and an edge runtime whose time
+          had drifted by a minute would silently widen or narrow the dwell window with nothing
+          to show why. The same `now()` that will stamp this punch decides whether it is too
+          soon, and a replayed queue item measures from its own captured instant instead.
+        */
         const sameDay = await tx`
-          SELECT p.id, p.punched_at, p.effective_date::text AS effective_date
+          SELECT p.id,
+                 p.punched_at,
+                 p.effective_date::text AS effective_date,
+                 (COALESCE(${punchedAtOverride}::timestamptz, now()) - p.punched_at)
+                   < make_interval(secs => ${minDwellSeconds}::double precision) AS too_soon
             FROM public.attendance_punches p
            WHERE p.employee_id = ${matched.employeeId}::uuid
              AND p.effective_date = ${predictedDate}::date
@@ -1016,24 +1029,18 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
           id: string;
           punched_at: Date | string;
           effective_date: string;
+          too_soon: boolean;
         }[];
 
         // Exactly one so far means this scan is the one the engine will read as the check-out.
-        if (existing.length === 1) {
-          const first = existing[0]!;
-          const now = punchedAtOverride === null
-            ? Date.now()
-            : new Date(punchedAtOverride).getTime();
-          const elapsedSeconds = (now - new Date(first.punched_at).getTime()) / 1000;
-          if (elapsedSeconds >= 0 && elapsedSeconds < minDwellSeconds) {
-            dwellSuppressed = true;
-            dwellReference = first;
-            log.info("scan suppressed: minimum dwell not met", {
-              employee_id: matched.employeeId,
-              elapsed_seconds: Math.round(elapsedSeconds),
-              min_dwell_seconds: minDwellSeconds,
-            });
-          }
+        const first = existing.length === 1 ? existing[0] : undefined;
+        if (first !== undefined && first.too_soon === true) {
+          dwellSuppressed = true;
+          dwellReference = first;
+          log.info("scan suppressed: minimum dwell not met", {
+            employee_id: matched.employeeId,
+            min_dwell_seconds: minDwellSeconds,
+          });
         }
       }
 

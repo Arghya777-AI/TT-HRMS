@@ -54,13 +54,194 @@ function walk(dir: string, out: string[] = []): string[] {
  * that legitimately mention dates. Crude but deliberately so: it only has to be
  * good enough that a real occurrence in CODE is still visible.
  */
+/**
+ * Blank out comments and string literals, leaving CODE.
+ *
+ * ── WHY THIS IS A SCANNER AND NOT FIVE REGEXES ───────────────────────────────
+ * It used to be five chained `replace` calls, and it was nearly blind. Every function here
+ * carries `/* ... *\/` comments INSIDE its SQL template literals; stripping those first
+ * removed text across backtick boundaries, so the following backtick regex paired up the wrong
+ * delimiters and swallowed real code as though it were a string. Measured on the largest
+ * function it kept 13% of the file — meaning 87% of `kiosk-punch` was exempt from every rule
+ * below, and a `Date.now()` sat there passing.
+ *
+ * A guard that silently exempts most of what it guards is worse than no guard: it produces
+ * confidence rather than coverage. So this walks the source once, tracking what it is inside,
+ * which is the only way to get the nesting right — `${...}` inside a template contains real
+ * code that must be kept, and may contain further templates.
+ *
+ * Everything is replaced with SPACES rather than removed, so reported positions stay honest.
+ */
 function stripCommentsAndStrings(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
-    .replace(/`(?:[^`\\]|\\[\s\S])*`/g, "``")
-    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+  const out: string[] = [];
+  /** Template nesting depth of `${}` we are currently inside, innermost last. */
+  const templateStack: number[] = [];
+  let i = 0;
+  let braceDepth = 0;
+
+  const keep = (n = 1) => {
+    out.push(source.slice(i, i + n));
+    i += n;
+  };
+  /**
+   * The last non-space CODE character emitted, which is how a regex literal is told from a
+   * division. `/` after a value divides; `/` after an operator, a comma or an opening bracket
+   * begins a pattern. The standard heuristic, and sufficient here.
+   *
+   * It has to be handled at all because `log.ts` redacts with
+   * `/\$argon2[a-z]{0,2}\$[^\s"]+/gi` — a pattern containing a double quote. Without this the
+   * scanner read that quote as a string opener and swallowed the next eighteen declarations.
+   */
+  let lastCode = "";
+  const REGEX_MAY_FOLLOW = new Set([
+    "",
+    "(",
+    ",",
+    "=",
+    ":",
+    "[",
+    "!",
+    "&",
+    "|",
+    "?",
+    "{",
+    "}",
+    ";",
+    "+",
+    "-",
+    "*",
+    "%",
+    "<",
+    ">",
+    "~",
+    "^",
+    "\n",
+  ]);
+  const blank = (n = 1) => {
+    out.push(" ".repeat(n));
+    i += n;
+  };
+
+  while (i < source.length) {
+    const two = source.slice(i, i + 2);
+
+    // Block comment.
+    if (two === "/*") {
+      const end = source.indexOf("*/", i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      blank(stop - i);
+      continue;
+    }
+    // Line comment. `[^:]` guard is gone: a scanner knows a `//` inside a string is a string.
+    if (two === "//") {
+      const end = source.indexOf("\n", i);
+      const stop = end === -1 ? source.length : end;
+      blank(stop - i);
+      continue;
+    }
+    // Quoted strings: single, double.
+    if (source[i] === '"' || source[i] === "'") {
+      const quote = source[i]!;
+      let j = i + 1;
+      while (j < source.length && source[j] !== quote) {
+        if (source[j] === "\\") j += 1;
+        j += 1;
+      }
+      blank(Math.min(j + 1, source.length) - i);
+      continue;
+    }
+    // Template literal: blank its text, but KEEP the code inside `${ }`.
+    if (source[i] === "`") {
+      blank();
+      let inTemplate = true;
+      while (inTemplate && i < source.length) {
+        if (source[i] === "\\") {
+          blank(2);
+          continue;
+        }
+        if (source[i] === "`") {
+          blank();
+          inTemplate = false;
+          break;
+        }
+        if (source.slice(i, i + 2) === "${") {
+          blank(2);
+          templateStack.push(braceDepth);
+          braceDepth += 1;
+          // Fall back to the outer loop so the interpolation is scanned as code.
+          inTemplate = false;
+          break;
+        }
+        blank();
+      }
+      continue;
+    }
+    // Closing an interpolation returns us to template text.
+    if (source[i] === "}" && templateStack.length > 0 && braceDepth === templateStack[templateStack.length - 1]! + 1) {
+      blank();
+      braceDepth = templateStack.pop()!;
+      // Resume the template we were inside.
+      let inTemplate = true;
+      while (inTemplate && i < source.length) {
+        if (source[i] === "\\") {
+          blank(2);
+          continue;
+        }
+        if (source[i] === "`") {
+          blank();
+          inTemplate = false;
+          break;
+        }
+        if (source.slice(i, i + 2) === "${") {
+          blank(2);
+          templateStack.push(braceDepth);
+          braceDepth += 1;
+          inTemplate = false;
+          break;
+        }
+        blank();
+      }
+      continue;
+    }
+    // Regex literal: blank it, so quotes inside a pattern cannot open a phantom string.
+    if (source[i] === "/" && REGEX_MAY_FOLLOW.has(lastCode)) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < source.length) {
+        const ch = source[j]!;
+        if (ch === "\\") {
+          j += 2;
+          continue;
+        }
+        if (ch === "\n") break; // Unterminated: not a regex after all.
+        if (inClass) {
+          if (ch === "]") inClass = false;
+        } else if (ch === "[") {
+          inClass = true;
+        } else if (ch === "/") {
+          closed = true;
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      if (closed) {
+        // Trailing flags.
+        while (j < source.length && /[a-z]/.test(source[j]!)) j += 1;
+        blank(j - i);
+        lastCode = ")"; // A regex is a value, so a following `/` is division.
+        continue;
+      }
+    }
+
+    if (source[i] === "{") braceDepth += 1;
+    else if (source[i] === "}" && braceDepth > 0) braceDepth -= 1;
+    const ch = source[i]!;
+    if (ch.trim() !== "") lastCode = ch;
+    keep();
+  }
+  return out.join("");
 }
 
 const FILES = walk(ROOT).map((path) => ({
@@ -79,6 +260,45 @@ function offenders(pattern: RegExp, allow: readonly string[] = []): string[] {
 describe("edge function discipline (eslint does not cover supabase/functions)", () => {
   it("finds the functions at all — a silent zero would pass every rule below", () => {
     expect(FILES.length).toBeGreaterThan(25);
+  });
+
+  it("still SEES the code it is meant to be guarding", () => {
+    /*
+      The rule that catches this file going blind, which it once was.
+
+      The stripping used to be chained regexes. Every function carries block comments inside its
+      SQL template literals; removing those first shifted the backtick pairing, so real code was
+      swallowed as string — on `kiosk-punch` only 13% of the file survived, meaning 87% of it was
+      exempt from every rule below and a `Date.now()` sat there passing them all. Nothing
+      announced it. Twelve green tests over a file the guard could barely read is worse than no
+      guard: it produces confidence instead of coverage.
+
+      Measured on DECLARATIONS rather than on bulk characters, because bulk is the wrong ruler:
+      a small, heavily documented file is legitimately two-thirds comment, and stripping comments
+      is the point. A top-level `function` or `const` is unambiguously code — if one disappears,
+      the scanner has classified code as string, which is the exact fault being guarded against.
+    */
+    const DECLARATION = /^\s*(?:export\s+)?(?:async\s+)?(?:function|const|class|interface|type)\s+\w/gm;
+    /*
+      The baseline has COMMENTS removed and strings left alone, which isolates the one fault
+      this is looking for. Counting against the raw file instead would flag the code samples
+      these functions quote inside their own explanatory comments — `kiosk-punch` documents the
+      bug it fixed by showing the two lines that caused it — and blanking those is correct.
+    */
+    const withoutComments = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+
+    for (const file of FILES) {
+      const raw = readFileSync(file.path, "utf8");
+      const expected = (withoutComments(raw).match(DECLARATION) ?? []).length;
+      const seen = (file.code.match(DECLARATION) ?? []).length;
+      expect(expected, `${file.rel}: no declarations found, so this proves nothing`)
+        .toBeGreaterThan(0);
+      expect(
+        seen,
+        `${file.rel}: ${expected - seen} of ${expected} declarations were swallowed as string`,
+      ).toBeGreaterThanOrEqual(expected);
+    }
   });
 
   it("uses no toISOString() outside the datetime helper", () => {

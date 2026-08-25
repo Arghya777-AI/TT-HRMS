@@ -532,6 +532,23 @@ export const keysKioskAdmin = {
     send somebody back to the camera to re-scan a face that was never the problem.
   */
   "kiosk.gate.say.problem": "There is a problem at this gate. Please try again or ask for help.",
+  /*
+    Whether the terminal can name people with no internet.
+
+    Stated in the footer because it is otherwise invisible until the moment it matters — and by
+    then there is no connection left to fix it with. Whoever mounts the gate needs to know, in
+    advance, that it wants a few seconds online first.
+  */
+  /*
+    The offline confirmation, with the name the DEVICE resolved.
+
+    Deliberately not "registered": the punch is on the tablet and not yet on the server, and the
+    hint line says so. Naming them is what makes an offline scan verifiable at the moment it
+    happens rather than hours later.
+  */
+  "kiosk.gate.queuedNamed": "Saved on this device — {name}",
+  "kiosk.gate.offlineReady": "Offline recognition ready — {count} faces on this device",
+  "kiosk.gate.offlineNotReady": "Offline recognition not ready — connect once to download faces",
   "kiosk.gate.endShift": "End shift",
   "kiosk.gate.guardChip": "Guard: {name}",
   "kiosk.gate.deviceChip": "{device}",

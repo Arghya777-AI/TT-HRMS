@@ -92,9 +92,23 @@ describe("standing in front of the gate does not check you out", () => {
 
   it("suppresses only the scan that would become the check-out", () => {
     // Exactly one live punch so far means this scan is the one the engine reads as the out.
-    expect(PUNCH).toContain("if (existing.length === 1) {");
-    expect(PUNCH).toContain("elapsedSeconds < minDwellSeconds");
+    expect(PUNCH).toContain("const first = existing.length === 1 ? existing[0] : undefined;");
     expect(PUNCH).toContain("dwellSuppressed = true;");
+  });
+
+  it("measures the gap against the DATABASE clock, not the edge runtime's", () => {
+    /*
+      `punched_at` is stamped by Postgres, so comparing it with an isolate's own clock compares
+      two different clocks — and an edge runtime drifted by a minute would silently widen or
+      narrow the dwell window with nothing to show why. The same `now()` that stamps the punch
+      decides whether it is too soon, and a replayed queue item measures from its captured
+      instant instead.
+    */
+    expect(PUNCH).toContain("< make_interval(secs => ");
+    expect(PUNCH).toContain("AS too_soon");
+    expect(PUNCH).toContain("first.too_soon === true");
+    // The JS arithmetic this replaced, which the edge-function guard also now forbids.
+    expect(CODE).not.toContain("Date.now()");
   });
 
   it("folds the dwell suppression into the same no-write path as a debounce", () => {

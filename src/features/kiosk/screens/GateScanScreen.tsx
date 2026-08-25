@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Gauge, LogOut, MapPin, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { nowInstantIso } from "@/lib/datetime";
+import { nowInstantIso, nowIstClock } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import {
   isDevicePairingDead,
@@ -62,6 +62,8 @@ import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
 import { uuid } from "../lib/uuid";
+import { bundleUsable, loadBundle, refreshBundle, type FaceBundle } from "../lib/faceBundle";
+import { matchLocally } from "../lib/localMatch";
 import { appendRecentScan } from "../lib/recentScans";
 import { chimeForOutcome } from "@/shared/audio/chime";
 import { announcePunch } from "@/shared/audio/announce";
@@ -121,7 +123,19 @@ type Phase =
    * thing outstanding is the sync. Rendering it as a failure would send somebody to find a
    * guard over a working punch.
    */
-  | { kind: "queued"; at: number }
+  | {
+    kind: "queued";
+    at: number;
+    /**
+     * Who the DEVICE thinks it was, matched against its own bundle while offline.
+     *
+     * Display only, and the naming says so. The queued punch still carries its descriptor and
+     * `kiosk-punch` re-matches against live templates when the queue drains — so a stale
+     * bundle can be briefly wrong on this screen and can never be wrong on the record.
+     */
+    localName?: string;
+    localCode?: string;
+  }
   | { kind: "error"; detail: string; at: number };
 
 /**
@@ -183,6 +197,18 @@ export function GateScanScreen({
     the shell, where there is no `getUserMedia` to succeed with. Which one the loop reads is
     decided below, once, by `native.present`.
   */
+  /*
+    ── THE OFFLINE FACE BUNDLE ───────────────────────────────────────────────────
+    Held in a ref, not state, and that is deliberate: the scan loop reads it on the frame that
+    produced a descriptor, and putting a few hundred kilobytes of Float32Arrays into React state
+    would re-render the whole screen — and restart the detector — every time it refreshed.
+
+    `bundleReady` IS state, because the footer shows whether this gate can currently work
+    offline, and that is worth a render when it changes.
+  */
+  const bundleRef = useRef<FaceBundle | null>(null);
+  const [bundleReady, setBundleReady] = useState(false);
+
   const native = useNativeCamera();
   /*
     Destructured so the scan-loop effect can depend on these two rather than on `native`.
@@ -300,6 +326,50 @@ export function GateScanScreen({
 
   /** The card clears itself the moment the lane is empty and the minimum hold has
    * passed. This is the "ready for the next person WITHOUT a tap" requirement. */
+  /*
+    Load what is already stored, then ask the server for anything newer.
+
+    In that order, and the order matters: a gate that boots with no internet must be able to
+    recognise people from the bundle it already has, so the stored copy is adopted before the
+    network is attempted at all. An expired bundle is loaded and then rejected by
+    `bundleUsable`, which is what makes a long outage degrade to "cannot name people" rather
+    than to naming them from data the device can no longer vouch for.
+  */
+  useEffect(() => {
+    let cancelled = false;
+
+    const adopt = (next: FaceBundle | null) => {
+      if (cancelled) return;
+      bundleRef.current = next;
+      setBundleReady(bundleUsable(next));
+    };
+
+    void loadBundle().then((stored) => {
+      adopt(stored);
+      // The server call is fire-and-forget: it cannot fail in a way that should stop scanning.
+      void refreshBundle(deviceRef.current)
+        .then((outcome) => adopt(outcome.bundle))
+        .catch(() => undefined);
+    });
+
+    /*
+      Refresh when the network comes back, so an enrolment made during the outage is available
+      the moment it can be. Listening to `online` rather than polling: a wall terminal may sit
+      untouched for days and a timer would spend that whole time asking a server it cannot see.
+    */
+    const onOnline = () => {
+      void refreshBundle(deviceRef.current)
+        .then((outcome) => adopt(outcome.bundle))
+        .catch(() => undefined);
+    };
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", onOnline);
+    };
+  }, []);
+
   const clearIfLaneEmpty = useCallback(() => {
     setPhase((prev) => {
       /*
@@ -482,11 +552,57 @@ export function GateScanScreen({
             setOnline(false);
             refreshPending();
 
+            /*
+              ── NAME THEM, EVEN WITH NO INTERNET ──────────────────────────────────
+              Until now this branch recorded a scan blind: the descriptor was held, the screen
+              said "saved", and nobody — then or later — could tell who had walked through. The
+              on-screen log stayed empty for the whole outage.
+
+              The bundle makes the terminal able to answer. `matchLocally` mirrors the server's
+              rules exactly and refuses rather than guesses, because an offline gate is where a
+              wrong name does the most damage: nobody is watching, the person leaves satisfied,
+              and the error only surfaces when the queue drains.
+
+              Failure here changes nothing that matters — the punch is already queued.
+            */
+            let localName: string | undefined;
+            let localCode: string | undefined;
+            const bundle = bundleRef.current;
+            if (bundle !== null) {
+              const local = matchLocally(bundle, reading.descriptor);
+              if (local.kind === "matched") {
+                localName = local.displayName;
+                localCode = local.employeeCode;
+                // Logged like any other punch, so the tail shows the outage's arrivals rather
+                // than a gap. `punchKind` is left as "scan": the direction is the server's
+                // ordinal and this device cannot know it while it cannot see the punch log.
+                setRecent((prev) =>
+                  appendRecentScan(
+                    prev,
+                    {
+                      matched: true,
+                      displayName: local.displayName,
+                      employeeCode: local.employeeCode,
+                      punchKind: "scan",
+                      istTime: nowIstClock(nowInstantIso()),
+                    },
+                    uuid(),
+                    RECENT_LIMIT,
+                  ),
+                );
+              }
+            }
+
             // If the queue itself could not accept it, say so plainly. A gate that
             // silently drops an arrival is worse than one that admits it cannot.
             setPhase(
               queued
-                ? { kind: "queued", at: performance.now() }
+                ? {
+                  kind: "queued",
+                  at: performance.now(),
+                  ...(localName !== undefined ? { localName } : {}),
+                  ...(localCode !== undefined ? { localCode } : {}),
+                }
                 : { kind: "error", detail: t("kiosk.gate.queueFull"), at: performance.now() },
             );
             /*
@@ -644,9 +760,16 @@ export function GateScanScreen({
         an amber one as different outcomes.
       */
       case "queued":
+        /*
+          Name them when the device worked it out from its own bundle. The person at the gate
+          gets the same confirmation they would online — which is the whole point of holding the
+          faces locally — and the wording still says the punch has not reached the server.
+        */
         return {
           tone: "good",
-          big: t("kiosk.gate.queued"),
+          big: phase.localName !== undefined
+            ? t("kiosk.gate.queuedNamed", { name: phase.localName })
+            : t("kiosk.gate.queued"),
           small: t("kiosk.gate.queuedHint"),
         };
       case "live": {
@@ -859,6 +982,21 @@ export function GateScanScreen({
               {t("kiosk.scan.enrolNote")}
             </span>
           )}
+        </p>
+
+        {/*
+          Whether this terminal could name somebody with no internet.
+
+          Worth a line of its own because it is otherwise invisible until the moment it matters,
+          and by then there is no internet to fix it with. A gate showing "offline recognition
+          off" needs a few seconds of connection before it is mounted on a wall — knowing that
+          in advance is the whole point of saying it.
+        */}
+        <p className="mt-1 flex items-center gap-2 text-[11px] text-neutral-500">
+          <Camera className="size-3.5 shrink-0" aria-hidden />
+          {bundleReady
+            ? t("kiosk.gate.offlineReady", { count: String(bundleRef.current?.people.length ?? 0) })
+            : t("kiosk.gate.offlineNotReady")}
         </p>
       </footer>
     </div>

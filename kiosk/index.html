@@ -74,6 +74,25 @@
       browser reads this and does nothing.
     -->
     <!--
+      ── WHY THE GATE HAS ITS OWN ORIGIN: https://tt-gate.vercel.app ─────────────
+      An installed web app OWNS ITS SCOPE. The HR product's manifest declares `scope: "/"`,
+      which contains `/kiosk` — so on a device where TT HRMS is already installed, Chrome sees
+      an installed app whose scope covers this page and offers to OPEN it rather than install
+      it. "You already have this app." The two manifests differ in `id`, `name` and `scope` and
+      it makes no difference: scope containment is what Chrome checks, and `/kiosk` is inside
+      `/`.
+
+      It cannot be fixed by narrowing the HR scope. Its routes are spread across `/me`,
+      `/admin`, `/apply` and more, so `/` is the only prefix that covers them; anything
+      narrower would drop half the product out of its own installed app.
+
+      Installed apps are keyed PER ORIGIN, so a second origin has no HR app installed on it and
+      no scope to collide with. `tt-gate.vercel.app` serves this same build, and installing the
+      gate from there gives a genuinely separate app on the home screen. Both hosts keep
+      working; only the install should be done from the gate one.
+    -->
+
+    <!--
       ── CATCH `beforeinstallprompt` BEFORE REACT EXISTS ─────────────────────────
       Chrome fires this event ONCE, and early — routinely before the module bundle has been
       parsed, let alone before React has mounted and attached a listener. A component that

@@ -152,11 +152,33 @@
         app is the only way to get a proper full-screen terminal on that hardware.
       </p>
       <p>
-        On <strong>iOS 13.4 or newer</strong> you do not need this. Open
-        <a href="https://tt-hrms.vercel.app/kiosk">tt-hrms.vercel.app/kiosk</a> in Safari and
-        use <em>Share → Add to Home Screen</em>. Same terminal, nothing to install, updates by
-        itself.
+        On <strong>iOS 13.4 or newer</strong>, and on <strong>Android</strong>, you do not need
+        this app at all. Open
+        <a href="https://tt-gate.vercel.app/kiosk">tt-gate.vercel.app/kiosk</a> and install it
+        from there — Safari: <em>Share → Add to Home Screen</em>; Chrome: <em>⋮ → Install
+        app</em>. Same terminal, nothing to sideload, updates by itself.
       </p>
+
+      <!--
+        The address matters, and this is the one place somebody installing will read it.
+        An installed web app owns its scope. The HR product's scope is "/", which contains
+        "/kiosk", so on a phone that already has TT HRMS installed Chrome offers to OPEN the
+        gate in that app rather than install it as its own — "you already have this app".
+        Installed apps are keyed per ORIGIN, so the gate host has no HR app to collide with.
+      -->
+      <div class="card warn">
+        <p>
+          <strong>Install the gate from <code>tt-gate.vercel.app</code>, not from
+          <code>tt-hrms.vercel.app</code>.</strong>
+        </p>
+        <p class="muted">
+          Both addresses run the same terminal. But if this phone already has the
+          <em>TT HRMS</em> app installed, installing from the HRMS address adds the gate
+          <em>into</em> that app instead of creating a separate one — the browser will say you
+          already have it. Installing from the gate address gives you a second, independent
+          <em>TT Gate</em> icon.
+        </p>
+      </div>
       <p class="muted" id="detected"></p>
 
       <h2>After it installs</h2>

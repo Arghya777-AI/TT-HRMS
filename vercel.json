@@ -2,6 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "tt-gate.vercel.app"
+        }
+      ],
+      "destination": "/kiosk/index.html"
+    },
+    {
       "source": "/kiosk",
       "destination": "/kiosk/index.html"
     },

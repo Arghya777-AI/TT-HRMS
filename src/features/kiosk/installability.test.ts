@@ -79,12 +79,7 @@ describe("the gate app is installable", () => {
     expect(gate).toBeLessThan(catchAll);
   });
 
-  it("installs as its own app, not as the HR one", () => {
-    /*
-      Chrome keys installability on the manifest `id`. Sharing one would make the gate and the
-      HR product the same installed app — and a wall-mounted terminal that opened somebody's
-      payslips is the exact outcome the two-entry build exists to prevent.
-    */
+  it("is a different app from the HR one", () => {
     const hr = JSON.parse(read("public", "manifest.webmanifest")) as {
       id: string;
       scope: string;
@@ -93,8 +88,44 @@ describe("the gate app is installable", () => {
     expect(manifest.id).not.toBe(hr.id);
     expect(manifest.scope).not.toBe(hr.scope);
     expect(manifest.name).not.toBe(hr.name);
-    // The HR scope must not sit inside the gate's, or one worker could claim both apps.
-    expect(hr.scope.startsWith(manifest.scope)).toBe(false);
+  });
+
+  it("has its own ORIGIN to install from, because scope nesting cannot be fixed", () => {
+    /*
+      THE ASSERTION THIS FILE GOT WRONG ONCE, AND WHY IT MATTERED.
+
+      It used to check `hr.scope.startsWith(gate.scope)` — the harmless direction, which passes
+      trivially because "/" does not start with "/kiosk". The direction that decides anything is
+      the reverse: the GATE's scope sits INSIDE the HR app's `/`. An installed web app owns its
+      scope, so on a device where TT HRMS is installed, Chrome sees an app whose scope already
+      covers /kiosk and offers to OPEN it instead of installing — "you already have this app."
+      Differing `id`, `name` and `scope` make no difference; containment is what is checked.
+
+      Narrowing the HR scope is not available: its routes span /me, /admin, /apply and more, so
+      "/" is the only prefix that covers them.
+
+      Installed apps are keyed PER ORIGIN, so the fix is a second origin with no HR app on it.
+      This asserts the nesting really is there — if it ever stops being, this test should be
+      revisited rather than silently kept — and that the separate origin is written down where
+      somebody installing the gate will actually read it.
+    */
+    const hr = JSON.parse(read("public", "manifest.webmanifest")) as { scope: string };
+    expect(
+      manifest.scope.startsWith(hr.scope),
+      "the gate scope is no longer inside the HR scope — re-evaluate whether a separate origin is still needed",
+    ).toBe(true);
+
+    const GATE_ORIGIN = "tt-gate.vercel.app";
+    expect(read("kiosk", "index.html")).toContain(GATE_ORIGIN);
+    expect(read("vercel.json")).toContain(GATE_ORIGIN);
+    // Typing the bare host must reach the gate, not the HR app.
+    const vercelConfig = JSON.parse(read("vercel.json")) as {
+      rewrites: { source: string; has?: { type: string; value: string }[]; destination: string }[];
+    };
+    const hostRule = vercelConfig.rewrites.find((r) =>
+      r.has?.some((h) => h.type === "host" && h.value === GATE_ORIGIN),
+    );
+    expect(hostRule?.destination).toBe("/kiosk/index.html");
   });
 
   it("declares the icons and display mode an install needs", () => {

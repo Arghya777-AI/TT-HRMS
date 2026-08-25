@@ -1643,27 +1643,27 @@ export const en = catalogue({
     "More / less" alone does not say more or less OF WHAT, and the answer is not guessable from
     a column of signed durations. Spelled out, in the client's own words.
   */
-  "attendance.col.variance": "More / less working hours",
+  "attendance.col.variance": "Overtime / undertime",
   "attendance.grid.varianceHint": "Worked {worked} against {expected} expected",
   /*
     The same explanation as the column's tooltip, but VISIBLE. A tooltip is not an explanation on
     a phone — there is no hover — and this is the column people will ask about first.
   */
   "attendance.grid.varianceLegend":
-    "MORE / LESS WORKING HOURS compares the hours you actually worked against the hours your shift expected that day. Green means you worked more, red means less. Days that are not processed yet, holidays, weekly offs and approved leave are not counted either way.",
+    "OVERTIME / UNDERTIME is the hours you actually worked against the hours your shift expected that day — green for over, red for under. Where extra time qualifies as payable overtime, the amount is shown underneath it: overtime has a minimum before it counts, and it has to be approved, so working over does not always mean overtime is due. Days not processed yet, holidays, weekly offs and approved leave are not counted either way.",
   // Why a day contributed nothing. A bare dash invites the question the column exists to answer.
   "attendance.variance.reason.holiday": "A holiday — nothing was expected, so anything worked is extra",
   "attendance.variance.reason.weeklyOff": "A weekly off — nothing was expected, so anything worked is extra",
   "attendance.variance.reason.onLeave": "Approved leave — nothing was expected for this day",
   "attendance.variance.reason.notWorking": "Not a working day for you",
   "attendance.variance.reason.unresolved": "Not processed yet — this day is not counted either way",
-  "attendance.col.ot": "OT",
   "attendance.col.action": "Action",
   "attendance.action.punches": "Punches",
   "attendance.action.fix": "Fix",
   "attendance.action.locked": "Locked for payroll",
   "attendance.grid.regularized": "Corrected through a regularization",
-  "attendance.grid.otPending": "{value} pending",
+  "attendance.grid.otApproved": "{value} overtime approved",
+  "attendance.grid.otPending": "{value} overtime pending approval",
   "attendance.grid.noShift": "No shift rostered",
 
   // States

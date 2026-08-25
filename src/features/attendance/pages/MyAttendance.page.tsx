@@ -258,9 +258,28 @@ export default function MyAttendancePage() {
         A day that expects nothing says so instead of showing a zero. "—" with a reason beats a
         number that looks like a measurement but is not one.
       */
+      /*
+        ── ONE COLUMN, TWO FACTS THAT ARE NOT THE SAME NUMBER ──────────────────
+        This replaced a separate OT column, because two adjacent columns both about "extra
+        time" read as a duplicate — and on most rows the OT one was empty, which made it look
+        redundant rather than different.
+
+        They are genuinely different, which is why the payable figure survives as a sub-line
+        instead of being deleted:
+
+          THE BIG NUMBER is arithmetic — worked minus what the shift expected. Nobody has to
+          agree to it; it is simply what happened.
+          THE SUB-LINE is what payroll will act on. Overtime is filtered by eligibility, a
+          minimum before it counts at all, rounding, a daily cap, and approval. Somebody can
+          work ninety minutes over and be paid for none of it.
+
+        Collapsing to one number would have told an employee they were owed something nobody had
+        approved. Keeping two columns implied they were the same measurement. A number and its
+        payable consequence, stacked, is neither.
+      */
       key: "variance",
       header: t("attendance.col.variance"),
-      width: "10rem",
+      width: "11rem",
       align: "right",
       hideBelow: "md",
       render: (row) => {
@@ -273,38 +292,39 @@ export default function MyAttendancePage() {
             </span>
           );
         }
-        if (v.varianceMinutes === 0) return <span className="text-muted-foreground">0m</span>;
+
+        const approved = row.day.approved_overtime_minutes ?? 0;
+        const eligible = row.day.overtime_minutes ?? 0;
+        // Only ever shown on a surplus day: "pending approval" against a shortfall is nonsense.
+        const payable =
+          v.varianceMinutes > 0 && approved > 0
+            ? t("attendance.grid.otApproved", { value: fmtDurationHm(approved) })
+            : v.varianceMinutes > 0 && eligible > 0
+              ? t("attendance.grid.otPending", { value: fmtDurationHm(eligible) })
+              : null;
+
         return (
-          <span
-            className={v.varianceMinutes > 0 ? "text-success" : "text-destructive"}
-            title={t("attendance.grid.varianceHint", {
-              worked: fmtDurationHm(v.workedMinutes),
-              expected: fmtDurationHm(v.expectedMinutes),
-            })}
-          >
-            {fmtSignedMinutes(v.varianceMinutes)}
+          <span className="inline-flex flex-col items-end leading-tight">
+            <span
+              className={
+                v.varianceMinutes === 0
+                  ? "text-muted-foreground"
+                  : v.varianceMinutes > 0
+                    ? "text-success"
+                    : "text-destructive"
+              }
+              title={t("attendance.grid.varianceHint", {
+                worked: fmtDurationHm(v.workedMinutes),
+                expected: fmtDurationHm(v.expectedMinutes),
+              })}
+            >
+              {v.varianceMinutes === 0 ? "0m" : fmtSignedMinutes(v.varianceMinutes)}
+            </span>
+            {payable !== null ? (
+              <span className="text-[11px] text-muted-foreground">{payable}</span>
+            ) : null}
           </span>
         );
-      },
-    },
-    {
-      key: "ot",
-      header: t("attendance.col.ot"),
-      width: "8rem",
-      align: "right",
-      hideBelow: "lg",
-      render: (row) => {
-        const approved = row.day?.approved_overtime_minutes ?? null;
-        if (approved !== null && approved > 0) return fmtDurationHm(approved);
-        const eligible = row.day?.overtime_minutes ?? null;
-        if (eligible !== null && eligible > 0) {
-          return (
-            <span className="text-muted-foreground">
-              {t("attendance.grid.otPending", { value: fmtDurationHm(eligible) })}
-            </span>
-          );
-        }
-        return dash(null);
       },
     },
     {

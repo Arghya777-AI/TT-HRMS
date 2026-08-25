@@ -55,6 +55,22 @@ import { MonthDonut } from "../components/MonthDonut";
 import { MonthGlance } from "../components/MonthGlance";
 import { MonthStatusMix } from "../components/MonthStatusMix";
 import { MonthKpis } from "../components/MonthKpis";
+import { MonthTotals } from "../components/MonthTotals";
+import { dayVariance, fmtSignedMinutes, type NoExpectationReason } from "../lib/variance";
+
+/**
+ * Why a day contributed nothing, in words.
+ *
+ * A dash with no explanation invites the question this column exists to answer. Kept beside the
+ * column rather than inside `variance.ts`, so the calculation stays free of copy.
+ */
+const VARIANCE_REASON_KEY: Record<NoExpectationReason, Parameters<typeof t>[0]> = {
+  holiday: "attendance.variance.reason.holiday",
+  weekly_off: "attendance.variance.reason.weeklyOff",
+  on_leave: "attendance.variance.reason.onLeave",
+  not_working_day: "attendance.variance.reason.notWorking",
+  unresolved: "attendance.variance.reason.unresolved",
+};
 
 const SLICE_LABEL_KEY: Record<SliceKey, Parameters<typeof t>[0]> = {
   attended: "attendance.slice.attended",
@@ -196,6 +212,48 @@ export default function MyAttendancePage() {
         const late = row.day?.late_minutes ?? null;
         if (late === null || late <= 0) return dash(null);
         return <span className="text-warning">{fmtDurationHm(late)}</span>;
+      },
+    },
+    {
+      /*
+        ── MORE OR LESS THAN THE SHIFT ─────────────────────────────────────────
+        The column the WORKED figure on its own cannot answer: nine hours is a full day on one
+        shift and a short one on another, and nobody reads a shift length off a table.
+
+        Green ahead, red behind, and the sign is printed even when positive — in a column that
+        holds either direction, an unsigned "1h 20m" is ambiguous at exactly the glance this
+        column exists for.
+
+        A day that expects nothing says so instead of showing a zero. "—" with a reason beats a
+        number that looks like a measurement but is not one.
+      */
+      key: "variance",
+      header: t("attendance.col.variance"),
+      width: "8rem",
+      align: "right",
+      hideBelow: "md",
+      render: (row) => {
+        if (row.day === null) return dash(null);
+        const v = dayVariance(row.day);
+        if (!v.counts) {
+          return (
+            <span className="text-muted-foreground" title={t(VARIANCE_REASON_KEY[v.reason ?? "unresolved"])}>
+              {dash(null)}
+            </span>
+          );
+        }
+        if (v.varianceMinutes === 0) return <span className="text-muted-foreground">0m</span>;
+        return (
+          <span
+            className={v.varianceMinutes > 0 ? "text-success" : "text-destructive"}
+            title={t("attendance.grid.varianceHint", {
+              worked: fmtDurationHm(v.workedMinutes),
+              expected: fmtDurationHm(v.expectedMinutes),
+            })}
+          >
+            {fmtSignedMinutes(v.varianceMinutes)}
+          </span>
+        );
       },
     },
     {
@@ -411,6 +469,12 @@ export default function MyAttendancePage() {
             )
           }
         />
+
+        {/*
+          Under the table, because a reader arrives at the total having just scrolled the
+          evidence for it. Draws from the same rows the grid does, so the two cannot disagree.
+        */}
+        <MonthTotals days={days.data ?? []} monthLabel={monthLabel} />
       </StateBoundary>
     </div>
   );

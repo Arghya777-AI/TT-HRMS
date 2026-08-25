@@ -1552,6 +1552,37 @@ export const en = catalogue({
   "attendance.col.out": "Out",
   "attendance.col.worked": "Worked",
   "attendance.col.late": "Late",
+  /*
+    THE MORE/LESS COLUMN. WORKED on its own cannot answer "did I make my hours" — nine hours is
+    a full day on one shift and a short one on another, and nobody reads a shift length off a
+    table. Green ahead, red behind.
+  */
+  /*
+    THE MONTH TOTAL, under the register it totals. A day grid answers "what happened on the
+    3rd"; it cannot answer "am I ahead this month" without somebody adding up thirty numbers.
+  */
+  "attendance.totals.title": "{month} — more or less than your shifts",
+  "attendance.totals.aria": "Totals for {month}",
+  "attendance.totals.basis": "Across {counted} processed days · {surplusDays} ahead · {shortfallDays} behind",
+  "attendance.totals.expected": "Expected",
+  "attendance.totals.worked": "Worked",
+  // Shown separately as well as netted: "+40m" describes a level month and a volatile one alike.
+  "attendance.totals.surplus": "Time over",
+  "attendance.totals.shortfall": "Time under",
+  "attendance.totals.ahead": "ahead of your shifts",
+  "attendance.totals.behind": "behind your shifts",
+  "attendance.totals.level": "exactly on your shifts",
+  // A total over six of twenty-five days is a fact about six days, and must say so.
+  "attendance.totals.unresolved":
+    "{count} days are still not processed, so they are not counted here in either direction. This total will move as they are.",
+  "attendance.col.variance": "More / less",
+  "attendance.grid.varianceHint": "Worked {worked} against {expected} expected",
+  // Why a day contributed nothing. A bare dash invites the question the column exists to answer.
+  "attendance.variance.reason.holiday": "A holiday — nothing was expected, so anything worked is extra",
+  "attendance.variance.reason.weeklyOff": "A weekly off — nothing was expected, so anything worked is extra",
+  "attendance.variance.reason.onLeave": "Approved leave — nothing was expected for this day",
+  "attendance.variance.reason.notWorking": "Not a working day for you",
+  "attendance.variance.reason.unresolved": "Not processed yet — this day is not counted either way",
   "attendance.col.ot": "OT",
   "attendance.col.action": "Action",
   "attendance.action.punches": "Punches",

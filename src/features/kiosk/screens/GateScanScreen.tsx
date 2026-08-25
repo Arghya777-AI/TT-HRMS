@@ -62,6 +62,7 @@ import { useKioskLocation } from "../hooks/useKioskLocation";
 import type { SignInLocationStatus } from "@/features/auth/lib/geolocation";
 import { useOperatorHeartbeat } from "../hooks/useOperatorHeartbeat";
 import { uuid } from "../lib/uuid";
+import { appendRecentScan } from "../lib/recentScans";
 import { chimeForOutcome } from "@/shared/audio/chime";
 import { announcePunch } from "@/shared/audio/announce";
 import type { EngineStatus } from "../lib/engine";
@@ -542,20 +543,12 @@ export function GateScanScreen({
         announcePunch(kind, spoken);
         setScanCount((prev) => prev + 1);
         setLastScanAt(nowInstantIso());
-        if (result.data.matched) {
-          setRecent((prev) =>
-            [
-              {
-                id: uuid(),
-                displayName: result.data.displayName ?? "",
-                employeeCode: result.data.employeeCode ?? "",
-                punchKind: result.data.punchKind ?? "scan",
-                istTime: result.data.istTime ?? "",
-              },
-              ...prev,
-            ].slice(0, RECENT_LIMIT),
-          );
-        }
+        /*
+          The tail lists PUNCHES, not scan attempts — a suppressed re-scan is answered from the
+          original punch, and appending that answer is what printed one punch on two rows at the
+          same second. The rule lives in `appendRecentScan` so it can be tested directly.
+        */
+        setRecent((prev) => appendRecentScan(prev, result.data, uuid(), RECENT_LIMIT));
       },
     }).catch(() => {
       if (!cancelled) {

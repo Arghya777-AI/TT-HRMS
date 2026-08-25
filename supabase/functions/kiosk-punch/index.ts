@@ -75,6 +75,35 @@ const DEFAULT_MIN_MARGIN = 0.06;
 const DEFAULT_DEBOUNCE_SECONDS = 120;
 
 /**
+ * THE GATE'S OWN FLOOR UNDER THE DEBOUNCE: once a punch is recorded, nothing else is
+ * recorded for five minutes.
+ *
+ * ── WHY THE GATE NEEDS ITS OWN NUMBER ────────────────────────────────────────
+ * Migration 072 took the shared debounce down to 60 seconds, in the client's words: "There
+ * should always be a button. After 1 minute only, they can log out." That is a statement about
+ * a BUTTON — a deliberate press by someone who has decided to punch again. It is the right
+ * number for `attendance-self-punch`, which is why that path is untouched here.
+ *
+ * A gate is not a button. Nobody decides to scan; a camera reads whoever is standing in front
+ * of it, several times a minute, whether or not they meant to punch. At 60 seconds a person
+ * chatting by the door collects a punch a minute. The client's rule for the gate is the plain
+ * one: "when it is already registered, only the first log stands — no other log for the
+ * five-minute gap."
+ *
+ * ── WHY 300, AND WHY A FLOOR RATHER THAN A REPLACEMENT ───────────────────────
+ * 300 is the number the gate already reasons in: MINIMUM DWELL is five minutes, so the two
+ * rules now agree instead of covering different spans. A floor (`max`, never `min`) means a
+ * policy that wants a LONGER window still gets it; only a shorter one is lifted. Migration 072
+ * verifies the stored policy is 60 and would fail if this rewrote it — so it does not.
+ *
+ * ── WHAT ACTUALLY CHANGES ────────────────────────────────────────────────────
+ * Only third-and-later scans between 60s and 300s. The first→second transition was already
+ * covered by MINIMUM DWELL at the same 300 seconds, so no in→out pair that used to record
+ * stops recording because of this.
+ */
+const GATE_MIN_DEBOUNCE_SECONDS = 300;
+
+/**
  * MINIMUM DWELL: how long after a check-in before a check-OUT will be accepted.
  *
  * ── THE PROBLEM THIS SOLVES ──────────────────────────────────────────────────
@@ -513,10 +542,12 @@ async function resolveThresholds(
   const policyMinConfidence = row === null ? DEFAULT_MIN_CONFIDENCE : Number(row.min_confidence_for_auto_accept);
   const policyMinMargin = row === null ? DEFAULT_MIN_MARGIN : Number(row.min_margin_for_auto_accept);
   const debounce = row === null ? DEFAULT_DEBOUNCE_SECONDS : Number(row.punch_debounce_seconds);
+  const resolvedDebounce = Number.isFinite(debounce) ? debounce : DEFAULT_DEBOUNCE_SECONDS;
   return {
     minConfidence: Math.max(deviceMinConfidence, policyMinConfidence),
     minMargin: policyMinMargin,
-    debounceSeconds: Number.isFinite(debounce) ? debounce : DEFAULT_DEBOUNCE_SECONDS,
+    // Floor, not replacement — a policy asking for longer keeps it. See GATE_MIN_DEBOUNCE_SECONDS.
+    debounceSeconds: Math.max(resolvedDebounce, GATE_MIN_DEBOUNCE_SECONDS),
   };
 }
 
@@ -745,7 +776,7 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
   const runnerUp = candidates[1];
 
   const thresholds = best === undefined
-    ? { minConfidence: Math.max(device.minMatchConfidence, DEFAULT_MIN_CONFIDENCE), minMargin: DEFAULT_MIN_MARGIN, debounceSeconds: DEFAULT_DEBOUNCE_SECONDS }
+    ? { minConfidence: Math.max(device.minMatchConfidence, DEFAULT_MIN_CONFIDENCE), minMargin: DEFAULT_MIN_MARGIN, debounceSeconds: Math.max(DEFAULT_DEBOUNCE_SECONDS, GATE_MIN_DEBOUNCE_SECONDS) }
     : await resolveThresholds(client, best.employeeId, device.minMatchConfidence);
 
   const bestDistance = best?.distance ?? null;

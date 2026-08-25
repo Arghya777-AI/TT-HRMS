@@ -148,3 +148,30 @@ describe("the gate stands unattended", () => {
     expect(behavioural).toEqual([]);
   });
 });
+
+describe("once a punch is recorded, the gate records nothing else for five minutes", () => {
+  /*
+    Migration 072 took the SHARED debounce to 60 seconds for the web button ("after 1 minute
+    only, they can log out"). A camera is not a button: nobody decides to scan, so at 60s a
+    person standing by the door collected a punch a minute. The gate therefore floors its own
+    window at the five minutes it already reasons in for MINIMUM DWELL.
+  */
+  it("floors the gate debounce at five minutes", () => {
+    expect(PUNCH).toContain("const GATE_MIN_DEBOUNCE_SECONDS = 300;");
+  });
+
+  it("raises a shorter policy window without ever lowering a longer one", () => {
+    expect(PUNCH).toContain("debounceSeconds: Math.max(resolvedDebounce, GATE_MIN_DEBOUNCE_SECONDS),");
+    // A `min` here would cap every policy at five minutes instead of lifting the short ones.
+    expect(CODE).not.toMatch(/debounceSeconds:\s*Math\.min\(/);
+  });
+
+  it("applies the same floor when no policy row resolves", () => {
+    // The fallback path used the bare 120s default, so an employee on no policy got a
+    // shorter window at the gate than everyone else.
+    expect(PUNCH).toContain(
+      "debounceSeconds: Math.max(DEFAULT_DEBOUNCE_SECONDS, GATE_MIN_DEBOUNCE_SECONDS)",
+    );
+    expect(CODE).not.toMatch(/debounceSeconds:\s*DEFAULT_DEBOUNCE_SECONDS\s*\}/);
+  });
+});

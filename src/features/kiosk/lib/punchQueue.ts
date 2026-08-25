@@ -31,8 +31,29 @@
  */
 
 const DB_NAME = "tt-gate";
-const DB_VERSION = 1;
+/**
+ * v2 adds the SYNC LOG — the record of what has already reached the server.
+ *
+ * The queue deletes an item once the server accepts it, which is correct: holding acknowledged
+ * scans forever would grow without bound. But it left nothing to show afterwards. A gate that
+ * ran through an outage could not tell anybody WHAT it had held or WHEN each item finally
+ * arrived, and "it synced" is not something a venue should have to take on trust.
+ *
+ * The upgrade is additive — a new store beside the existing one, nothing rewritten — so a device
+ * mid-outage keeps every queued punch through it.
+ */
+const DB_VERSION = 2;
 const STORE = "punch-queue";
+const SYNC_LOG = "sync-log";
+
+/**
+ * How many synced records are kept.
+ *
+ * 500 — several days of a busy gate, enough to answer "did yesterday's outage clear?", and
+ * bounded so a terminal left running for a year does not fill its own storage with history
+ * nobody will read. Oldest are dropped first."
+ */
+const SYNC_LOG_LIMIT = 500;
 
 /**
  * Attempts before an item is parked.
@@ -59,6 +80,16 @@ export interface QueuedPunch {
     livenessModel?: string;
     framesAnalysed?: number;
   };
+  /**
+   * Who the DEVICE recognised at capture time, from its offline bundle.
+   *
+   * Display and audit only — it is shown in the on-device log and carried into the sync history
+   * so an outage can be read back afterwards. It is NOT what the record is based on: the server
+   * re-matches the descriptor when the queue drains.
+   */
+  localName?: string;
+  /** The device's own match, offered to the server as a hint when its 1:N cannot decide. */
+  localEmployeeId?: string;
   attempts: number;
   /** Set once the item has exhausted {@link MAX_ATTEMPTS}; never sent again. */
   parked?: true;
@@ -71,6 +102,11 @@ function openDb(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
+      if (!db.objectStoreNames.contains(SYNC_LOG)) {
+        // Keyed by event id, with an index on when it synced so the newest can be shown first.
+        const log = db.createObjectStore(SYNC_LOG, { keyPath: "clientEventId" });
+        log.createIndex("syncedAt", "syncedAt", { unique: false });
+      }
       if (!db.objectStoreNames.contains(STORE)) {
         // Keyed by the event id, so enqueueing the same scan twice — a retried render, a
         // double-fired handler — overwrites rather than duplicating. Local idempotency
@@ -96,12 +132,13 @@ function openDb(): Promise<IDBDatabase> {
 async function withStore<T>(
   mode: IDBTransactionMode,
   work: (store: IDBObjectStore) => IDBRequest<T> | { result: T },
+  storeName: string = STORE,
 ): Promise<T> {
   const db = await openDb();
   try {
     return await new Promise<T>((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const outcome = work(tx.objectStore(STORE));
+      const tx = db.transaction(storeName, mode);
+      const outcome = work(tx.objectStore(storeName));
       let value: T;
       if ("onsuccess" in outcome) {
         outcome.onsuccess = () => {
@@ -216,5 +253,122 @@ export async function isAvailable(): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Surviving the app being closed
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ask the browser to treat this device's storage as PERSISTENT.
+ *
+ * IndexedDB already survives the app being closed, a reload and a power cycle — that part was
+ * never in doubt. What it does not survive by default is EVICTION: browsers clear "best-effort"
+ * storage under disk pressure, and Safari additionally discards site data after seven days
+ * without a visit for anything not installed to the home screen. A gate that queued a morning's
+ * arrivals and was then left closed over a long weekend could lose them, and would never say so.
+ *
+ * `navigator.storage.persist()` moves the origin to "persistent", which browsers will not evict
+ * automatically. It is granted without a prompt for an INSTALLED app, which is one more reason
+ * the gate should be installed rather than left in a tab.
+ *
+ * Returns what actually happened, so the screen can say whether the guarantee is in force
+ * rather than assuming it.
+ */
+export async function requestPersistentStorage(): Promise<"persisted" | "best-effort" | "unsupported"> {
+  if (typeof navigator === "undefined" || navigator.storage === undefined) return "unsupported";
+  try {
+    if (typeof navigator.storage.persisted === "function" && (await navigator.storage.persisted())) {
+      return "persisted";
+    }
+    if (typeof navigator.storage.persist !== "function") return "unsupported";
+    return (await navigator.storage.persist()) ? "persisted" : "best-effort";
+  } catch {
+    return "unsupported";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The sync log — what has already reached the server, and when
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One scan that made it to the server. */
+export interface SyncedPunch {
+  clientEventId: string;
+  /** When the person was actually at the gate. */
+  capturedAt: string;
+  /** When this device managed to hand it over. */
+  syncedAt: string;
+  /** Who the DEVICE thought it was, when it could tell. Display only, as ever. */
+  localName?: string;
+}
+
+/**
+ * Record that these ids reached the server, and trim the history.
+ *
+ * Called from the same place the items are dropped from the queue, so the two cannot disagree:
+ * an item is either waiting or logged as sent, never both and never neither.
+ */
+export async function recordSynced(items: readonly SyncedPunch[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    await withStore(
+      "readwrite",
+      (store) => {
+        for (const item of items) store.put(item);
+        return { result: undefined };
+      },
+      SYNC_LOG,
+    );
+    // Trim oldest-first, outside the write above so a full store cannot block the write that
+    // matters. The history is a convenience; the queue is the record.
+    const all = await withStore<SyncedPunch[]>(
+      "readonly",
+      (store) => store.getAll() as IDBRequest<SyncedPunch[]>,
+      SYNC_LOG,
+    );
+    if (all.length > SYNC_LOG_LIMIT) {
+      const excess = all
+        .sort((a, b) => a.syncedAt.localeCompare(b.syncedAt))
+        .slice(0, all.length - SYNC_LOG_LIMIT)
+        .map((s) => s.clientEventId);
+      await withStore(
+        "readwrite",
+        (store) => {
+          for (const id of excess) store.delete(id);
+          return { result: undefined };
+        },
+        SYNC_LOG,
+      );
+    }
+  } catch {
+    // Losing the history must never cost a punch.
+  }
+}
+
+/** The sync history, newest first. */
+export async function syncedPunches(limit = 100): Promise<SyncedPunch[]> {
+  try {
+    const all = await withStore<SyncedPunch[]>(
+      "readonly",
+      (store) => store.getAll() as IDBRequest<SyncedPunch[]>,
+      SYNC_LOG,
+    );
+    return all.sort((a, b) => b.syncedAt.localeCompare(a.syncedAt)).slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+/** Everything still waiting, oldest first — including parked items, which `nextBatch` hides. */
+export async function allQueued(): Promise<QueuedPunch[]> {
+  try {
+    const all = await withStore<QueuedPunch[]>("readonly", (store) =>
+      store.index("capturedAt").getAll() as IDBRequest<QueuedPunch[]>,
+    );
+    return all;
+  } catch {
+    return [];
   }
 }

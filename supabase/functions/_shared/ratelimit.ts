@@ -35,6 +35,22 @@ export interface RateLimitSpec {
 export const RATE_LIMITS = {
   /** kiosk.rate_scans_per_minute = 40, per device. */
   kioskPunch: { bucket: "kiosk_punch", capacity: 40, refillPerMinute: 40 },
+  /**
+   * REPLAY of an offline queue, per device — deliberately far above the live scan rate.
+   *
+   * The live bucket is 40/minute, and every item of a batch takes a token from it. That made
+   * draining an outage take minutes: 200 held punches could not clear in under five, however
+   * they were batched, and a 25-item batch sent against an empty bucket was refused whole so
+   * the queue made no progress at all.
+   *
+   * A replay is not the thing 40/minute exists to limit. It is bounded by a queue the device
+   * already holds, every item is idempotent on its `clientEventId`, and the punches were
+   * captured at human pace — the burst is an artefact of the network returning, not of anybody
+   * scanning faster. What the live limit protects is a device being used to hammer the 1:N
+   * search, and that is still bounded here: 200/minute, five times the live rate and no more,
+   * so a full day's queue clears in a couple of minutes while the search stays capped.
+   */
+  kioskReplay: { bucket: "kiosk_replay", capacity: 200, refillPerMinute: 200 },
   /** Heartbeat interval is 60s (kiosk.heartbeat_interval_seconds); allow retries and a burst on reconnect. */
   kioskHeartbeat: { bucket: "kiosk_heartbeat", capacity: 30, refillPerMinute: 30 },
   /** Pairing: 10/hour/IP (spec-kiosk §5.1). */

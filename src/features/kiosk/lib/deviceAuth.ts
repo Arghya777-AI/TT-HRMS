@@ -620,6 +620,16 @@ export interface PunchBatchItem {
   descriptor: readonly number[];
   geo?: PunchGeo;
   metrics?: PunchMetrics;
+  /**
+   * Who this device recognised offline. A HINT for the server, never an assertion.
+   *
+   * `kiosk-punch` uses it in one place: when its own 1:N could not separate two people, it runs
+   * a 1:1 verification of the descriptor against this employee and accepts only if that clears a
+   * bar STRICTER than the 1:N floor — and flags the punch for review. It cannot introduce
+   * somebody the server had not already shortlisted, so a stale bundle cannot name a person who
+   * has been re-enrolled or had consent withdrawn.
+   */
+  localEmployeeId?: string;
 }
 
 /**
@@ -659,6 +669,9 @@ export function sendPunchBatch(
         // Omitted rather than null against the `.strict()` schema — same as sendPunch.
         ...(item.geo ? { geo: item.geo } : {}),
         ...(item.metrics ? { metrics: item.metrics } : {}),
+        ...(item.localEmployeeId !== undefined
+          ? { localEmployeeId: item.localEmployeeId }
+          : {}),
         mode: "face" as const,
       })),
     },

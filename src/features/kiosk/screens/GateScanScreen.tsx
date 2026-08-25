@@ -21,7 +21,7 @@
  * own confidence and die with the page. A gate device holds no HR records.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Gauge, LogOut, MapPin, ScanFace, ShieldCheck } from "lucide-react";
+import { Camera, Database, Gauge, Loader2, LogOut, MapPin, ScanFace, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nowInstantIso, nowIstClock } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
@@ -32,7 +32,11 @@ import {
   type PunchOutcome,
 } from "../lib/deviceAuth";
 import { measureLiveness } from "@/features/auth/lib/liveness";
-import { enqueue, counts as queueCounts } from "../lib/punchQueue";
+import {
+  counts as queueCounts,
+  enqueue,
+  requestPersistentStorage,
+} from "../lib/punchQueue";
 import { flushQueue } from "../lib/punchSync";
 import { faceBackend } from "../lib/facePipeline";
 import {
@@ -56,6 +60,7 @@ import {
   type RecentScan,
 } from "../components/GateResult";
 import { Viewfinder } from "../components/Viewfinder";
+import { LocalLogSheet } from "../components/LocalLogSheet";
 import { useCamera } from "../hooks/useCamera";
 import { useNativeCamera } from "../hooks/useNativeCamera";
 import { useKioskLocation } from "../hooks/useKioskLocation";
@@ -227,6 +232,40 @@ export function GateScanScreen({
     round trip each time; the device knows, so it should say.
   */
   const [localVerdict, setLocalVerdict] = useState<string | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  /*
+    True while a flush is actually in flight.
+
+    Distinct from "there are items waiting": a gate with a queue and no network is not syncing,
+    and showing a spinner then would say the opposite of what is happening. This is set around
+    the flush itself so the indicator means exactly one thing.
+  */
+  const [syncing, setSyncing] = useState(false);
+  /*
+    The flush is defined inside its own effect, where its cancellation flag lives. The sheet's
+    "Sync now" button needs to call exactly that one — a second implementation would be a second
+    thing to keep in step, and `flushQueue`'s in-flight guard already makes a double call
+    harmless.
+  */
+  const flushNowRef = useRef<() => void>(() => undefined);
+
+  /** Whether the browser has promised not to evict the queue. See `requestPersistentStorage`. */
+  const [storageMode, setStorageMode] = useState<"persisted" | "best-effort" | "unsupported">(
+    "unsupported",
+  );
+
+  /*
+    Ask ONCE, on mount, for storage the browser will not evict.
+
+    IndexedDB already survives the app closing, a reload and a power cycle. What it does not
+    survive by default is EVICTION under disk pressure — and on Safari, seven days without a
+    visit for anything not installed to the home screen. A gate that queued a morning's arrivals
+    and was then closed over a long weekend could lose them silently, which is the one failure
+    this whole queue exists to prevent.
+  */
+  useEffect(() => {
+    void requestPersistentStorage().then(setStorageMode).catch(() => undefined);
+  }, []);
 
   const native = useNativeCamera();
   /*
@@ -395,8 +434,19 @@ export function GateScanScreen({
     };
     window.addEventListener("online", onOnline);
 
+    /*
+      And on a timer, so a NEW ENROLMENT reaches the gate by itself.
+
+      `online` only fires when the link changes. A terminal that has been up for a week with
+      steady wifi never fires it again, so somebody enrolled this morning would not be
+      recognisable offline until the tablet was reloaded by hand. Fifteen minutes; the request
+      is a version check that answers "unchanged" in a few hundred bytes almost every time.
+    */
+    const timer = window.setInterval(onOnline, 15 * 60 * 1000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       window.removeEventListener("online", onOnline);
     };
   }, []);
@@ -585,35 +635,9 @@ export function GateScanScreen({
           */
           const unreachable = result.error.status === 0 || result.error.status >= 500;
           if (unreachable) {
-            const queued = await enqueue({
-              clientEventId: uuid(),
-              capturedAt: capturedAt,
-              queuedAt: nowInstantIso(),
-              descriptor: [...reading.descriptor],
-              ...(geo ? { geo } : {}),
-              ...(metrics ? { metrics } : {}),
-            })
-              .then(() => true)
-              .catch(() => false);
-
-            setOnline(false);
-            refreshPending();
-
-            /*
-              ── NAME THEM, EVEN WITH NO INTERNET ──────────────────────────────────
-              Until now this branch recorded a scan blind: the descriptor was held, the screen
-              said "saved", and nobody — then or later — could tell who had walked through. The
-              on-screen log stayed empty for the whole outage.
-
-              The bundle makes the terminal able to answer. `matchLocally` mirrors the server's
-              rules exactly and refuses rather than guesses, because an offline gate is where a
-              wrong name does the most damage: nobody is watching, the person leaves satisfied,
-              and the error only surfaces when the queue drains.
-
-              Failure here changes nothing that matters — the punch is already queued.
-            */
             let localName: string | undefined;
             let localCode: string | undefined;
+            let localEmployeeId: string | undefined;
             const bundle = bundleRef.current;
             if (bundle === null) {
               setLocalVerdict("no bundle on this device");
@@ -636,6 +660,7 @@ export function GateScanScreen({
               if (local.kind === "matched") {
                 localName = local.displayName;
                 localCode = local.employeeCode;
+                localEmployeeId = local.employeeId;
                 // Logged like any other punch, so the tail shows the outage's arrivals rather
                 // than a gap. `punchKind` is left as "scan": the direction is the server's
                 // ordinal and this device cannot know it while it cannot see the punch log.
@@ -656,6 +681,41 @@ export function GateScanScreen({
               }
             }
 
+            const queued = await enqueue({
+              clientEventId: uuid(),
+              capturedAt: capturedAt,
+              queuedAt: nowInstantIso(),
+              descriptor: [...reading.descriptor],
+              ...(geo ? { geo } : {}),
+              ...(metrics ? { metrics } : {}),
+              /*
+                The device's own identification travels WITH the punch. Two uses, both honest:
+                it labels this scan in the on-device log and the sync history, and the server may
+                use it as a HINT to verify 1:1 when its own 1:N cannot separate two people —
+                rescuing attendance that would otherwise be refused, flagged for review.
+              */
+              ...(localName !== undefined ? { localName } : {}),
+              ...(localEmployeeId !== undefined ? { localEmployeeId } : {}),
+            })
+              .then(() => true)
+              .catch(() => false);
+
+            setOnline(false);
+            refreshPending();
+
+            /*
+              ── NAME THEM, EVEN WITH NO INTERNET ──────────────────────────────────
+              Until now this branch recorded a scan blind: the descriptor was held, the screen
+              said "saved", and nobody — then or later — could tell who had walked through. The
+              on-screen log stayed empty for the whole outage.
+
+              The bundle makes the terminal able to answer. `matchLocally` mirrors the server's
+              rules exactly and refuses rather than guesses, because an offline gate is where a
+              wrong name does the most damage: nobody is watching, the person leaves satisfied,
+              and the error only surfaces when the queue drains.
+
+              Failure here changes nothing that matters — the punch is already queued.
+            */
             // If the queue itself could not accept it, say so plainly. A gate that
             // silently drops an arrival is worse than one that admits it cannot.
             setPhase(
@@ -886,16 +946,27 @@ export function GateScanScreen({
     let cancelled = false;
     const attempt = () => {
       if (cancelled) return;
+      setSyncing(true);
       void flushQueue(deviceRef.current)
         .then((outcome) => {
-          if (cancelled || outcome.skipped) return;
+          if (cancelled) return;
+          if (outcome.skipped) return;
           setPending(outcome.pending);
           // The lamp follows what the network actually did, not what the browser claims.
           if (outcome.sent > 0) setOnline(true);
+          /*
+            `rateLimited` deliberately does NOT touch the lamp. The device has run out of its
+            replay allowance and the same bytes will succeed in a moment — telling the person at
+            the door that the gate is disconnected would be a false story about the network.
+          */
           else if (outcome.offline) setOnline(false);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setSyncing(false);
+        });
     };
+    flushNowRef.current = attempt;
 
     refreshPending();
     attempt();
@@ -1069,6 +1140,34 @@ export function GateScanScreen({
           terminal that has never scanned offline shows nothing rather than a puzzling blank
           verdict.
         */}
+        {/*
+          The way in, and the sync indicator, in one control.
+
+          A gate is a public screen, so the log is behind a deliberate tap rather than on the
+          wall. The count is on the button because "is anything stuck here?" is the question
+          somebody walking past actually has, and it should be answerable without opening
+          anything.
+        */}
+        <button
+          type="button"
+          onClick={() => setLogOpen(true)}
+          className="mt-1 inline-flex items-center gap-2 rounded-lg px-1 py-1 text-[11px] text-neutral-400 underline-offset-4 hover:text-neutral-200 hover:underline"
+        >
+          {syncing ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-400" aria-hidden />
+          ) : (
+            <Database className="size-3.5 shrink-0" aria-hidden />
+          )}
+          {syncing
+            ? t("kiosk.gate.log.syncing")
+            : t("kiosk.gate.log.open", { count: String(pending) })}
+          {storageMode === "persisted" ? (
+            <span className="text-emerald-500">{t("kiosk.gate.log.persisted")}</span>
+          ) : storageMode === "best-effort" ? (
+            <span className="text-amber-500">{t("kiosk.gate.log.notPersisted")}</span>
+          ) : null}
+        </button>
+
         {localVerdict !== null ? (
           <p className="mt-1 flex items-center gap-2 text-[11px] text-neutral-500">
             <ScanFace className="size-3.5 shrink-0" aria-hidden />
@@ -1076,6 +1175,14 @@ export function GateScanScreen({
           </p>
         ) : null}
       </footer>
+
+      {logOpen ? (
+        <LocalLogSheet
+          syncing={syncing}
+          onClose={() => setLogOpen(false)}
+          onSyncNow={() => flushNowRef.current()}
+        />
+      ) : null}
     </div>
   );
 }

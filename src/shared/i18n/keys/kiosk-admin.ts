@@ -563,6 +563,34 @@ export const keysKioskAdmin = {
     Each one needs a different fix, so the gate reports which it was rather than leaving it to be
     guessed from a description.
   */
+  /*
+    THE ON-DEVICE LOG. During an outage this terminal is the only place a morning's attendance
+    exists, and it used to report that as a bare number. A venue should not have to take "it
+    synced" on trust from a device that cannot show its own records.
+  */
+  "kiosk.gate.log.title": "Stored on this device",
+  "kiosk.gate.log.subtitle": "Scans held here, and what has already reached the server.",
+  "kiosk.gate.log.open": "Stored here ({count})",
+  "kiosk.gate.log.close": "Close",
+  "kiosk.gate.log.syncNow": "Sync now",
+  "kiosk.gate.log.syncing": "Syncing…",
+  "kiosk.gate.log.reading": "Reading this device…",
+  "kiosk.gate.log.waitingHeading": "Waiting to sync · {count}",
+  "kiosk.gate.log.nothingWaiting": "Nothing is waiting. Every scan has reached the server.",
+  // Called out separately: these are the only ones that need somebody to act.
+  "kiosk.gate.log.parkedHeading": "Needs attention · {count}",
+  "kiosk.gate.log.attempts": "tried {n} of {max}",
+  "kiosk.gate.log.sentHeading": "Already sent",
+  "kiosk.gate.log.nothingSent": "Nothing has been sent from this device yet.",
+  // Both instants, because during an outage the GAP is the interesting number.
+  "kiosk.gate.log.capturedSynced": "scanned {captured} · sent {synced}",
+  "kiosk.gate.log.unnamed": "Not identified on this device",
+  // Whether the browser has promised not to evict the queue. Shown because the answer changes
+  // what an outage costs, and it is otherwise invisible.
+  "kiosk.gate.log.persisted": "· protected",
+  "kiosk.gate.log.notPersisted": "· not protected",
+  "kiosk.gate.log.footnote":
+    "Names here are what this terminal recognised at the time, from the faces it holds. The server checks every scan again when it arrives, so the attendance record is what the server decided — not this list. No photographs are kept on the device.",
   "kiosk.gate.offlineLastMatch": "Last offline scan: {verdict}",
   "kiosk.gate.offlineFailed": "Offline recognition unavailable — the server refused the face list ({code})",
   "kiosk.gate.offlineNotReady": "Offline recognition not ready — connect once to download faces",

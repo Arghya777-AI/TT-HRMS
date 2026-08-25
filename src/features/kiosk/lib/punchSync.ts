@@ -29,19 +29,41 @@ import {
   type KioskDeviceState,
   type PunchBatchItem,
 } from "./deviceAuth";
-import { acknowledge, counts, nextBatch, recordFailure, type QueuedPunch } from "./punchQueue";
+import {
+  acknowledge,
+  counts,
+  nextBatch,
+  recordFailure,
+  recordSynced,
+  type QueuedPunch,
+} from "./punchQueue";
+import { nowInstantIso } from "@/lib/datetime";
 
-/** Items per request. Five is the size `kiosk-punch` documents for a replay. */
-const BATCH_SIZE = 5;
+/**
+ * Items per request. 25 — the maximum `kiosk-punch` accepts.
+ *
+ * It was 5, and that was the difference between a queue draining in seconds and in minutes: 200
+ * held punches meant 40 round trips, each with its own HMAC, TLS and 1:N latency. The server has
+ * always taken 25 (`MAX_BATCH_ITEMS`), and 25 descriptors is roughly 40 KB against a 2 MB body
+ * limit, so nothing about the larger batch is close to a boundary.
+ *
+ * Raising it was only safe once replays got their own rate-limit bucket. Against the live
+ * 40/minute allowance a 25-item batch sent to a near-empty bucket was refused WHOLE, so the
+ * queue made no progress at all — bigger batches made it slower. The two changes go together.
+ */
+const BATCH_SIZE = 25;
 
 /**
  * Batches per flush.
  *
- * Bounded so a long outage does not turn one reconnection into a minutes-long upload that
- * blocks the scan loop. Whatever is left is picked up by the next trigger, and the queue is
- * durable in the meantime.
+ * Bounded so a long outage does not turn one reconnection into an upload that never ends.
+ * 40 × 25 is a thousand held scans in a single flush — more than a gate accumulates in a day —
+ * and whatever is left is picked up by the next trigger, with the queue durable in the meantime.
+ *
+ * The bound is on ROUND TRIPS, not on time: each one only continues while the previous made
+ * progress, so an empty queue costs one request and a full one is not artificially throttled.
  */
-const MAX_BATCHES_PER_FLUSH = 10;
+const MAX_BATCHES_PER_FLUSH = 40;
 
 /** Exactly one flush in flight per browser — see the header. */
 let inFlight = false;
@@ -63,6 +85,13 @@ export interface FlushOutcome {
   offline: boolean;
   /** True when another flush was already running and this call did nothing. */
   skipped: boolean;
+  /**
+   * True when the server refused for allowance rather than for content.
+   *
+   * Distinct from `offline` on purpose: the network is fine and the same bytes will succeed
+   * shortly, so the caller should retry soon and must not tell anybody the gate is disconnected.
+   */
+  rateLimited: boolean;
 }
 
 function toWireItem(item: QueuedPunch): PunchBatchItem {
@@ -73,6 +102,8 @@ function toWireItem(item: QueuedPunch): PunchBatchItem {
     descriptor: item.descriptor,
     ...(item.geo ? { geo: item.geo } : {}),
     ...(item.metrics ? { metrics: item.metrics } : {}),
+    // The device's offline identification, offered to the server as a tie-breaker only.
+    ...(item.localEmployeeId !== undefined ? { localEmployeeId: item.localEmployeeId } : {}),
   };
 }
 
@@ -85,13 +116,14 @@ function toWireItem(item: QueuedPunch): PunchBatchItem {
 export async function flushQueue(state: KioskDeviceState): Promise<FlushOutcome> {
   if (inFlight) {
     const { pending } = await counts().catch(() => ({ pending: 0, parked: 0 }));
-    return { sent: 0, refused: 0, parked: [], pending, offline: false, skipped: true };
+    return { sent: 0, refused: 0, parked: [], pending, offline: false, rateLimited: false, skipped: true };
   }
   inFlight = true;
 
   let sent = 0;
   let refused = 0;
   let offline = false;
+  let rateLimited = false;
   const parked: string[] = [];
 
   try {
@@ -109,6 +141,13 @@ export async function flushQueue(state: KioskDeviceState): Promise<FlushOutcome>
           than the scan being wrong, and both mean try again later.
         */
         offline = result.error.status === 0 || result.error.status >= 500;
+        /*
+          429 is neither offline nor a bad scan: the device has run out of allowance and the
+          same bytes will succeed shortly. It is called out because it must NOT set `offline` —
+          a gate that showed itself as disconnected while its queue was merely throttled would
+          send the person at the door a false story about the network.
+        */
+        rateLimited = result.error.status === 429;
         break;
       }
 
@@ -129,6 +168,25 @@ export async function flushQueue(state: KioskDeviceState): Promise<FlushOutcome>
       });
 
       if (done.length > 0) {
+        /*
+          The history is written BEFORE the queue entry is dropped.
+
+          Order matters: acknowledging first and crashing before the log wrote would lose the
+          only trace that the punch ever existed on this device. This way the worst case is a
+          record that says "sent" for something the queue still holds — which the next flush
+          resolves harmlessly, because the server dedups on the event id.
+        */
+        const syncedAt = nowInstantIso();
+        await recordSynced(
+          batch
+            .filter((item) => done.includes(item.clientEventId))
+            .map((item) => ({
+              clientEventId: item.clientEventId,
+              capturedAt: item.capturedAt,
+              syncedAt,
+              ...(item.localName !== undefined ? { localName: item.localName } : {}),
+            })),
+        );
         await acknowledge(done).catch(() => undefined);
         sent += done.length;
       }
@@ -149,7 +207,7 @@ export async function flushQueue(state: KioskDeviceState): Promise<FlushOutcome>
   }
 
   const { pending } = await counts().catch(() => ({ pending: 0, parked: 0 }));
-  return { sent, refused, parked, pending, offline, skipped: false };
+  return { sent, refused, parked, pending, offline, rateLimited, skipped: false };
 }
 
 /** Whether a flush is currently running, for the screen's own indicators. */

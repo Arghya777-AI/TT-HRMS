@@ -140,6 +140,51 @@ describe("standing in front of the gate does not check you out", () => {
   });
 });
 
+describe("a device hint may break a tie, never make a match", () => {
+  /*
+    Asked for directly: when the server cannot match a face, do not lose the attendance of
+    somebody the terminal had already recognised. Granting that safely turns on one line — the
+    hinted employee must ALREADY be in the shortlist this search produced.
+
+    That is what keeps the server in charge. A device's copy of the templates is stale by
+    construction, so if a hint could introduce somebody the search had not considered, a
+    week-old bundle could write attendance for a person who has since been re-enrolled, had
+    consent withdrawn, or left. Narrowing is safe; deciding is not.
+  */
+  it("only ever considers a candidate the server already shortlisted", () => {
+    expect(PUNCH).toContain("candidates.find((c) => c.employeeId === item.localEmployeeId)");
+    // Never a fresh lookup by the hinted id — that would be the server trusting the device.
+    expect(CODE).not.toMatch(/WHERE[\s\S]{0,80}employee_id = \$\{item\.localEmployeeId/);
+  });
+
+  it("holds the hint to a STRICTER bar than the ordinary match", () => {
+    const hint = /const LOCAL_HINT_MIN_CONFIDENCE = ([\d.]+);/.exec(PUNCH);
+    const floor = /const DEFAULT_MIN_CONFIDENCE = ([\d.]+);/.exec(PUNCH);
+    expect(hint).not.toBeNull();
+    expect(floor).not.toBeNull();
+    /*
+      Stricter, not looser. The hint is used precisely where the evidence is weakest — two
+      enrolled faces within the margin of each other — so a lower bar there would be the worst
+      possible place to relax.
+    */
+    expect(Number(hint![1])).toBeGreaterThan(Number(floor![1]));
+  });
+
+  it("is reached only after the ordinary match has failed", () => {
+    expect(PUNCH).toContain("if (!accepted && item.localEmployeeId !== undefined)");
+    expect(PUNCH).toContain("if (!accepted && hintAccepted === null)");
+  });
+
+  it("flags every hint-verified punch for review", () => {
+    // Recorded, which is the point — but recorded as worth a look, not as a clean match.
+    expect(PUNCH).toContain("hintAccepted !== null ||");
+  });
+
+  it("writes the punch against the shortlisted candidate, not a device-supplied id", () => {
+    expect(PUNCH).toContain("const matched = hintAccepted ?? (best as Candidate);");
+  });
+});
+
 describe("the gate stands unattended", () => {
   it("treats the operator session as optional on every punch", () => {
     expect(PUNCH).toContain(

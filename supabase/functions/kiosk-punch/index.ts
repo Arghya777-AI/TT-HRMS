@@ -72,6 +72,21 @@ const MAX_UNIT_DISTANCE = 2;
 /** Fallbacks when no `attendance_policies` row resolves. Same numbers as the DB defaults. */
 const DEFAULT_MIN_CONFIDENCE = 0.62;
 const DEFAULT_MIN_MARGIN = 0.06;
+
+/**
+ * How good a 1:1 verification must be before a device's hint is allowed to break a tie.
+ *
+ * 0.70, against the 1:N floor of 0.62. Deliberately STRICTER, because the hint is used precisely
+ * where the evidence is weakest — two enrolled faces within the margin of each other — and the
+ * device's copy of the templates may be days old. A hint may only rescue a scan the server had
+ * already shortlisted and had merely failed to separate; it can never manufacture a match the
+ * server would otherwise refuse outright.
+ *
+ * Every punch accepted this way is flagged `needs_review`, so a human sees it. The trade is
+ * explicit: attendance that would have been lost is recorded, and it is recorded as something
+ * worth checking rather than as a clean match.
+ */
+const LOCAL_HINT_MIN_CONFIDENCE = 0.70;
 const DEFAULT_DEBOUNCE_SECONDS = 120;
 
 /**
@@ -235,6 +250,19 @@ const PunchItem = z
       })
       .strict()
       .optional(),
+    /**
+     * WHO THE DEVICE THOUGHT IT WAS, matched offline against its own copy of the templates.
+     *
+     * A HINT, never an assertion. It is used in exactly one place — {@link LOCAL_HINT_MIN_CONFIDENCE}
+     * — when this server's own 1:N could not separate two people, and even then only to run a
+     * 1:1 verification of the descriptor against THAT employee. If the 1:1 does not clear a bar
+     * stricter than the 1:N floor, the scan is refused exactly as before.
+     *
+     * It can never make a match the server would not otherwise be willing to make; it can only
+     * break a tie the server had already narrowed to a shortlist. A device's copy is stale by
+     * construction, which is why it gets to narrow and never to decide.
+     */
+    localEmployeeId: common.uuid.optional(),
     mode: z.literal("face"),
   })
   .strict();
@@ -799,8 +827,43 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
   const matchLogId = crypto.randomUUID();
   const ctx: RequestContext = { ...ctxBase, reason: null };
 
+  /*
+    ── BEFORE REFUSING: WOULD A 1:1 AGAINST THE DEVICE'S CANDIDATE SETTLE IT? ────
+    Asked for directly: when the server cannot decide, do not lose the attendance of somebody
+    the terminal had already recognised.
+
+    Only ever reached when the 1:N was NOT accepted, and only ever against the one employee the
+    device named. A 1:1 is a fundamentally easier question than a 1:N — there is no field of
+    competitors to be confused by — which is why it can settle a case the search could not, and
+    why it is held to a stricter bar (0.70 against 0.62) rather than a looser one.
+
+    The candidate must already be in the shortlist this search produced. That is the line that
+    keeps the server in charge: the hint may break a tie the server had narrowed, and can never
+    introduce somebody the server did not already consider close. A stale bundle therefore
+    cannot name a person who has been re-enrolled, had consent withdrawn, or left.
+  */
+  let hintAccepted: Candidate | null = null;
+  if (!accepted && item.localEmployeeId !== undefined) {
+    const hinted = candidates.find((c) => c.employeeId === item.localEmployeeId);
+    if (hinted !== undefined && confidenceFor(hinted.distance) >= LOCAL_HINT_MIN_CONFIDENCE) {
+      hintAccepted = hinted;
+      log.info("device hint verified 1:1", {
+        employee_id: hinted.employeeId,
+        confidence: Number(confidenceFor(hinted.distance).toFixed(5)),
+        margin: margin === null ? null : Number(margin.toFixed(5)),
+        bar: LOCAL_HINT_MIN_CONFIDENCE,
+      });
+    } else {
+      log.info("device hint not verified", {
+        hinted: item.localEmployeeId,
+        in_shortlist: hinted !== undefined,
+        confidence: hinted === undefined ? null : Number(confidenceFor(hinted.distance).toFixed(5)),
+      });
+    }
+  }
+
   // ── Not accepted: log the attempt, offer the guard the top 3, write no punch ──
-  if (!accepted) {
+  if (!accepted && hintAccepted === null) {
     const offerCandidates = best !== undefined && bestDistance !== null &&
       bestDistance <= GUARD_CONFIRM_MAX_DISTANCE;
     const outcome = offerCandidates ? "ambiguous" : "no_match";
@@ -858,7 +921,14 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
     return { matched: false, guardConfirmOptions };
   }
 
-  const matched = best as Candidate;
+  /*
+    The identity the punch is written against.
+
+    `hintAccepted` when a 1:1 verification settled a tie the 1:N could not — it is the same
+    candidate object from the same shortlist, so nothing downstream needs to know the difference
+    except `needsReview`, which does.
+  */
+  const matched = hintAccepted ?? (best as Candidate);
 
   // §4.4 step 11 — the identity exists, but is it allowed through the gate?
   // The attempt is already recorded before the refusal (INV-4).
@@ -914,6 +984,12 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
   // §5.3: a guard scanning themselves is 100 % review, always.
   const selfOperated = operator !== null && operator.employeeId === matched.employeeId;
   const needsReview = isReplay ||
+    /*
+      A hint-verified punch is ALWAYS reviewable. It is recorded — which is the point, the
+      attendance is not lost — but it is recorded as something worth a look rather than as a
+      clean match, because the 1:N had genuinely failed to separate two people.
+    */
+    hintAccepted !== null ||
     (bestDistance !== null && bestDistance > REVIEW_DISTANCE) ||
     selfOperated ||
     // Outside the fence, or a fix too coarse to tell — a human decides, the gate
@@ -1448,8 +1524,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // One token for the request now (`kiosk.rate_scans_per_minute = 40`), the
     // rest of a batch charged after validation tells us how many scans it holds.
     // Outside any transaction on purpose: a refused call still spends its token.
+    /*
+      A REPLAY IS CHARGED TO ITS OWN BUCKET.
+
+      Every item of a batch takes a token, and against the live 40/minute allowance that made
+      draining an outage take minutes — 200 held punches could not clear in under five, and a
+      large batch sent against an empty bucket was refused whole so the queue made no progress.
+
+      The live limit exists to stop a device hammering the 1:N search. A replay is a different
+      shape: bounded by a queue the device already holds, idempotent per `clientEventId`, and
+      captured at human pace — the burst comes from the network returning, not from anybody
+      scanning faster. So it gets a separate bucket at five times the rate, which is still a cap.
+
+      The bucket is chosen BEFORE the body is parsed, so it is decided by the shape of the
+      request rather than by anything the request asserts about itself.
+    */
     const bucketKey = limitKey(FN_NAME, device.id);
-    if (!(await tryTake(RATE_LIMITS.kioskPunch, bucketKey, client))) {
+    const looksLikeBatch = typeof decoded === "object" && decoded !== null &&
+      Array.isArray((decoded as { queue?: unknown }).queue);
+    const limit = looksLikeBatch ? RATE_LIMITS.kioskReplay : RATE_LIMITS.kioskPunch;
+    const replayKey = looksLikeBatch ? limitKey(`${FN_NAME}-replay`, device.id) : bucketKey;
+    if (!(await tryTake(limit, replayKey, client))) {
       throw tooMany(1_500, "Too many scans from this kiosk. Wait and retry.", "KIOSK_RATE_LIMITED");
     }
 
@@ -1459,7 +1554,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const items: PunchItemInput[] = isBatch ? parsed.queue : [parsed];
 
     for (let i = 1; i < items.length; i++) {
-      if (!(await tryTake(RATE_LIMITS.kioskPunch, bucketKey, client))) {
+      if (!(await tryTake(limit, replayKey, client))) {
         throw tooMany(
           1_500,
           "This offline batch is larger than the kiosk's remaining scan allowance. Retry in smaller batches.",

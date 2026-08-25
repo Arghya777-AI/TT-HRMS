@@ -21,7 +21,7 @@
  * own confidence and die with the page. A gate device holds no HR records.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Gauge, LogOut, MapPin, ShieldCheck } from "lucide-react";
+import { Camera, Gauge, LogOut, MapPin, ScanFace, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { nowInstantIso, nowIstClock } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
@@ -218,6 +218,15 @@ export function GateScanScreen({
     work is worse.
   */
   const [bundleProblem, setBundleProblem] = useState<string | null>(null);
+  /*
+    The last offline match verdict, shown in the footer.
+
+    Because "no name appeared" has four completely different causes and they are
+    indistinguishable from the outside: no bundle, nobody close enough, two people too close to
+    separate, or a probe of the wrong width. Guessing between them from a description costs a
+    round trip each time; the device knows, so it should say.
+  */
+  const [localVerdict, setLocalVerdict] = useState<string | null>(null);
 
   const native = useNativeCamera();
   /*
@@ -606,8 +615,24 @@ export function GateScanScreen({
             let localName: string | undefined;
             let localCode: string | undefined;
             const bundle = bundleRef.current;
-            if (bundle !== null) {
+            if (bundle === null) {
+              setLocalVerdict("no bundle on this device");
+            } else {
               const local = matchLocally(bundle, reading.descriptor);
+              /*
+                Recorded for every outcome, not only failures. "matched" in the footer is how
+                somebody confirms offline recognition is genuinely working rather than inferring
+                it from a name that might have come from anywhere.
+              */
+              setLocalVerdict(
+                local.kind === "matched"
+                  ? `matched ${local.displayName} (${(local.confidence * 100).toFixed(0)}%)`
+                  : local.kind === "no_match"
+                    ? `no match — best ${local.bestConfidence === null ? "n/a" : (local.bestConfidence * 100).toFixed(0) + "%"} of ${bundle.people.length} faces`
+                    : local.kind === "ambiguous"
+                      ? `too close to call — margin ${local.margin.toFixed(3)}`
+                      : `unusable bundle — ${bundle.people.length} faces, expires ${bundle.expiresAt.slice(0, 10)}`,
+              );
               if (local.kind === "matched") {
                 localName = local.displayName;
                 localCode = local.employeeCode;
@@ -1038,6 +1063,18 @@ export function GateScanScreen({
               ? t("kiosk.gate.offlineFailed", { code: bundleProblem })
               : t("kiosk.gate.offlineNotReady")}
         </p>
+
+        {/*
+          The last offline match, in the gate's own words. Only after one has happened, so a
+          terminal that has never scanned offline shows nothing rather than a puzzling blank
+          verdict.
+        */}
+        {localVerdict !== null ? (
+          <p className="mt-1 flex items-center gap-2 text-[11px] text-neutral-500">
+            <ScanFace className="size-3.5 shrink-0" aria-hidden />
+            {t("kiosk.gate.offlineLastMatch", { verdict: localVerdict })}
+          </p>
+        ) : null}
       </footer>
     </div>
   );

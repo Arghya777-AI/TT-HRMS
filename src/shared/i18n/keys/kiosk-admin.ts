@@ -555,6 +555,15 @@ export const keysKioskAdmin = {
     endpoint, and when the query was failing on a bad column name the gate said the same thing
     either way — there was no way to tell from the device which it was.
   */
+  /*
+    What the last offline scan actually decided.
+
+    "No name appeared" has four different causes — no bundle, nobody close enough, two people
+    too close to separate, a probe of the wrong width — and they look identical from the outside.
+    Each one needs a different fix, so the gate reports which it was rather than leaving it to be
+    guessed from a description.
+  */
+  "kiosk.gate.offlineLastMatch": "Last offline scan: {verdict}",
   "kiosk.gate.offlineFailed": "Offline recognition unavailable — the server refused the face list ({code})",
   "kiosk.gate.offlineNotReady": "Offline recognition not ready — connect once to download faces",
   "kiosk.gate.endShift": "End shift",

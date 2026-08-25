@@ -1639,8 +1639,18 @@ export const en = catalogue({
   // A total over six of twenty-five days is a fact about six days, and must say so.
   "attendance.totals.unresolved":
     "{count} days are still not processed, so they are not counted here in either direction. This total will move as they are.",
-  "attendance.col.variance": "More / less",
+  /*
+    "More / less" alone does not say more or less OF WHAT, and the answer is not guessable from
+    a column of signed durations. Spelled out, in the client's own words.
+  */
+  "attendance.col.variance": "More / less working hours",
   "attendance.grid.varianceHint": "Worked {worked} against {expected} expected",
+  /*
+    The same explanation as the column's tooltip, but VISIBLE. A tooltip is not an explanation on
+    a phone — there is no hover — and this is the column people will ask about first.
+  */
+  "attendance.grid.varianceLegend":
+    "MORE / LESS WORKING HOURS compares the hours you actually worked against the hours your shift expected that day. Green means you worked more, red means less. Days that are not processed yet, holidays, weekly offs and approved leave are not counted either way.",
   // Why a day contributed nothing. A bare dash invites the question the column exists to answer.
   "attendance.variance.reason.holiday": "A holiday — nothing was expected, so anything worked is extra",
   "attendance.variance.reason.weeklyOff": "A weekly off — nothing was expected, so anything worked is extra",

@@ -260,7 +260,7 @@ export default function MyAttendancePage() {
       */
       key: "variance",
       header: t("attendance.col.variance"),
-      width: "8rem",
+      width: "10rem",
       align: "right",
       hideBelow: "md",
       render: (row) => {
@@ -503,6 +503,14 @@ export default function MyAttendancePage() {
         </TabsContent>
 
         <TabsContent value="register">
+
+      {/*
+        Above the table, not below it. The column it explains is the one people will ask about
+        first, and an explanation placed after the numbers is read after the confusion.
+      */}
+      <p className="mb-3 rounded-lg border bg-muted/40 px-3 py-2 text-xs leading-snug text-muted-foreground">
+        {t("attendance.grid.varianceLegend")}
+      </p>
 
       <StateBoundary
         loading={days.isLoading}

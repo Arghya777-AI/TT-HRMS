@@ -75,6 +75,32 @@ const DEFAULT_MIN_MARGIN = 0.06;
 const DEFAULT_DEBOUNCE_SECONDS = 120;
 
 /**
+ * MINIMUM DWELL: how long after a check-in before a check-OUT will be accepted.
+ *
+ * ── THE PROBLEM THIS SOLVES ──────────────────────────────────────────────────
+ * People stand in front of the gate after it has recognised them. They read the card, they
+ * wait for somebody, they chat. The camera keeps scanning, the debounce window passes, and the
+ * terminal dutifully records their SECOND punch — which the attendance engine reads as a
+ * check-out, thirty seconds after they arrived. The day then computes as a two-minute shift.
+ *
+ * The debounce cannot fix this and is not meant to: at 120 seconds it is an anti-double-scan
+ * guard, and stretching it to cover loitering would also swallow every legitimate scan in
+ * those minutes. This is a different rule with a different reason, so it is a different
+ * number.
+ *
+ * ── WHY FIVE MINUTES ─────────────────────────────────────────────────────────
+ * Chosen by the client. It is long enough that no plausible amount of standing about produces
+ * an out, and short enough that a genuine brief visit — dropping something off and leaving —
+ * still records both ends of itself.
+ *
+ * ── WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────────────────
+ * It only guards the FIRST → SECOND transition, the one the engine reads as in → out. A third
+ * or later scan is left to the debounce alone: by then the day already has both boundaries and
+ * an extra punch changes neither.
+ */
+const DEFAULT_MIN_DWELL_SECONDS = 300;
+
+/**
  * `attendance.liveness_pass_threshold`. The SAME setting and the same default that
  * `face-login` refuses below — one measurement must not have two bars in one product.
  */
@@ -215,6 +241,17 @@ export const ALLOWED_RESPONSE_FIELDS = [
   "punchKind",
   "istTime",
   "guardConfirmOptions",
+  /**
+   * True when the scan was recognised but wrote NO punch — a debounce collision, or a second
+   * scan too soon after the check-in to be a check-out.
+   *
+   * It was missing from this list, and its absence was not cosmetic: the client decides what
+   * the terminal SAYS from this flag, so every suppressed scan announced itself as a
+   * successful punch. Somebody standing in front of the gate heard "your attendance is
+   * registered" for a scan that recorded nothing, which is the most confusing thing a gate can
+   * do — it is confidently wrong, and it invites them to keep scanning.
+   */
+  "duplicateSuppressed",
   /** Machine code only, batch items only: lets the queue mark an item failed vs done (§8.1). */
   "error",
 ] as const;
@@ -484,6 +521,33 @@ async function resolveThresholds(
 }
 
 /**
+ * `attendance.min_dwell_seconds`, or the documented default.
+ *
+ * Read through `app.setting` for the same reason the liveness bar is: a venue with a genuinely
+ * different rhythm — a kitchen door people pass through constantly, say — can change it
+ * without a deploy, and the value applies everywhere at once rather than being copied into a
+ * client that then drifts.
+ *
+ * A non-numeric or negative value falls back to the default rather than disabling the rule.
+ * "Somebody typed nonsense into a settings row" must not silently reopen the exact hole this
+ * closes.
+ */
+async function resolveMinDwellSeconds(client: Sql): Promise<number> {
+  try {
+    const rows = await client<{ value: string | null }[]>`
+      SELECT app.setting('attendance.min_dwell_seconds') AS value
+    `;
+    const raw = firstRow(rows)?.value;
+    if (raw === null || raw === undefined) return DEFAULT_MIN_DWELL_SECONDS;
+    const parsed = Number(String(raw).replace(/"/g, "").trim());
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MIN_DWELL_SECONDS;
+  } catch {
+    // No such setting key, or no accessor. The default is the rule.
+    return DEFAULT_MIN_DWELL_SECONDS;
+  }
+}
+
+/**
  * `attendance.liveness_pass_threshold`, or the documented default.
  *
  * Read through `app.setting` — the same accessor `face-login` uses for the same key — so a
@@ -556,6 +620,14 @@ interface ProcessInput {
    * queue by one bar and the second half by another.
    */
   livenessPass: number;
+  /**
+   * `attendance.min_dwell_seconds`, resolved once per request for the same reasons.
+   *
+   * A replayed queue matters here in particular: those punches carry their ORIGINAL capture
+   * instants, so the dwell is measured between the times people were actually at the gate, not
+   * between the moments the tablet happened to reconnect.
+   */
+  minDwellSeconds: number;
 }
 
 /**
@@ -563,7 +635,8 @@ interface ProcessInput {
  * steps 7–20 for it.
  */
 async function processPunch(input: ProcessInput): Promise<PunchResult> {
-  const { item, deviceAuth, operator, ctxBase, isReplay, log, client, livenessPass } = input;
+  const { item, deviceAuth, operator, ctxBase, isReplay, log, client, livenessPass, minDwellSeconds } =
+    input;
   const device = deviceAuth.device;
 
   // §4.4 step 7 — descriptor sanity. A non-unit descriptor means the tablet
@@ -879,7 +952,61 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         over rows that no longer exist. That flag only ever described a row this endpoint
         wrote for itself; the suppression is still fully visible in the match log.
       */
-      const isDuplicate = duplicateOf !== null;
+      /*
+        ── MINIMUM DWELL: THE SECOND SCAN IS NOT AN OUT UNTIL THEY HAVE BEEN HERE A WHILE ──
+
+        Somebody checks in and then stands there — reading the card, waiting for a colleague,
+        talking. The camera keeps scanning. Once the 120-second debounce lapses the terminal
+        records their next scan, the engine reads the day's second punch as the check-OUT, and
+        a person who has just arrived is recorded as having left after two minutes.
+
+        So: if this scan WOULD be the day's second live punch, and the first one was less than
+        the dwell ago, it is suppressed exactly as a debounced duplicate is — no row written,
+        the person told they are already checked in. Their "in" stands, which is what they
+        actually did.
+
+        Deliberately scoped to the first → second transition. A third scan cannot create this
+        problem: the day already has both of its boundaries and another punch moves neither.
+      */
+      let dwellSuppressed = false;
+      let dwellReference: { id: string; punched_at: Date | string; effective_date: string } | null =
+        null;
+
+      if (duplicateOf === null && minDwellSeconds > 0) {
+        const sameDay = await tx`
+          SELECT p.id, p.punched_at, p.effective_date::text AS effective_date
+            FROM public.attendance_punches p
+           WHERE p.employee_id = ${matched.employeeId}::uuid
+             AND p.effective_date = ${predictedDate}::date
+             AND p.is_voided = false
+           ORDER BY p.punched_at ASC
+        `;
+        const existing = sameDay as unknown as {
+          id: string;
+          punched_at: Date | string;
+          effective_date: string;
+        }[];
+
+        // Exactly one so far means this scan is the one the engine will read as the check-out.
+        if (existing.length === 1) {
+          const first = existing[0]!;
+          const now = punchedAtOverride === null
+            ? Date.now()
+            : new Date(punchedAtOverride).getTime();
+          const elapsedSeconds = (now - new Date(first.punched_at).getTime()) / 1000;
+          if (elapsedSeconds >= 0 && elapsedSeconds < minDwellSeconds) {
+            dwellSuppressed = true;
+            dwellReference = first;
+            log.info("scan suppressed: minimum dwell not met", {
+              employee_id: matched.employeeId,
+              elapsed_seconds: Math.round(elapsedSeconds),
+              min_dwell_seconds: minDwellSeconds,
+            });
+          }
+        }
+      }
+
+      const isDuplicate = duplicateOf !== null || dwellSuppressed;
 
       const matchLog = await insertMatchLog(tx, {
         id: matchLogId,
@@ -967,11 +1094,15 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
         )
         RETURNING id, punched_at, effective_date::text AS effective_date
       `;
-      const punch = isDuplicate && duplicateOf !== null
+      // The punch that stands in for the suppressed scan: the one it collided with, or — for a
+      // dwell suppression — the check-in it is too soon after. Both make the screen and the
+      // spoken line describe the punch that actually exists.
+      const standIn = duplicateOf ?? dwellReference;
+      const punch = isDuplicate && standIn !== null
         ? {
-          id: duplicateOf.id,
-          punched_at: duplicateOf.punched_at,
-          effective_date: duplicateOf.effective_date,
+          id: standIn.id,
+          punched_at: standIn.punched_at,
+          effective_date: standIn.effective_date,
         }
         : firstRow(
           insertedRows as unknown as {
@@ -987,7 +1118,7 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
       // Ordinal → display kind. For a debounced punch the reference instant is
       // the ORIGINAL punch, so the guard sees the same word twice ("Checked in")
       // instead of a phantom check-out.
-      const reference = isDuplicate && duplicateOf !== null ? duplicateOf.punched_at : punch.punched_at;
+      const reference = isDuplicate && standIn !== null ? standIn.punched_at : punch.punched_at;
       const priorRows = await tx`
         SELECT count(*)::integer AS prior
           FROM public.attendance_punches q
@@ -1035,6 +1166,9 @@ async function processPunch(input: ProcessInput): Promise<PunchResult> {
 
     return {
       matched: true,
+      // Whether anything was actually written. The screen and the spoken line both hang off
+      // this, so a suppressed scan is announced as already recorded rather than as new.
+      duplicateSuppressed: written.isDuplicate,
       displayName: matched.displayName,
       employeeCode: matched.employeeCode,
       photoUrl: await signReferencePhoto(matched.photoPath),
@@ -1342,6 +1476,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       genuinely baffling audit trail.
     */
     const livenessPass = await resolveLivenessPass(client);
+    const minDwellSeconds = await resolveMinDwellSeconds(client);
 
     let responseBody: unknown;
     if (!isBatch) {
@@ -1354,6 +1489,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         log: deviceLog,
         client,
         livenessPass,
+        minDwellSeconds,
       });
       responseBody = pickWhitelisted(result as unknown as Record<string, unknown>);
     } else {
@@ -1372,6 +1508,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             log: deviceLog,
             client,
             livenessPass,
+        minDwellSeconds,
           });
           results.push(pickWhitelisted(result as unknown as Record<string, unknown>));
         } catch (itemErr) {

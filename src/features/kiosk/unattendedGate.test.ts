@@ -44,15 +44,20 @@ describe("a debounced duplicate never becomes an attendance fact", () => {
   });
 
   it("decides duplicate from the lookup alone, never from who is on the door", () => {
-    expect(PUNCH).toContain("const isDuplicate = duplicateOf !== null;");
+    // Now also true when the minimum-dwell rule fires. What matters, and what the old form got
+    // wrong, is that no term here depends on an operator being present.
+    expect(PUNCH).toContain("const isDuplicate = duplicateOf !== null || dwellSuppressed;");
     // The old form gated the duplicate verdict on having a profile to blame the void on.
     expect(CODE).not.toMatch(/isDuplicate\s*=\s*duplicateOf\s*!==\s*null\s*&&/);
     expect(CODE).not.toMatch(/const voidAttribution\s*=/);
   });
 
   it("answers from the original punch, so the screen shows the real check-in time", () => {
-    expect(PUNCH).toContain("const punch = isDuplicate && duplicateOf !== null");
-    expect(PUNCH).toContain("id: duplicateOf.id,");
+    // Generalised to `standIn` when the minimum-dwell rule arrived: the stand-in is the punch
+    // this scan collided with, or the check-in it was too soon after. Same guarantee either
+    // way — the screen and the spoken line describe a punch that actually exists.
+    expect(PUNCH).toContain("const punch = isDuplicate && standIn !== null");
+    expect(PUNCH).toContain("id: standIn.id,");
   });
 
   it("still records the attempt — INV-4 is the match log, not the punch row", () => {
@@ -65,6 +70,59 @@ describe("a debounced duplicate never becomes an attendance fact", () => {
     // The duplicate was the only row this endpoint ever voided.
     expect(CODE).not.toMatch(/\$\{isDuplicate\}::boolean,\s*\n\s*\$\{isDuplicate \? voidAttribution/);
     expect(PUNCH).toContain("false::boolean,");
+  });
+});
+
+describe("standing in front of the gate does not check you out", () => {
+  /*
+    THE EDGE CASE THIS EXISTS FOR
+    Somebody checks in and then stands there — reading the card, waiting for a colleague. The
+    camera keeps scanning. Once the 120-second debounce lapses the terminal records their next
+    scan, the engine reads the day's second punch as the check-OUT, and a person who has just
+    arrived is recorded as having left after two minutes.
+
+    The debounce cannot fix it and is not meant to: it is an anti-double-scan guard, and
+    widening it to cover loitering would swallow every legitimate scan in those minutes.
+  */
+  it("has a minimum dwell, separate from the debounce", () => {
+    expect(PUNCH).toContain("const DEFAULT_MIN_DWELL_SECONDS = 300;");
+    // Two rules, two numbers. Collapsing them would reintroduce the trade-off above.
+    expect(PUNCH).toContain("const DEFAULT_DEBOUNCE_SECONDS = 120;");
+  });
+
+  it("suppresses only the scan that would become the check-out", () => {
+    // Exactly one live punch so far means this scan is the one the engine reads as the out.
+    expect(PUNCH).toContain("if (existing.length === 1) {");
+    expect(PUNCH).toContain("elapsedSeconds < minDwellSeconds");
+    expect(PUNCH).toContain("dwellSuppressed = true;");
+  });
+
+  it("folds the dwell suppression into the same no-write path as a debounce", () => {
+    // It must write no punch row, exactly as a debounced duplicate does — otherwise it lands
+    // live and IS the spurious check-out this was written to prevent.
+    expect(PUNCH).toContain("const isDuplicate = duplicateOf !== null || dwellSuppressed;");
+    expect(PUNCH).toContain("const insertedRows = isDuplicate\n        ? []");
+  });
+
+  it("answers from the check-in, so the screen shows the punch that exists", () => {
+    expect(PUNCH).toContain("const standIn = duplicateOf ?? dwellReference;");
+  });
+
+  it("measures the gap in the SETTING, not a hard-coded number", () => {
+    // A venue with a different rhythm can change it without a deploy, and one value applies
+    // everywhere at once rather than being copied into a client that then drifts.
+    expect(PUNCH).toContain("attendance.min_dwell_seconds");
+    expect(PUNCH).toContain("resolveMinDwellSeconds");
+  });
+
+  it("tells the client the scan wrote nothing", () => {
+    /*
+      This was missing and it mattered: the terminal decides what to SAY from this flag, so
+      without it every suppressed scan announced itself as a successful punch — confidently
+      wrong, and an invitation to keep scanning.
+    */
+    expect(PUNCH).toContain('"duplicateSuppressed"');
+    expect(PUNCH).toContain("duplicateSuppressed: written.isDuplicate,");
   });
 });
 

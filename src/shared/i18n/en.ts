@@ -1561,6 +1561,70 @@ export const en = catalogue({
     THE MONTH TOTAL, under the register it totals. A day grid answers "what happened on the
     3rd"; it cannot answer "am I ahead this month" without somebody adding up thirty numbers.
   */
+  /*
+    TODAY, WHILE IT IS STILL HAPPENING. Every other figure here is retrospective — the engine
+    computes a day after it closes, so until tomorrow the register says "Not processed yet" and
+    the question people actually have at 4pm goes unanswered.
+  */
+  /*
+    THE FULL SUMMARY TAB. Every entitlement figure here is READ from the engine's own period
+    summary, never derived — comp-off is granted by policy and the late-deduction rule lives in
+    attendance_policies. A number invented in this component would sit beside real ones in the
+    same typeface, and payroll would not honour it.
+  */
+  "attendance.tabs.label": "Attendance views",
+  "attendance.summaryTab.label": "Full summary",
+  "attendance.summaryTab.netAria": "Net time against your shifts",
+  "attendance.summaryTab.netLabel": "{month} · against your shifts",
+  "attendance.summaryTab.netAhead": "You worked more than your shifts asked for.",
+  "attendance.summaryTab.netBehind": "You worked less than your shifts asked for.",
+  "attendance.summaryTab.netLevel": "You worked exactly what your shifts asked for.",
+  "attendance.summaryTab.hoursTitle": "Hours",
+  "attendance.summaryTab.expected": "Expected",
+  "attendance.summaryTab.expectedHint": "Your shifts, less any approved leave",
+  "attendance.summaryTab.worked": "Worked",
+  "attendance.summaryTab.workedHint": "As computed by the attendance engine",
+  "attendance.summaryTab.over": "Time over",
+  "attendance.summaryTab.overHint": "Across {days} days that ran long",
+  "attendance.summaryTab.under": "Time under",
+  "attendance.summaryTab.underHint": "Across {days} days that ran short",
+  "attendance.summaryTab.outcomesTitle": "What it comes to",
+  "attendance.summaryTab.outcomesSubtitle":
+    "These come from your attendance policy, applied by the system — not from the hours above.",
+  "attendance.summaryTab.days": "{n} days",
+  "attendance.summaryTab.compOff": "Comp-off earned",
+  "attendance.summaryTab.compOffHint":
+    "Granted by policy for a full day worked on a holiday or weekly off. Not calculated from surplus hours.",
+  "attendance.summaryTab.overtime": "Overtime",
+  "attendance.summaryTab.overtimeHint": "{approved} of it approved so far",
+  // The one derived figure. Named as a gap, so it cannot be read as an entitlement.
+  "attendance.summaryTab.unrecognised": "Extra, not counted",
+  "attendance.summaryTab.unrecognisedHint":
+    "Worked beyond your shifts but not counted as overtime. Ask your manager if you think it should be.",
+  "attendance.summaryTab.deduction": "Leave deducted for lateness",
+  "attendance.summaryTab.deductionHint": "{lateDays} late days, {lateTime} in total",
+  "attendance.summaryTab.unresolved":
+    "{count} days this month are not processed yet. Everything here is calculated over the {counted} that are, and will change as the rest are computed.",
+  "attendance.live.title": "Today so far",
+  "attendance.live.aria": "Live figures for today",
+  "attendance.live.since": "since {time}",
+  "attendance.live.worked": "Working for",
+  "attendance.live.workedHint": "Measured on this device from your arrival at {since}",
+  /*
+    ONE FIGURE, TWO MEANINGS. It counts down to zero and then becomes surplus, so nobody has to
+    work out which of two numbers applies to them right now. A raw variance would read "−8h 40m"
+    at half past ten — true, and useless.
+  */
+  "attendance.live.remaining": "Time left today",
+  "attendance.live.remainingHint": "Against {expected} expected for your shift",
+  "attendance.live.over": "Over your shift",
+  "attendance.live.overHint": "You have passed the {expected} your shift expects",
+  "attendance.live.late": "Late by",
+  "attendance.live.lateHint": "Measured from your shift start by the attendance engine",
+  "attendance.live.footnote":
+    "These are this device's figures, to the minute. Your recorded day is computed after it closes, and that is what the register and payroll use.",
+  "attendance.live.footnoteBreaks":
+    "{breaks} of breaks has been subtracted. These are this device's figures — your recorded day is computed after it closes, and that is what the register and payroll use.",
   "attendance.totals.title": "{month} — more or less than your shifts",
   "attendance.totals.aria": "Totals for {month}",
   "attendance.totals.basis": "Across {counted} processed days · {surplusDays} ahead · {shortfallDays} behind",

@@ -33,6 +33,7 @@ import {
   fmtTimeWithDayOffset,
   isIstMonthKey,
   istMonthRange,
+  istToday,
   nowIstMonth,
 } from "@/lib/datetime";
 import { dash } from "@/lib/format";
@@ -50,12 +51,16 @@ import { dayStatusChip, shiftDisplay, NOT_YET } from "../display";
 import { buildRegisterRows, sliceMatchesRow, type RegisterRow, type SliceKey } from "../register";
 import { PeriodSelector } from "../components/PeriodSelector";
 import { SelfPunchCard } from "../components/SelfPunchCard";
+import { TodayLive } from "../components/TodayLive";
+import { useSelfPunchState } from "../hooks/useSelfPunch";
 import { PeriodBanner } from "../components/PeriodBanner";
 import { MonthDonut } from "../components/MonthDonut";
 import { MonthGlance } from "../components/MonthGlance";
 import { MonthStatusMix } from "../components/MonthStatusMix";
 import { MonthKpis } from "../components/MonthKpis";
 import { MonthTotals } from "../components/MonthTotals";
+import { MonthSummaryPanel } from "../components/MonthSummaryPanel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dayVariance, fmtSignedMinutes, type NoExpectationReason } from "../lib/variance";
 
 /**
@@ -115,6 +120,32 @@ export default function MyAttendancePage() {
   const shifts = useShiftRefs(shiftIds);
 
   const rows = useMemo(() => buildRegisterRows(month, days.data ?? []), [month, days.data]);
+
+  /*
+    Today's computed row, for the shift the live panel measures against.
+
+    The engine may not have PROCESSED today — it usually has not — but the row still carries the
+    shift, its duration and any leave, which is everything `TodayLive` needs to know what today
+    expects. Worked minutes come from the punches instead, live.
+  */
+  /*
+    The tab lives in the URL, matching how MyDocuments does it. Two reasons: a link to somebody's
+    full summary is a thing people send each other, and the back button should undo a tab change
+    rather than leaving the page.
+  */
+  const tab = params.get("tab") === "summary" ? "summary" : "register";
+  function selectTab(next: string) {
+    const nextParams = new URLSearchParams(params);
+    if (next === "register") nextParams.delete("tab");
+    else nextParams.set("tab", next);
+    setParams(nextParams, { replace: true });
+  }
+
+  const punchState = useSelfPunchState(month === nowIstMonth());
+  const todayRow = useMemo(() => {
+    const target = punchState.data?.businessDate ?? istToday();
+    return (days.data ?? []).find((d) => d.ist_date === target) ?? null;
+  }, [days.data, punchState.data]);
   const visibleRows = useMemo(
     () => (slice === null ? rows : rows.filter((row) => sliceMatchesRow(slice, row))),
     [rows, slice],
@@ -350,7 +381,19 @@ export default function MyAttendancePage() {
           Shown only while the CURRENT month is selected: it records a punch at
           this instant, and offering it under a register of March last year would
           imply it writes there. */}
-      {month === nowIstMonth() ? <SelfPunchCard className="mb-4" /> : null}
+      {/*
+        The punch card, and beside it where today actually stands.
+
+        Only on the current month: a live panel on a past month would be counting nothing, and
+        `TodayLive` returns null before the first scan of the day so a fresh morning shows the
+        card alone rather than an empty frame.
+      */}
+      {month === nowIstMonth() ? (
+        <div className="mb-4 grid gap-4 lg:grid-cols-2">
+          <SelfPunchCard />
+          <TodayLive today={todayRow} state={punchState.data ?? null} />
+        </div>
+      ) : null}
 
       <StateBoundary
         loading={payPeriod.isLoading || context.isLoading}
@@ -427,9 +470,39 @@ export default function MyAttendancePage() {
       */}
       <MonthStatusMix from={range.from} to={range.to} />
 
-      <h2 className="mb-3 font-display text-lg font-semibold">
-        {t("attendance.register.title")}
-      </h2>
+      {/*
+        Two views of the same month, not two pages.
+
+        The register answers "what happened on the 3rd"; the summary answers "where did the month
+        land, and what does it come to". They share every query above, so the two can never
+        disagree — which is the whole reason they are tabs rather than separate routes with
+        separate fetches.
+      */}
+      <Tabs value={tab} onValueChange={selectTab}>
+        <TabsList aria-label={t("attendance.tabs.label")} className="mb-4 h-auto flex-wrap">
+          <TabsTrigger value="register">{t("attendance.register.title")}</TabsTrigger>
+          <TabsTrigger value="summary">{t("attendance.summaryTab.label")}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="summary">
+          <StateBoundary
+            loading={days.isLoading || summary.isLoading}
+            error={days.error ?? summary.error ?? undefined}
+            onRetry={() => {
+              void days.refetch();
+              void summary.refetch();
+            }}
+            skeletonRows={4}
+          >
+            <MonthSummaryPanel
+              days={days.data ?? []}
+              summary={summary.data ?? null}
+              monthLabel={monthLabel}
+            />
+          </StateBoundary>
+        </TabsContent>
+
+        <TabsContent value="register">
 
       <StateBoundary
         loading={days.isLoading}
@@ -476,6 +549,8 @@ export default function MyAttendancePage() {
         */}
         <MonthTotals days={days.data ?? []} monthLabel={monthLabel} />
       </StateBoundary>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

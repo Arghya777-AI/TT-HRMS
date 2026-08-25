@@ -117,6 +117,14 @@ export interface SelfPunchState {
   punchCount: number;
   /** The most recent punch instant on that date, for "last scan 09:14". */
   lastPunchAt: string | null;
+  /**
+   * The FIRST counted punch on that date — the arrival.
+   *
+   * Needed for anything live: "working for 6h 12m" is measured from when they actually arrived,
+   * and `lastPunchAt` cannot answer it. Already available here, since the counted list is built
+   * a few lines below; it was simply not being returned.
+   */
+  firstPunchAt: string | null;
   /** Nothing recorded yet on that date → arrival. Otherwise → departure. */
   next: NextDirection;
 }
@@ -191,7 +199,13 @@ export async function fetchSelfPunchState(
     // Nothing on the day in progress. `punches` may well be non-empty — last night's
     // scans are in the window — but reporting those as "last scan" while the count
     // reads zero is how the old bug looked on screen. The day is genuinely empty.
-    return { businessDate, punchCount: 0, lastPunchAt: null, next: nextDirectionAfter(0) };
+    return {
+      businessDate,
+      punchCount: 0,
+      lastPunchAt: null,
+      firstPunchAt: null,
+      next: nextDirectionAfter(0),
+    };
   }
 
   const duplicateFlags = await fetchPunchDuplicateFlags(employeeId, businessDate, signal);
@@ -208,6 +222,9 @@ export async function fetchSelfPunchState(
     businessDate,
     punchCount: counted.length,
     lastPunchAt: last.punched_at,
+    // The arrival. Falls back to the uncounted first scan for the same reason `last` does: the
+    // employee did scan, and a live clock measured from nothing would show nothing.
+    firstPunchAt: (counted[0] ?? onDate[0])?.punched_at ?? null,
     next: nextDirectionAfter(counted.length),
   };
 }

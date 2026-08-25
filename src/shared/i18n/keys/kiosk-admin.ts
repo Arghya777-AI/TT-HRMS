@@ -548,6 +548,14 @@ export const keysKioskAdmin = {
   */
   "kiosk.gate.queuedNamed": "Saved on this device — {name}",
   "kiosk.gate.offlineReady": "Offline recognition ready — {count} faces on this device",
+  /*
+    The server refused the face bundle, as distinct from not having been asked yet.
+
+    The code is shown deliberately. "Not ready" alone described both a fresh device and a broken
+    endpoint, and when the query was failing on a bad column name the gate said the same thing
+    either way — there was no way to tell from the device which it was.
+  */
+  "kiosk.gate.offlineFailed": "Offline recognition unavailable — the server refused the face list ({code})",
   "kiosk.gate.offlineNotReady": "Offline recognition not ready — connect once to download faces",
   "kiosk.gate.endShift": "End shift",
   "kiosk.gate.guardChip": "Guard: {name}",

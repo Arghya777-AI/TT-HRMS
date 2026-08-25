@@ -43,7 +43,7 @@
  *     auditable after the fact.
  *
  * ── VERSIONING ───────────────────────────────────────────────────────────────
- * `version` is derived from the eligible set itself — its size and its newest timestamps — so
+ * `version` is derived from the eligible set itself — its size and its newest `enrolled_at` — so
  * it changes when and only when the set changes. A device sends `have_version` and gets
  * `{ unchanged: true }` back when it is already current, which turns the routine case into a
  * few hundred bytes instead of a few hundred kilobytes.
@@ -170,7 +170,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     */
     const versionRows = await client<{ version: string; count: number }[]>`
       WITH eligible AS (
-        SELECT t.id, t.created_at
+        SELECT t.id, t.enrolled_at
           FROM secure.face_templates t
           JOIN public.employees e
             ON e.id = t.employee_id
@@ -190,7 +190,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
            )
       )
       SELECT count(*)::int AS count,
-             md5(count(*)::text || ':' || COALESCE(max(created_at)::text, 'none')) AS version
+             md5(count(*)::text || ':' || COALESCE(max(enrolled_at)::text, 'none')) AS version
         FROM eligible
     `;
     const versionRow = firstRow(versionRows);
@@ -232,7 +232,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
              e.employment_status::text AS employment_status,
              t.model_version,
              (
-               SELECT array_agg(round(v::numeric, ${DESCRIPTOR_PRECISION})::real ORDER BY i)
+               -- The int cast is not decoration: a bare parameter arrives as text and
+               -- round(numeric, text) does not exist, which fails the whole query.
+               SELECT array_agg(round(v::numeric, ${DESCRIPTOR_PRECISION}::int)::real ORDER BY i)
                  FROM unnest(t.descriptor) WITH ORDINALITY AS d(v, i)
              ) AS descriptor
         FROM secure.face_templates t

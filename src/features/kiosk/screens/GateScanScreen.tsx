@@ -208,6 +208,16 @@ export function GateScanScreen({
   */
   const bundleRef = useRef<FaceBundle | null>(null);
   const [bundleReady, setBundleReady] = useState(false);
+  /*
+    WHY it is not ready, shown on screen.
+
+    The footer used to say only "not ready", which is what a bundle that has not downloaded yet
+    looks like AND what a server error looks like. When the endpoint was failing on a bad column
+    name, the gate reported the same sentence either way and there was no way to tell from the
+    device which it was. A machine code in small text is ugly; a feature that silently does not
+    work is worse.
+  */
+  const [bundleProblem, setBundleProblem] = useState<string | null>(null);
 
   const native = useNativeCamera();
   /*
@@ -338,18 +348,25 @@ export function GateScanScreen({
   useEffect(() => {
     let cancelled = false;
 
-    const adopt = (next: FaceBundle | null) => {
+    const adopt = (next: FaceBundle | null, problem?: string) => {
       if (cancelled) return;
       bundleRef.current = next;
       setBundleReady(bundleUsable(next));
+      setBundleProblem(problem ?? null);
     };
 
     void loadBundle().then((stored) => {
       adopt(stored);
       // The server call is fire-and-forget: it cannot fail in a way that should stop scanning.
       void refreshBundle(deviceRef.current)
-        .then((outcome) => adopt(outcome.bundle))
-        .catch(() => undefined);
+        .then((outcome) =>
+          adopt(
+            outcome.bundle,
+            // "offline" is not a fault worth naming: it is the state this whole feature is for.
+            outcome.kind === "refused" ? (outcome.code ?? "REFUSED") : undefined,
+          ),
+        )
+        .catch(() => adopt(null, "FETCH_FAILED"));
     });
 
     /*
@@ -359,8 +376,13 @@ export function GateScanScreen({
     */
     const onOnline = () => {
       void refreshBundle(deviceRef.current)
-        .then((outcome) => adopt(outcome.bundle))
-        .catch(() => undefined);
+        .then((outcome) =>
+          adopt(
+            outcome.bundle,
+            outcome.kind === "refused" ? (outcome.code ?? "REFUSED") : undefined,
+          ),
+        )
+        .catch(() => adopt(null, "FETCH_FAILED"));
     };
     window.addEventListener("online", onOnline);
 
@@ -1012,7 +1034,9 @@ export function GateScanScreen({
           <Camera className="size-3.5 shrink-0" aria-hidden />
           {bundleReady
             ? t("kiosk.gate.offlineReady", { count: String(bundleRef.current?.people.length ?? 0) })
-            : t("kiosk.gate.offlineNotReady")}
+            : bundleProblem !== null
+              ? t("kiosk.gate.offlineFailed", { code: bundleProblem })
+              : t("kiosk.gate.offlineNotReady")}
         </p>
       </footer>
     </div>

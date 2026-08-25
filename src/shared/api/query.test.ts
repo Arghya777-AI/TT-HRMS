@@ -2,6 +2,8 @@
  * query.test.ts — guards the shared read layer every feature api depends on.
  * Pure decoders and error mapping only; no network.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MutationError,
@@ -16,10 +18,9 @@ import {
   isNoPermissionError,
   mutationUserMessage,
   isNull,
-  paginate,
+  cursorValue,
   shouldRetryQuery,
 } from "./query";
-import { z } from "zod";
 
 describe("db wire decoders", () => {
   it("accepts numeric as a JSON number or a string, landing on number", () => {
@@ -91,17 +92,37 @@ describe("filters", () => {
 });
 
 describe("paginate", () => {
-  it("refuses a cursor value that would break out of the PostgREST predicate", async () => {
-    // A comma or paren in an `or=` value silently changes the predicate's
-    // meaning, so it is rejected rather than escaped-and-hoped.
-    await expect(
-      paginate("v_leave_ledger_statement", z.object({ id: z.string() }), {
-        orderBy: "effective_date",
-        tiebreak: "id",
-        pageSize: 10,
-        cursor: { key: "2026-07-25", tiebreak: "a,b" },
-      }),
-    ).rejects.toBeInstanceOf(QueryError);
+  /*
+    WHAT THIS TEST USED TO DO, AND WHY IT WAS REPLACED.
+
+    It called `paginate` with a comma in the cursor and asserted it REJECTED — commented as
+    "rejected rather than escaped-and-hoped". That is the opposite of what the code does:
+    `cursorValue` QUOTES a comma, which is how PostgREST's `or=` syntax is meant to carry one.
+
+    So the rejection never came from cursor validation. It came from `run()` reaching the
+    network and failing, which made the test pass for a reason unrelated to its name — and fail
+    roughly one run in three, when the request took longer than the 5-second timeout instead of
+    erroring inside it. A test asserting a safety property it was not measuring, flaking on a
+    network it should never have touched.
+
+    The real invariant is that BOTH cursor components go through `cursorValue`, so neither can
+    reach the predicate unescaped. That is checked here, without a network; the escaping itself
+    is `cursorValue.test.ts`, which covers the comma, the quote, the backslash and the parens.
+  */
+  it("routes both cursor components through cursorValue, so neither can reach the predicate raw", () => {
+    const source = readFileSync(join(process.cwd(), "src/shared/api/query.ts"), "utf8");
+    const body = source.slice(source.indexOf("export async function paginate"));
+    expect(body).toContain("const key = cursorValue(cursor.key);");
+    expect(body).toContain("const tie = cursorValue(cursor.tiebreak);");
+    // Interpolated only as the escaped locals — never the raw cursor fields.
+    const predicate = body.slice(body.indexOf("b = b.or("), body.indexOf("applyOrder"));
+    expect(predicate).not.toContain("cursor.key");
+    expect(predicate).not.toContain("cursor.tiebreak");
+  });
+
+  it("quotes a comma rather than refusing it, which is what PostgREST needs", () => {
+    // The behaviour the old test misdescribed, asserted directly and instantly.
+    expect(cursorValue("a,b")).toBe('"a,b"');
   });
 });
 

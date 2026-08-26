@@ -879,6 +879,29 @@ function civilDate(values: FormValues, name: string): string | null {
  * and the IST business date is the caller's single source.
  */
 export function employeeFormError(values: FormValues, todayIst: string): string | null {
+  /*
+    ── AN EMPLOYEE WITHOUT AN EMAIL NEVER GETS A LOGIN ─────────────────────────
+    The wizard provisions a portal account with the employee, but only when the form supplied
+    an address — `employee-account-create` falls back work email → personal email, and with
+    neither there is nothing to create an account against.
+
+    What that produces is not an obvious failure. The employee row is created, everything looks
+    successful, and the person is simply left with `employees.profile_id = null` — which
+    `auth-identify` turns into `portalState: "none"`, and the sign-in screen renders as "Gate
+    attendance only. This employee code is set up for the gate scanner, not the portal." No
+    dashboard, no web punch, no face sign-in, because face eligibility hangs off an account
+    too. Nothing anywhere says an account was skipped.
+
+    Neither address can be required on its own — plenty of staff have no work email, and some
+    have no personal one. ONE of the two is the real requirement, so it is checked here rather
+    than as a field flag.
+  */
+  const workEmail = (values["work_email"] ?? "").trim();
+  const personalEmail = (values["personal_email"] ?? "").trim();
+  if (workEmail === "" && personalEmail === "") {
+    return t("admin.people.err.emailRequiredForLogin");
+  }
+
   const doj = civilDate(values, "date_of_join");
   if ((values["date_of_join"] ?? "").trim() !== "" && doj === null) {
     return t("admin.people.err.dateShape");

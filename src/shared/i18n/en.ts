@@ -4994,6 +4994,13 @@ export const en = catalogue({
   "admin.people.err.email": "Enter a valid email address, such as name@tamarindtree.co.",
   "admin.people.err.dateShape": "Enter the date as YYYY-MM-DD.",
   "admin.people.err.dojAbsurd": "The joining date must fall between {earliest} and {latest}.",
+  /*
+    Without an address the wizard cannot provision a portal account, and the employee is left
+    gate-only with nothing on screen saying so. The message names the consequence rather than
+    the rule, because "work email is required" invites somebody to type a placeholder.
+  */
+  "admin.people.err.emailRequiredForLogin":
+    "Give a work email or a personal email. Without one this person gets no portal login — no dashboard, no web punch and no face sign-in — and their attendance can only be recorded at the gate scanner.",
   "admin.people.err.dobAfterDoj": "The date of birth must be before the joining date.",
   "admin.people.err.contractOrder": "The contract cannot end before it starts.",
   "admin.people.err.lwdBeforeDoj": "The last working day cannot fall before the joining date.",

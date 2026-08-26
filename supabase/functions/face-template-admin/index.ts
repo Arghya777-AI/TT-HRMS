@@ -660,6 +660,51 @@ Deno.serve(async (req: Request): Promise<Response> => {
              AND deleted_at IS NULL
         `;
 
+        /*
+          ── 5. APPROVAL TURNS THE PERSON ON EVERYWHERE, NOT JUST AT THE GATE ────
+          Asked for directly: once a face is enrolled it should work everywhere, rather than
+          leaving somebody enrolled and still refused when they try to punch from the portal.
+
+          APPROVAL is the right moment for it, not capture. An enrolment lands
+          `pending_approval` and its template is not `is_active` until this transaction runs —
+          which is exactly why face SIGN-IN does not work for a new joiner either, though
+          `allow_face_login` has defaulted true all along. Granting anything at capture time
+          would hand portal punching to a face nobody had vetted yet, which is the one thing
+          this review queue exists to prevent.
+
+          WEB PUNCH is the only switch that needed touching. `employees.allow_web_punch` defaults
+          FALSE by design, so every new joiner was enrolled, approved, and then quietly refused
+          with SELF_PUNCH_NOT_ENTITLED until an admin found the checkbox in the employee editor.
+
+          Behind a setting, because this widens where attendance can be recorded from — a web
+          punch can come from anywhere and the geofence flags it rather than refusing it.
+          `attendance.web_punch_on_enrolment` defaults true, which is what was asked for; a venue
+          that wants the gate camera to be the only route sets it false, with no deploy.
+
+          It only ever GRANTS. An admin who has deliberately revoked somebody's web punch must
+          not have that undone by a re-enrolment, so the UPDATE is conditioned on it being off.
+        */
+        const webPunchSetting = await tx<{ value: string | null }[]>`
+          SELECT app.setting('attendance.web_punch_on_enrolment') AS value
+        `;
+        const rawSetting = firstRow(webPunchSetting)?.value;
+        const grantWebPunch = rawSetting === null || rawSetting === undefined
+          ? true
+          : !/^"?(false|0|off|no)"?$/i.test(String(rawSetting).trim());
+
+        let webPunchGranted = false;
+        if (grantWebPunch) {
+          const granted = await tx<{ id: string }[]>`
+            UPDATE public.employees
+               SET allow_web_punch = true
+             WHERE id = ${t.employee_id}::uuid
+               AND deleted_at IS NULL
+               AND allow_web_punch = false
+            RETURNING id
+          `;
+          webPunchGranted = granted.length > 0;
+        }
+
         await writeAudit(tx, ctx, {
           action: "approve",
           entityTable: "secure.face_templates",
@@ -669,6 +714,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
           newValue: {
             version: t.version,
             state: "active",
+            // A permission changed as a side effect of this approval, so the audit row says so.
+            web_punch_granted: webPunchGranted,
             approved_set_size: approved.length,
             retired_template_ids: retired.map((r) => r.id),
             quality_score: Number(t.quality_score),

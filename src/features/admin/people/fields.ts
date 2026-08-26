@@ -435,9 +435,24 @@ export function timePolicyGroups(refs: PeopleRefs): readonly FieldGroup[] {
       title: t("admin.people.group.timeRules"),
       fields: [
         {
+          /*
+            REQUIRED. Without a shift the engine has nothing to measure a day AGAINST.
+
+            Every figure on the attendance register is a comparison with the shift:
+            `shift_duration_minutes` is what "expected" means, `shift_start_at` is what
+            lateness is measured from, and the over/under column is worked minus expected. With
+            no shift assigned those are not wrong, they are absent — the day computes to a
+            worked total and nothing else, and the register shows a person who can never be
+            late and can never be short, however they actually attend.
+
+            The same reasoning as `weekly_off_rule_id` below, and the same history: a blank
+            here is invisible on the create form and silently degrades every month that
+            follows.
+          */
           name: "shift_id",
           label: t("admin.people.field.shift"),
           kind: "select",
+          required: true,
           help: t("admin.people.help.shift"),
           options: refs.shifts,
         },
@@ -471,9 +486,26 @@ export function timePolicyGroups(refs: PeopleRefs): readonly FieldGroup[] {
           options: refs.holidayCalendars,
         },
         {
+          /*
+            REQUIRED, and worth being precise about why — it is NOT that a blank policy blocks
+            anything. `attendance-self-punch` treats an unresolved policy as permissive on
+            purpose ("nothing has forbidden web punching"), and `resolve_policy` falls back to a
+            COMPANY-scope assignment, so a blank one silently inherits whatever the company
+            default happens to be.
+
+            That inheritance is the problem. It is exactly what put 77 of the first 79 employees
+            on the wrong weekly-off rule: the record displayed one thing and the engine used
+            another. The policy carries the debounce, the confidence floor, the liveness
+            requirement and the overtime rules, so inheriting it by accident means an employee
+            is judged by settings nobody chose for them and nobody can see on their record.
+
+            The admin has to say which policy applies. If the answer is "the company default",
+            that is still a choice, made once, visibly.
+          */
           name: "attendance_policy_id",
           label: t("admin.people.field.attendancePolicy"),
           kind: "select",
+          required: true,
           help: t("admin.people.help.attendancePolicy"),
           options: refs.attendancePolicies,
         },

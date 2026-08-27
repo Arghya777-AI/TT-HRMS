@@ -9,7 +9,6 @@
  */
 import type { ComponentType } from "react";
 import {
-  Banknote,
   BarChart3,
   CalendarDays,
   CalendarPlus,
@@ -132,10 +131,11 @@ const ME_ITEMS: readonly NavItem[] = [
     from the employee" means, and hiding one without the other would leave the
     other as the way in.
 
-    An admin is unaffected in the work they came for: payroll lives under
-    `/admin/payroll/*`, which has its own rail row in ADMIN_ITEMS below.
+    THE ADMIN'S PAYROLL ROW IS GONE TOO — this note used to say payroll was
+    unaffected because it had its own rail row in ADMIN_ITEMS. It does not any
+    more; see the note where that row was.
 
-    TO RESTORE: put back the row that was here —
+    TO RESTORE: re-import `Banknote` and put back the row that was here —
       { labelKey: "shell.nav.salary", to: "/me/payslips", icon: Banknote,
         cap: "me.view", badge: "salary.new", mobileSlot: 4 },
     re-add "salary.new" to `BadgeKey`, and re-add the tab in `ProfileTabs`.
@@ -214,7 +214,36 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   // its own entry rather than being a button on the requests grid. It is what HR reaches for
   // when a person phones in sick or has no login yet.
   { labelKey: "shell.nav.admin.leaveApply", to: "/admin/leave/apply", icon: CalendarPlus, cap: "admin.access" },
-  { labelKey: "shell.nav.admin.payroll", to: "/admin/payroll/runs", icon: Banknote, cap: "admin.access" },
+  /*
+    NO "Payroll" ROW HERE.
+
+    Every `/admin/payroll/*` route is still registered, still carries
+    `admin.access`, and is still findable in the command palette — this withdraws
+    the rail ENTRANCE, it does not delete the section or lower its tier. Fifteen
+    screens hang off it (runs, payslips, components, structures, compensation,
+    revisions, overtime, reimbursements, statutory, Form 16, bank advice, register,
+    variance, arrears), and every one still resolves for an admin who follows a
+    link or types the URL.
+
+    THIS BREAKS `railCoverage.test.ts`'s ONE-ENTRY-PER-DOMAIN RULE ON PURPOSE.
+    `admin-payroll` is named there as a deliberate exception rather than the rule
+    being relaxed, so a genuinely-forgotten section still fails that test — which
+    is the defect it was written to catch — and re-adding this row fails it too
+    until the exception is removed alongside. Read that note before touching
+    either.
+
+    STILL REACHABLE FROM THE DASHBOARD, which is the honest limit of this change:
+    `AnalyticsPayroll.page.tsx` and `AnalyticsMetrics.page.tsx` both link to
+    /admin/payroll/runs and are NOT gated, because the routes kept `admin.access`
+    and an admin following them gets the screen rather than a refusal. So payroll
+    is undiscoverable from the rail, not unreachable. If it is meant to be
+    unreachable, those two links go next and the cap on the routes changes with
+    them — a bigger decision than this one, and not assumed here.
+
+    TO RESTORE: re-import `Banknote` and put the row back here —
+      { labelKey: "shell.nav.admin.payroll", to: "/admin/payroll/runs", icon: Banknote, cap: "admin.access" },
+    then delete "admin-payroll" from `EXPECTED_UNCOVERED` in railCoverage.test.ts.
+  */
   { labelKey: "shell.nav.admin.documents", to: "/admin/documents/repository", icon: FileText, cap: "admin.access" },
   // Time & policy. SEVEN screens live under /admin/time/* — shifts, weekly offs,
   // holidays, attendance policies, pay periods, policy assignments, the resolver — and

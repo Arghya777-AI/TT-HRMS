@@ -8,6 +8,11 @@
  * exactly this reason — Face & kiosk (nine screens) and Time & policy (seven) — and both
  * were reported as "where is that option?" while being told which menu to open.
  *
+ * A DOMAIN MAY BE EXCLUDED, but only by name in `EXPECTED_UNCOVERED` below, and
+ * only with a companion assertion that it really is uncovered. A withdrawal that
+ * was decided is not the same thing as a section nobody remembered to add, and
+ * this file has to keep failing on the second while permitting the first.
+ *
  * So this asserts coverage by DOMAIN rather than by route. A section landing plus its own
  * tabs is the intended pattern: `/admin/time/shifts` is the entry and the other six time
  * screens hang off its section nav. Demanding a rail item per route would be wrong and
@@ -36,10 +41,25 @@ function adminDomains(): Map<string, string[]> {
   return byDomain;
 }
 
+/**
+ * Admin domains deliberately kept OFF the rail by product decision.
+ *
+ * `admin-payroll` is withdrawn from the navigation rail (see the note where its
+ * row was, in `nav-model.ts`). Its fifteen screens are untouched — still
+ * registered, still `admin.access`, still in the command palette — so what this
+ * records is that nobody can DISCOVER the section from the rail, which is what
+ * was asked for.
+ *
+ * Naming it here rather than relaxing the rule is the point: every other
+ * uncovered section still fails the test below.
+ */
+const EXPECTED_UNCOVERED: readonly string[] = ["admin-payroll"];
+
 describe("admin rail coverage", () => {
   it("gives every admin domain at least one navigation entry", () => {
     const uncovered: string[] = [];
     for (const [domain, paths] of adminDomains()) {
+      if (EXPECTED_UNCOVERED.includes(domain)) continue;
       const covered = paths.some((path) => NAV_TARGETS.includes(path));
       if (!covered) uncovered.push(`${domain} (${paths.length} screens, e.g. ${paths[0] ?? "?"})`);
     }
@@ -47,6 +67,26 @@ describe("admin rail coverage", () => {
       uncovered,
       "admin sections with no way in except typing a URL — add a rail entry pointing at the section's landing screen",
     ).toEqual([]);
+  });
+
+  it("keeps every deliberately-uncovered domain actually uncovered", () => {
+    /*
+      THE OTHER DIRECTION OF THE EXCEPTION, so the list cannot quietly become a
+      place to park real gaps. If a rail row for one of these comes back, this
+      fails and whoever restored it must delete the exception in the same change.
+      And if the domain stops existing, that fails too rather than lingering.
+    */
+    for (const domain of EXPECTED_UNCOVERED) {
+      const paths = adminDomains().get(domain) ?? [];
+      expect(
+        paths.length,
+        `${domain} has no admin routes — drop it from EXPECTED_UNCOVERED`,
+      ).toBeGreaterThan(0);
+      expect(
+        paths.filter((path) => NAV_TARGETS.includes(path)),
+        `${domain} has a navigation entry again — remove it from EXPECTED_UNCOVERED`,
+      ).toEqual([]);
+    }
   });
 
   it("covers time & policy specifically — the section this test was written for", () => {

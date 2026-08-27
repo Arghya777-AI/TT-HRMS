@@ -13,8 +13,6 @@ import { Link } from "react-router-dom";
 import {
   Banknote,
   CalendarDays,
-  ClipboardList,
-  HeartHandshake,
   Inbox,
   Megaphone,
   PartyPopper,
@@ -52,22 +50,38 @@ interface QuickAction {
 }
 
 /**
- * Up to six actions, each a real route from the manifest — never more than eight,
- * and one icon per concept (DR-42). P1.5/P2 destinations are deliberately absent:
- * a tile that lands on "not switched on yet" is not an action.
+ * Up to four actions now, each a real route from the manifest — never more than
+ * eight, and one icon per concept (DR-42). P1.5/P2 destinations are deliberately
+ * absent: a tile that lands on "not switched on yet" is not an action.
  *
  * `cap` narrows a tile to a reader who can actually open it, for the same reason:
  * a tile that lands on "you do not have access" is not an action either. Holidays
  * is admin-tier now (see `FOOTER_ITEMS` in nav-model.ts), so an employee must not
  * be offered it here.
+ *
+ * NO COMP-OFF TILE AND NO PAYSLIPS TILE.
+ *
+ * Comp-off completes a withdrawal that was already half-made: `/me/comp-off` is in
+ * `HIDDEN_FROM_NAV` (route-manifest.ts) and off every rail, and a Quick Action
+ * pointing at a path the product has stopped advertising is the loudest possible
+ * advertisement of it. The route still resolves and earned credits are untouched.
+ *
+ * Payslips is the other half of taking salary off the employee's rail. The rail row
+ * and the Salary and Payment profile tabs went earlier; this tile and the last-payslip
+ * card were what kept pay one click from Home regardless. `/me/payslips` is still a
+ * route and still `me.view`, so a link or the palette still opens it.
+ *
+ * TO RESTORE either: re-import its icon (`HeartHandshake`, `ClipboardList`) and put
+ * the line back —
+ *   { to: "/me/comp-off",  labelKey: "home.quick.compOff",  icon: HeartHandshake },
+ *   { to: "/me/payslips",  labelKey: "home.quick.payslips", icon: ClipboardList },
+ * The grid is `grid-cols-2 sm:grid-cols-3`, so the count is not load-bearing.
  */
 const QUICK_ACTIONS: readonly QuickAction[] = [
   { to: "/me/leave/apply", labelKey: "home.quick.applyLeave", icon: CalendarDays },
   { to: "/me/regularizations/new", labelKey: "home.quick.regularize", icon: Wrench },
-  { to: "/me/comp-off", labelKey: "home.quick.compOff", icon: HeartHandshake },
   { to: "/me/approvals", labelKey: "home.quick.approvals", icon: Inbox },
   { to: "/me/holidays", labelKey: "home.quick.holidays", icon: PartyPopper, cap: "admin.access" },
-  { to: "/me/payslips", labelKey: "home.quick.payslips", icon: ClipboardList },
 ];
 
 export function QuickActions() {
@@ -251,6 +265,12 @@ export function AnnouncementsCard({ query }: AnnouncementsCardProps) {
 
 // -----------------------------------------------------------------------------
 // Region J — last payslip (net pay masked by default)
+//
+// NOT RENDERED ANY MORE. `Home.page.tsx` stopped mounting this card when salary
+// came off the employee's Home screen, and stopped running `useLatestPayslip`
+// with it, so no net-pay figure is fetched for a card nobody sees. Kept, rather
+// than deleted, because it is the whole implementation of the region and putting
+// it back is one line there — see the note at its removal site.
 // -----------------------------------------------------------------------------
 
 export interface LastPayslipCardProps {

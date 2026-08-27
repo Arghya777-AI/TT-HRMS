@@ -3,8 +3,13 @@
  *
  * Regions in the order spec-employee §5 E-02 lists them, which is also the DOM
  * order, which is also the mobile single-column order: A greeting band, B Today,
- * C Needs your attention, D my-month strip, E leave balances, F comp-off,
- * G quick actions, H upcoming holidays, I announcements, J last payslip.
+ * C Needs your attention, D my-month strip, E leave balances, G quick actions,
+ * H upcoming holidays, I announcements.
+ *
+ * F (comp-off) AND J (last payslip) ARE NO LONGER MOUNTED. Both were withdrawn by
+ * product decision, not dropped from the spec — the letters are left in place so
+ * the numbering still matches §5, and each removal site carries its own note and
+ * a one-line restore. Region K was never built; see below.
  *
  * Two structural rules this page exists to honour:
  *  1. Every number is a named column of a server view, fetched by the SAME api
@@ -25,7 +30,6 @@ import { EmptyState } from "@/shared/ui/EmptyState";
 import { ErrorState } from "@/shared/ui/ErrorState";
 import { fmtDateWeekday, fmtTime, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
-import { useLatestPayslip } from "@/features/pay/hooks/usePay";
 import {
   useAnnouncements,
   useAttendanceRealtime,
@@ -50,10 +54,9 @@ import { AttentionCard } from "../components/AttentionCard";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
-import { CompOffCard, LeaveBalancesCard } from "../components/BalancesCards";
+import { LeaveBalancesCard } from "../components/BalancesCards";
 import {
   AnnouncementsCard,
-  LastPayslipCard,
   QuickActions,
   UpcomingHolidaysCard,
 } from "../components/SideCards";
@@ -77,7 +80,6 @@ export default function HomePage() {
   const holidaysQuery = useUpcomingHolidays(4);
   const calendarId = useMyHolidayCalendarId();
   const announcementsQuery = useAnnouncements(3);
-  const payslipQuery = useLatestPayslip();
 
   const me = meQuery.data ?? null;
 
@@ -91,7 +93,6 @@ export default function HomePage() {
     balancesQuery,
     holidaysQuery,
     announcementsQuery,
-    payslipQuery,
   ].some((q) => q.isError);
 
   // A signed-in account with no employee row is kiosk-only staff (E-01): the
@@ -221,14 +222,26 @@ export default function HomePage() {
         {/* Region D */}
         <MonthStrip query={monthQuery} />
 
-        {/* Region E + F */}
+        {/* Region E */}
         <LeaveBalancesCard query={balancesQuery} />
-        <CompOffCard query={balancesQuery} />
+        {/*
+          NO COMP-OFF CARD (Region F).
+
+          Comp-off was asked to be hidden everywhere, and `/me/comp-off` is already
+          in `HIDDEN_FROM_NAV` and off every rail — a balance card on the first
+          screen an employee sees would have undone that on its own. `CompOffCard`
+          is kept in `BalancesCards.tsx` and `balancesQuery` still feeds the leave
+          balances beside it, so restoring is one line:
+            <CompOffCard query={balancesQuery} />
+          The LEDGER is untouched: credits already earned, and their expiry, are
+          still in the database and the audit trail. Hiding a screen must not be a
+          way of deleting time somebody worked.
+        */}
 
         {/* Region G */}
         <QuickActions />
 
-        {/* Region H + I + J */}
+        {/* Region H + I */}
         <UpcomingHolidaysCard
           query={holidaysQuery}
           /*
@@ -239,7 +252,23 @@ export default function HomePage() {
           hasCalendar={calendarId.isPending ? null : calendarId.data != null}
         />
         <AnnouncementsCard query={announcementsQuery} />
-        <LastPayslipCard query={payslipQuery} />
+        {/*
+          NO LAST-PAYSLIP CARD (Region J), and no `useLatestPayslip` above.
+
+          This card was the last thing keeping pay one click from Home after the
+          Salary rail row, the Salary and Payment profile tabs and the Payslips
+          quick action went: it rendered net pay with a reveal control and linked
+          to both /me/payslips and the viewer. Dropping the QUERY as well as the
+          card matters — leaving the hook would go on fetching a net-pay figure
+          for a card nobody renders, which is the opposite of hiding it.
+
+          `/me/payslips` and `/me/payslips/:period` are still routes and still
+          `me.view`; the screens work for anyone with a link or the palette.
+
+          TO RESTORE: re-add `useLatestPayslip`, `const payslipQuery = ...`, put
+          `payslipQuery` back in the `partial` list, and mount
+            <LastPayslipCard query={payslipQuery} />
+        */}
       </div>
     </div>
   );

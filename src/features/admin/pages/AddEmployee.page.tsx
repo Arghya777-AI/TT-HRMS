@@ -57,6 +57,7 @@ import {
   employeeFormError,
   withDerivedDisplayName,
   wizardStepGroups,
+  withoutForbiddenSelfPunch,
   wizardStepHint,
   wizardStepTitle,
   type WizardStepId,
@@ -74,7 +75,7 @@ import {
 import { createEmployeeAccount, type AccountCreated } from "../api/account-create.api";
 import { sendCredentialEmail } from "../api/credential-mail.api";
 import { mutationUserMessage } from "@/shared/api/query";
-import { useDefaultCompanyId } from "../hooks/useMasters";
+import { useDefaultCompanyId, useSelfPunchRestrictedDepartments } from "../hooks/useMasters";
 
 const MIN_REASON = 10;
 
@@ -124,8 +125,22 @@ export default function AddEmployeePage() {
 
   const step: WizardStepId = WIZARD_STEPS[stepIndex] ?? "identity";
   const isReview = step === "review";
-  const groups = useMemo(() => wizardStepGroups(step, refs), [step, refs]);
-  const everyGroup = useMemo(() => allWizardGroups(refs), [refs]);
+  /*
+    A department that forbids self-service punching should not be ASKED about it.
+    The trigger overrules a ticked box anyway (20260817120000), and a form that
+    asks a question it will not honour is how somebody ends up reporting that the
+    punch button "still shows" — which is exactly what happened.
+  */
+  const restrictedDepartments = useSelfPunchRestrictedDepartments();
+  const chosenDepartmentId = String(values["department_id"] ?? "");
+  const groups = useMemo(
+    () => withoutForbiddenSelfPunch(wizardStepGroups(step, refs), chosenDepartmentId, restrictedDepartments),
+    [step, refs, chosenDepartmentId, restrictedDepartments],
+  );
+  const everyGroup = useMemo(
+    () => withoutForbiddenSelfPunch(allWizardGroups(refs), chosenDepartmentId, restrictedDepartments),
+    [refs, chosenDepartmentId, restrictedDepartments],
+  );
 
   const create = useAuditedMutation<{ id: string; employee_code: string }, Record<string, unknown>>({
     /*

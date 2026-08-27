@@ -43,7 +43,7 @@ import {
   softDelete,
   updateRow,
   type Filter,
-} from "@/shared/api/query";
+  isFalse,} from "@/shared/api/query";
 import { t } from "@/shared/i18n/en";
 
 export const REASON_ORG_MASTER = t("admin.reason.default.orgMaster");
@@ -629,3 +629,27 @@ export function fetchSectionsOfDepartment(
   return fetchOrgList("sections", { parent: { department_id: departmentId } }, signal);
 }
 
+
+/**
+ * Departments whose staff must scan at the gate.
+ *
+ * `self_service_punch_allowed` (20260817120000) is enforced by a trigger, so this
+ * read is not the guard — it exists so a FORM can stop offering a toggle the
+ * database will overrule. Returned as ids only: the screens that need it are
+ * deciding whether to render a field, not describing a department.
+ */
+export async function fetchSelfPunchRestrictedDepartmentIds(
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const rows = await selectMany(
+    "departments",
+    z.object({ id: dbUuid }),
+    {
+      columns: "id",
+      filters: [isNull("deleted_at"), isFalse("self_service_punch_allowed")],
+      limit: 100,
+      ...(signal ? { signal } : {}),
+    },
+  );
+  return rows.map((r) => r.id);
+}

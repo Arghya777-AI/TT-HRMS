@@ -15,6 +15,7 @@
  */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { z } from "zod";
+import { useMemo } from "react";
 import { qk } from "@/shared/api/keys";
 import { SENSITIVE_REASON_LENGTH, shouldRetryQuery } from "@/shared/api/query";
 import {
@@ -42,7 +43,7 @@ import {
   type HolidayInput,
   type OrgEntityKey,
   type OrgListFilters,
-} from "../api/org.api";
+  fetchSelfPunchRestrictedDepartmentIds,} from "../api/org.api";
 
 /** A picker entry: an id and the NAME to render. Codes never reach a picker. */
 export interface RefOption {
@@ -285,4 +286,20 @@ export function useCompanySave(): AuditedMutationResult<Company, MasterSaveInput
     invalidate: [qk.admin.companies()],
     minReasonLength: SENSITIVE_REASON_LENGTH,
   });
+}
+
+/**
+ * The department ids that forbid self-service punching, as a Set for the forms.
+ *
+ * Cached like the other reference reads — a department's punch rule changes when
+ * management decides it does, not between two renders of a wizard step.
+ */
+export function useSelfPunchRestrictedDepartments(): ReadonlySet<string> {
+  const q = useQuery({
+    queryKey: qk.admin.orgList("selfPunchRestrictedDepartments", {}),
+    queryFn: ({ signal }) => fetchSelfPunchRestrictedDepartmentIds(signal),
+    retry: shouldRetryQuery,
+    staleTime: 10 * 60_000,
+  });
+  return useMemo(() => new Set(q.data ?? []), [q.data]);
 }

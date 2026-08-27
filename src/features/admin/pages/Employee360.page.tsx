@@ -55,6 +55,7 @@ import {
   paymentGroups,
   personalGroups,
   timePolicyGroups,
+  withoutForbiddenSelfPunch,
 } from "../people/fields";
 import {
   useAdminEmployee,
@@ -65,6 +66,7 @@ import {
   useStatutoryMasked,
   useUpdateEmployee,
 } from "../hooks/usePeople";
+import { useSelfPunchRestrictedDepartments } from "../hooks/useMasters";
 import {
   EMPLOYMENT_STATUS_LABELS,
   REASON_EMPLOYMENT_DETAILS,
@@ -128,6 +130,15 @@ export default function Employee360Page() {
   const [reasonOpen, setReasonOpen] = useState(false);
   const [revealTarget, setRevealTarget] = useState<"statutory" | "bank" | null>(null);
 
+  const restrictedDepartments = useSelfPunchRestrictedDepartments();
+  /*
+    The department on record, overlaid by a transfer typed on the Employment tab
+    but not yet saved — so moving somebody INTO Ground takes the toggles away
+    before the save, not after it.
+  */
+  const chosenDepartmentId =
+    edits["department_id"] ?? (row?.department_id != null ? String(row.department_id) : "");
+
   const groups: readonly FieldGroup[] = useMemo(() => {
     switch (tab) {
       case "basic":
@@ -135,7 +146,9 @@ export default function Employee360Page() {
       case "employment":
         return employmentGroups(refs, employeeId ?? undefined);
       case "policy":
-        return timePolicyGroups(refs);
+        /* Same rule as the wizard: a restricted department is not offered the
+           self-punch toggles, because saving one would change nothing. */
+        return withoutForbiddenSelfPunch(timePolicyGroups(refs), chosenDepartmentId, restrictedDepartments);
       case "payment":
         return paymentGroups(refs);
       case "personal":
@@ -143,7 +156,7 @@ export default function Employee360Page() {
       case "exit":
         return exitGroups();
     }
-  }, [tab, refs, employeeId]);
+  }, [tab, refs, employeeId, chosenDepartmentId, restrictedDepartments]);
 
   /** Server values for this tab; `edits` overlays only what was touched. */
   const original = useMemo<FormValues>(

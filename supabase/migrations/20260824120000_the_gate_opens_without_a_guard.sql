@@ -64,6 +64,16 @@
 
 BEGIN;
 
+/*
+  Every migration that writes a row states why, because `reason_required` refuses
+  an UPDATE without it. This one flips `require_operator` on existing gates in the
+  DO block below, and shipped without the preamble — so it has never applied, in
+  validation or in the live project. The gate has been demanding a guard the whole
+  time.
+*/
+SELECT set_config('app.reason', 'migration 20260824120000: the gate terminal is unattended, so require_operator defaults to false and existing gates are flipped to match — liveness on the device replaces the guard', true);
+SELECT set_config('app.source', 'migration', true);
+
 ALTER TABLE public.kiosk_devices
   ALTER COLUMN require_operator SET DEFAULT false;
 

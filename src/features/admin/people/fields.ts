@@ -990,3 +990,52 @@ export function isNumericField(field: FieldSpec): boolean {
     field.kind === "rupees"
   );
 }
+
+// -----------------------------------------------------------------------------
+// The department's own rule about self-service punching
+// -----------------------------------------------------------------------------
+
+/** The two employee columns that grant punching without going to the gate. */
+export const SELF_PUNCH_FIELDS: readonly string[] = [
+  "allow_web_punch",
+  "allow_mobile_selfie_punch",
+];
+
+/**
+ * Drop the self-punch toggles when the chosen department forbids them.
+ *
+ * ── WHY THE FIELDS GO RATHER THAN GREY OUT ──────────────────────────────────
+ *
+ * `departments.self_service_punch_allowed` is enforced by a trigger
+ * (20260817120000), so a ticked box in a restricted department is overruled on
+ * save. That is correct and it is also the worst thing to show somebody: they
+ * tick it, they save, nothing changes, and nothing says why. The venue asked for
+ * the option not to appear at all, which is the honest version — the form stops
+ * asking a question whose answer it will not honour.
+ *
+ * It takes the CURRENTLY CHOSEN department id — not the whole form — so choosing
+ * Ground on the placement step removes the toggles from the step after it, and
+ * choosing an office department brings them back. An id rather than `FormValues`
+ * because the employee editor derives its values FROM the groups, and a filter
+ * that read the values would close that loop.
+ *
+ * Pure, like everything else in this file: the set of restricted departments is
+ * passed in, never fetched here.
+ */
+export function withoutForbiddenSelfPunch(
+  groups: readonly FieldGroup[],
+  departmentId: string | null | undefined,
+  restrictedDepartmentIds: ReadonlySet<string>,
+): readonly FieldGroup[] {
+  const chosen = String(departmentId ?? "");
+  if (chosen === "" || !restrictedDepartmentIds.has(chosen)) return groups;
+
+  return groups
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((f) => !SELF_PUNCH_FIELDS.includes(f.name)),
+    }))
+    /* A group whose every field was a punch toggle would render as a heading over
+       nothing. Better absent than empty. */
+    .filter((group) => group.fields.length > 0);
+}

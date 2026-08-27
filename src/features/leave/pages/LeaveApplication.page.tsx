@@ -756,6 +756,18 @@ export default function LeaveApplicationPage() {
                           {type.isPaid
                             ? t("leave.app.available", { days: formatNumber(type.availableDays) })
                             : t("leave.app.unpaid")}
+                          {/*
+                            A DIMMED ROW MUST SAY WHY IT IS DIMMED.
+
+                            Maternity, paternity and week-off are offered at this
+                            venue but carry no accrued balance — they are granted
+                            per case, so they sit at zero until an administrator
+                            credits the days. The row was already greyed out by
+                            `empty`, silently, and the first person to hit it read
+                            it as the form being broken rather than as "nothing has
+                            been granted to you yet". One clause fixes that.
+                          */}
+                          {empty ? ` · ${t("leave.app.emptyAskHr")}` : ""}
                           {!type.allowsCombination ? ` · ${t("leave.app.mustBeAlone")}` : ""}
                           {/*
                             STATED, NOT ENFORCED HERE. Knowing how much of the

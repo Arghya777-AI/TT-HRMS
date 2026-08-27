@@ -669,6 +669,7 @@ export const keysRecovered = {
   "adminLeave.rollover.history.heading": "Previous runs",
   "adminLeave.rollover.history.hint": "What earlier rollovers actually carried, lapsed and encashed — recorded when they ran, not recalculated now.",
   "adminLeave.rollover.engine.body": "A dry run writes no balances — it records what the close WOULD carry and lapse, computed by the same query that commits it, so the preview and the commit cannot disagree. Committing carries each balance forward up to its type's limit, lapses the excess, and zeroes the closing year. It is refused before the year has ended, and refused a second time for the same year.",
+  "leave.app.emptyAskHr": "none granted yet \u2014 ask HR to add these days",
   "admin.leaveBal.adjustBalance": "Adjust a balance",
   "admin.leaveBal.adjust": "Adjust",
   "admin.leaveBal.col.adjust": "Adjust",

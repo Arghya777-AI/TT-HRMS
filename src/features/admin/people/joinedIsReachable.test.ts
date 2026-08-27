@@ -61,7 +61,8 @@ describe("the status an employee starts in can punch", () => {
       the gate but accepted on the portal (or the reverse) is a bug found by a person standing
       in front of a camera, not by us.
     */
-    const [gate, web] = PUNCH_PATHS.map(punchableIn);
+    const gate = punchableIn("kiosk-punch");
+    const web = punchableIn("attendance-self-punch");
     expect([...gate].sort()).toEqual([...web].sort());
   });
 

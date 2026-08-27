@@ -729,7 +729,16 @@ export const consoleEnrolResultSchema = z.object({
   displayName: z.string().optional(),
   version: dbInt.optional(),
   acceptedSamples: dbInt.optional(),
-  requiresApproval: z.literal(true).optional(),
+  /*
+    Was `z.literal(true)`, which only ever held while every enrolment queued. An
+    admin-performed enrolment is now auto-approved and returns false, and a literal would have
+    thrown a validation error on the success path — the enrolment committed server-side and the
+    console reporting a failure.
+  */
+  requiresApproval: z.boolean().optional(),
+  /** True when this enrolment went live immediately, so the UI can say so instead of guessing. */
+  autoApproved: z.boolean().optional(),
+  webPunchGranted: z.boolean().optional(),
 });
 export type ConsoleEnrolResult = z.infer<typeof consoleEnrolResultSchema>;
 

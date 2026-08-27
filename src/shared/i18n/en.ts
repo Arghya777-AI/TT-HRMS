@@ -6330,7 +6330,13 @@ export const en = catalogue({
   "admin.enrolCap.pose.smile": "Smile",
   "admin.enrolCap.submit": "Submit for approval",
   "admin.enrolCap.submitting": "Submitting…",
-  "admin.enrolCap.done": "Captured set submitted for {name}. It appears below as pending — activate it to make the face matchable.",
+  /*
+    Replaced "activate it to make the face matchable". An admin-performed capture is approved
+    inside `face-enrol`'s own transaction now, so in the ordinary case there is no second step
+    and telling somebody to take one sent them to an empty queue.
+  */
+  "admin.enrolCap.doneLive": "{name} is enrolled and working. Their face will match at the gate, and web punch and face sign-in are on — nothing further to do.",
+  "admin.enrolCap.doneNeedsReview": "Captured for {name}, but held for review — either this face resembles somebody else's enrolment or the samples disagreed with each other. It will NOT match at the gate until somebody approves it below. A re-capture in better light is usually the quicker fix.",
 
   // E-07.4 Personal — /me/profile/personal
   "profile.personal.title": "Personal",

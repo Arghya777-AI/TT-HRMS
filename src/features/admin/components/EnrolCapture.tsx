@@ -57,7 +57,6 @@ import { Notice } from "./Notice";
 import {
   useConsoleEnrolMutation,
   useRecordConsentMutation,
-  useTemplateApproveMutation,
 } from "../hooks/useKioskConsole";
 import { useEmployeeRefOptions } from "../hooks/useMasters";
 
@@ -290,9 +289,6 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
   const consent = useRecordConsentMutation();
   const enrol = useConsoleEnrolMutation();
   const stepUp = useStepUp();
-  const approve = useTemplateApproveMutation();
-  /** Template ids already activated, so a re-render cannot approve twice. */
-  const activatedRef = useRef<string | null>(null);
 
   const [pickedId, setPickedId] = useState("");
   const [cameraOn, setCameraOn] = useState(false);
@@ -509,58 +505,35 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
   };
 
   /**
-   * ACTIVATE IT, in the same action that captured it.
+   * The capture is already live by the time this runs — nothing to activate.
    *
-   * `face-enrol` writes every template `is_active = false` and returns
-   * `pending_approval` — for the kiosk path AND this one. Activating needs
-   * `face-template-admin op=approve`, and `approve` has NO self-approval check, so
-   * the same admin who captured could approve their own capture anyway. That made
-   * the step one extra click by the same person, with nothing notifying anybody it
-   * was owed — captures simply sat inactive and the face silently did not work at
-   * the gate.
+   * ── WHAT THIS EFFECT USED TO DO, AND WHY IT NO LONGER SHOULD ────────────────
+   * `face-enrol` wrote every template `is_active = false`, so this effect fired a SECOND
+   * request — `face-template-admin op=approve` — to switch it on. It worked, but as two round
+   * trips it had a state the first one could not: capture committed, activation failed. The
+   * catch below swallowed that and left a template the admin believed was working and which
+   * matched nothing at the gate. Silently. That is the exact failure this whole area has
+   * already produced once.
    *
-   * So the admin path approves itself here. The controls that actually protect the
-   * template are untouched and all of them are measured rather than clicked: the
-   * capability check, consent, the anti-cross-enrolment scan, sample cohesion, the
-   * 0.70 quality floor, and an audited reason on every write. The KIOSK path is
-   * unaffected — a guard is not an admin, and those captures still queue for
-   * review, which is where a second look has real value.
+   * `face-enrol` now approves an admin-performed enrolment inside its OWN transaction — the
+   * same four writes, atomically, so it cannot half-happen. Calling approve again from here
+   * would hit `FACE_TEMPLATE_ALREADY_APPROVED` and surface a conflict on the success path.
    *
-   * If activation fails the capture is NOT lost: it stays pending and the console's
-   * own approve action still works, so the outcome is the old behaviour rather than
-   * a new failure. That is why the error is surfaced and not thrown.
+   * ── THE ONE CASE THAT IS STILL PENDING, AND MUST STAY THAT WAY ──────────────
+   * The server declines to auto-approve a NEAR-DUPLICATE or a LOW-COHESION capture, which is
+   * where a second look has real value: a near-duplicate means this face sits close to somebody
+   * else's enrolment, and approving it lets two people match as one at the gate. That is not
+   * something the capturing admin can see by looking at the person — it needs the distance
+   * figure the queue shows. So those keep queueing, and the console says so via
+   * `requiresApproval` rather than quietly approving them anyway, which is what this effect
+   * did before.
    */
   useEffect(() => {
     if (!enrol.isSuccess) return;
-    const templateId = enrol.data?.templateId;
     setSamples([]);
     stopCamera();
-    if (templateId === undefined) {
-      onEnrolledRef.current?.();
-      return;
-    }
-    // Guard on the id, not on the effect's dependency list: `approve` belongs in
-    // the deps (it is what the effect calls), and silencing the rule to keep it out
-    // would be the same kind of shortcut this codebase bans everywhere else. One
-    // activation per template, however often the effect re-runs.
-    if (activatedRef.current === templateId) {
-      onEnrolledRef.current?.();
-      return;
-    }
-    activatedRef.current = templateId;
-    void (async () => {
-      try {
-        await approve.saveAsync(
-          { templateId, idempotencyKey: crypto.randomUUID() },
-          "activating the capture I supervised in person, in the same action",
-        );
-      } catch {
-        // Left pending on purpose — the console can still approve it by hand.
-      } finally {
-        onEnrolledRef.current?.();
-      }
-    })();
-  }, [approve, enrol.isSuccess, enrol.data?.templateId, stopCamera]);
+    onEnrolledRef.current?.();
+  }, [enrol.isSuccess, stopCamera]);
 
   return (
     <section className="rounded-lg border bg-card p-4">
@@ -685,11 +658,19 @@ export function EnrolCapture({ employeeId: lockedId, employeeName, onEnrolled }:
             <Notice tone="info">{t("admin.faceEnrol.capture.stepUpNeeded")}</Notice>
           ) : null}
 
+          {/*
+            TWO OUTCOMES, AND THEY NEED DIFFERENT SENTENCES. Normally the capture is live the
+            moment it is taken, and the admin is finished. When the server declined to
+            auto-approve — a near-duplicate, or samples that disagree with each other — the face
+            does NOT work yet and somebody has to look at it. The old copy said "activate it to
+            make the face matchable" for both, which was wrong in the common case and told the
+            admin to do a step that no longer exists.
+          */}
           {enrol.data !== undefined ? (
-            <Notice tone="success">
-              {t("admin.enrolCap.done", {
-                name: enrol.data.displayName ?? "",
-              })}
+            <Notice tone={enrol.data.requiresApproval === true ? "warning" : "success"}>
+              {enrol.data.requiresApproval === true
+                ? t("admin.enrolCap.doneNeedsReview", { name: enrol.data.displayName ?? "" })
+                : t("admin.enrolCap.doneLive", { name: enrol.data.displayName ?? "" })}
             </Notice>
           ) : null}
           {enrol.userMessage !== null ? (

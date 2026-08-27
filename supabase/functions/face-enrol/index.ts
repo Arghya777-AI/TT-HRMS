@@ -1253,6 +1253,134 @@ Deno.serve(async (req: Request): Promise<Response> => {
       `;
       const enrolmentRequestId = firstRow(requestRows)?.id as string;
 
+      /*
+        ── AUTO-APPROVAL: ENROL AND THE PERSON WORKS ────────────────────────────
+        Asked for directly, and worth stating plainly because this file previously argued the
+        opposite. The flow the venue wants is: add the employee, register their face, done —
+        face scanning, kiosk punch, web punch and face sign-in all live from that moment.
+
+        What stood in the way was this function inserting every template with `is_active = false`
+        and a `pending` queue row. Until somebody opened /admin/kiosk/enrolment and approved it,
+        the face matched NOTHING: not the gate, not face sign-in (which needs an active
+        template, whatever `allow_face_login` says), and web punch stayed off because
+        `allow_web_punch` defaults FALSE. An enrolment that looked complete did nothing at all,
+        and no screen said a second step existed.
+
+        ── WHY IT IS SAFE TO SKIP THE QUEUE HERE, AND ONLY HERE ─────────────────
+        The review queue exists to answer one question: is this face really this person's? For a
+        WEB enrolment that question is already answered. An admin holding the `biometric.enrol`
+        capability ran the capture with the employee in front of them — they ARE the verification,
+        and asking them to re-confirm from a list of thumbnails minutes later checks nothing a
+        second time. A KIOSK enrolment is different: nobody with authority necessarily saw who
+        stood at the camera, so those stay pending.
+
+        ── THE TWO CASES THAT STILL QUEUE, WHICH ARE THE ONES THAT MATTER ───────
+        A NEAR-DUPLICATE (`duplicateOutcome === "warn"`) means this face sits close to somebody
+        else's enrolment. That is precisely the identity confusion the queue is for, and it is
+        not something an admin can see by looking at a person — it needs the distance figure.
+        Auto-approving it would let two people match as one at the gate.
+
+        LOW COHESION means the five samples disagree with each other, so the template is built on
+        a poor capture and will match unreliably. A human should re-capture rather than approve.
+
+        Both leave the row pending exactly as before, so the queue keeps the cases where it does
+        real work and loses the ones where it was pure ceremony.
+
+        Behind a setting for a venue that wants every enrolment reviewed regardless. Absent means
+        on, matching what was asked for; no deploy needed to change it.
+      */
+      const autoApproveSetting = await tx<{ value: string | null }[]>`
+        SELECT app.setting('biometric.auto_approve_admin_enrolment') AS value
+      `;
+      const rawAutoApprove = firstRow(autoApproveSetting)?.value;
+      const autoApproveEnabled = rawAutoApprove === null || rawAutoApprove === undefined
+        ? true
+        : !/^"?(false|0|off|no)"?$/i.test(String(rawAutoApprove).trim());
+
+      const autoApprove = autoApproveEnabled &&
+        actor.channel === "web" &&
+        duplicateOutcome !== "warn" &&
+        !lowCohesion;
+
+      let autoApprovedWebPunch = false;
+      if (autoApprove) {
+        /*
+          The same four writes `face-template-admin`'s approve op performs, in the same order and
+          for the same reasons. Ordering is load-bearing: the retire MUST precede the activate,
+          because `uq_face_templates__employee_active` permits exactly one active row per
+          employee and doing it the other way round raises a unique violation on a re-enrolment.
+        */
+        await tx`
+          UPDATE secure.face_templates
+             SET is_active           = false,
+                 deactivated_at      = now(),
+                 deactivation_reason = ${`superseded by v${version}: ${auditReason}`}
+           WHERE employee_id = ${employee.id}::uuid
+             AND is_active
+             AND id <> ${representative.id}::uuid
+        `;
+
+        // Approve the whole version set; only the medoid becomes matchable. The siblings stay as
+        // retained samples — what a future model upgrade re-derives the template from.
+        await tx`
+          UPDATE secure.face_templates
+             SET approved_by = ${actor.profileId}::uuid,
+                 approved_at = now(),
+                 is_active   = (id = ${representative.id}::uuid)
+           WHERE employee_id = ${employee.id}::uuid
+             AND version     = ${version}::integer
+             AND purged_at IS NULL
+             AND deactivated_at IS NULL
+        `;
+
+        await tx`
+          UPDATE public.face_enrolment_requests
+             SET status                = 'approved'::public.approval_status,
+                 reviewed_by           = ${actor.profileId}::uuid,
+                 reviewed_at           = now(),
+                 review_comment        = ${`Auto-approved: enrolled by an administrator, no near-duplicate and no low-cohesion warning. ${auditReason}`}::text,
+                 resulting_template_id = ${representative.id}::uuid
+           WHERE id = ${enrolmentRequestId}::uuid
+        `;
+
+        // Enrolled from this moment. `public.employees` is reason-required — ctx.reason carries it.
+        await tx`
+          UPDATE public.employees
+             SET face_enrolled_at = now()
+           WHERE id = ${employee.id}::uuid
+             AND deleted_at IS NULL
+        `;
+
+        /*
+          And web punch, which is the switch nobody could find. It defaults FALSE, so an employee
+          was enrolled, approved, and then still refused with SELF_PUNCH_NOT_ENTITLED until an
+          admin ticked a box in the employee editor. Same setting the approve op reads, so the
+          two routes to a working enrolment grant the same thing.
+
+          It only ever GRANTS: an admin who deliberately revoked somebody's web punch must not
+          have that undone by a re-enrolment, hence the `= false` predicate.
+        */
+        const webPunchSetting = await tx<{ value: string | null }[]>`
+          SELECT app.setting('attendance.web_punch_on_enrolment') AS value
+        `;
+        const rawWebPunch = firstRow(webPunchSetting)?.value;
+        const grantWebPunch = rawWebPunch === null || rawWebPunch === undefined
+          ? true
+          : !/^"?(false|0|off|no)"?$/i.test(String(rawWebPunch).trim());
+
+        if (grantWebPunch) {
+          const granted = await tx<{ id: string }[]>`
+            UPDATE public.employees
+               SET allow_web_punch = true
+             WHERE id = ${employee.id}::uuid
+               AND deleted_at IS NULL
+               AND allow_web_punch = false
+            RETURNING id
+          `;
+          autoApprovedWebPunch = granted.length > 0;
+        }
+      }
+
       if (duplicateOutcome === "warn" || lowCohesion) {
         await tx`
           INSERT INTO public.system_health
@@ -1290,11 +1418,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
         action: "enrol_biometric",
         entityTable: "secure.face_templates",
         entityId: representative.id,
-        entityLabel: `${employee.employee_code} face template v${version} (pending approval)`,
+        entityLabel: `${employee.employee_code} face template v${version} ${
+          autoApprove ? "(auto-approved)" : "(pending approval)"
+        }`,
         subjectEmployeeId: employee.id,
         newValue: {
           version,
-          status: "pending_approval",
+          // The audit trail must say which route approved this. "auto_approved" plus the reason
+          // it qualified is what an investigator needs; "pending_approval" on a live template
+          // would be a false record.
+          status: autoApprove ? "auto_approved" : "pending_approval",
+          auto_approved: autoApprove,
+          auto_approve_setting_enabled: autoApproveEnabled,
+          web_punch_granted: autoApprovedWebPunch,
           sample_count: accepted.length,
           template_ids: templateIds.map((t) => t.id),
           quality_score: templateQuality,
@@ -1315,7 +1451,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
         reason: auditReason,
       });
 
-      return { version, templateIds, representativeId: representative.id, enrolmentRequestId };
+      return {
+        version,
+        templateIds,
+        representativeId: representative.id,
+        enrolmentRequestId,
+        autoApproved: autoApprove,
+        webPunchGranted: autoApprovedWebPunch,
+      };
     });
 
     // ── Response ─────────────────────────────────────────────────────────────
@@ -1328,7 +1471,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       employeeCode: employee.employee_code,
       displayName: employee.display_name,
       version: result.version,
-      status: "pending_approval" as const,
+      /*
+        The client renders "awaiting review" off this field, so a hardcoded `pending_approval`
+        would tell an admin to go and approve something that is already live and working.
+      */
+      status: result.autoApproved ? ("active" as const) : ("pending_approval" as const),
+      autoApproved: result.autoApproved,
+      webPunchGranted: result.webPunchGranted,
       previousActiveVersion: employee.active_template_version,
       sampleCount: result.templateIds.length,
       acceptedSampleIndices: accepted.map((s) => s.index),
@@ -1345,7 +1494,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       detector,
       consentVersion: requiredConsentVersion,
       duplicateOutcome,
-      requiresApproval: true as const,
+      /*
+        Was `true as const`. An auto-approved template needs no approval, and saying it does
+        sends an admin to a queue that has nothing in it for them.
+      */
+      requiresApproval: !result.autoApproved,
       requestId,
     };
 

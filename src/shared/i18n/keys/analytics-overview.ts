@@ -22,16 +22,14 @@ export const keysAnalyticsOverview = {
   "admin.dashboard.tab.leavecost": "Leave & cost",
   "admin.dashboard.tab.compliance": "Compliance & ops",
 
-  // ── Live board ────────────────────────────────────────────────────────────
+  /*
+    ── Live board ────────────────────────────────────────────────────────────
+    Six tile labels used to live here — On roll, Arrived, Yet to arrive, Late, Overdue,
+    Web / mobile. The tiles were replaced by the roster table, which names its own columns, and
+    the labels went with them: an unused key is a label somebody eventually puts back on screen
+    beside the thing that superseded it.
+  */
   "admin.analytics.overview.todayTitle": "On site today",
-  "admin.analytics.overview.onRoll": "On roll",
-  "admin.analytics.overview.attended": "Arrived",
-  "admin.analytics.overview.yetToReach": "Yet to arrive",
-  "admin.analytics.overview.lateIn": "Late",
-  "admin.analytics.overview.overdue": "Overdue",
-  "admin.analytics.overview.webPunches": "Web / mobile",
-  "admin.analytics.overview.webPunchesHint":
-    "Days with at least one punch taken from the web or a phone rather than the gate.",
 
   // ── Selected period ───────────────────────────────────────────────────────
   "admin.analytics.overview.periodTitle": "Selected period",

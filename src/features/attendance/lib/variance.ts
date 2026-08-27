@@ -27,11 +27,32 @@
  * anybody is paid. This is the plain-English "did I make my hours" number, and where it differs
  * from approved overtime, both are shown rather than one being quietly presented as the other.
  */
-import type {
-  AttendanceDay,
-  AttendancePeriodSummary,
-  AttendanceStatus,
-} from "../api/attendance.api";
+import type { AttendancePeriodSummary, AttendanceStatus } from "../api/attendance.api";
+
+/**
+ * Exactly the fields the arithmetic below reads — nothing more.
+ *
+ * It used to take the whole `AttendanceDay`, which shut the admin side out: the two schemas over
+ * `v_attendance_day_enriched` select different column sets (the admin grid has no
+ * `manual_override_*` and no `regularization_id`), so an admin row could not be passed to a
+ * function that demanded them, even though every field the maths touches was present on it.
+ *
+ * Duplicating the rules admin-side was the alternative, and it is the wrong one: these are the
+ * numbers people argue about, and two implementations of "did I make my hours" WILL drift.
+ * Narrowing the input means one set of rules serves both screens, and both `AttendanceDay` and
+ * the admin `DayRow` satisfy it structurally.
+ */
+export interface VarianceDay {
+  readonly status: AttendanceStatus;
+  readonly is_holiday: boolean;
+  readonly is_weekly_off: boolean;
+  readonly is_working_day: boolean;
+  readonly shift_duration_minutes: number | null;
+  readonly leave_type_id: string | null;
+  readonly leave_day_fraction: number | null;
+  readonly total_worked_minutes: number | null;
+  readonly payable_worked_minutes: number | null;
+}
 
 /** Why a day expects nothing, when it expects nothing. */
 export type NoExpectationReason =
@@ -90,7 +111,7 @@ const OUTSIDE_EMPLOYMENT: ReadonlySet<AttendanceStatus> = new Set<AttendanceStat
  * preferred over `total_worked_minutes` because it is the figure the engine has already adjusted
  * for breaks and policy — the same number the WORKED column shows.
  */
-export function dayVariance(day: AttendanceDay): DayVariance {
+export function dayVariance(day: VarianceDay): DayVariance {
   const worked = day.payable_worked_minutes ?? day.total_worked_minutes ?? 0;
 
   if (UNRESOLVED.has(day.status)) {
@@ -188,7 +209,7 @@ export interface PeriodVariance {
  * up overall may be four hours ahead on some days and nearly four behind on others, and netting
  * that to "+40" hides the thing a manager would actually want to look at.
  */
-export function periodVariance(days: readonly AttendanceDay[]): PeriodVariance {
+export function periodVariance(days: readonly VarianceDay[]): PeriodVariance {
   let countedDays = 0;
   let unresolvedDays = 0;
   let expectedMinutes = 0;

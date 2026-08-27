@@ -37,6 +37,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
+import { PeriodVariancePanel } from "../components/PeriodVariancePanel";
+import { dayVariance, fmtSignedMinutes, periodVariance } from "@/features/attendance/lib/variance";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { dash, formatDays, formatNumber, formatPercent } from "@/lib/format";
@@ -105,6 +107,14 @@ const STATUS_CHIP: Readonly<Record<AttendanceStatus, StatusChipEntry>> = {
  */
 const NO_EMPLOYEE = "00000000-0000-0000-0000-000000000000";
 
+/**
+ * How many employee-days the over/under total will sum in one page.
+ *
+ * 400 covers any period a person would actually select here — a year is 366 employee-days for
+ * one employee — while still being a bounded read. Past it the panel reports itself capped.
+ */
+const VARIANCE_PAGE_SIZE = 400;
+
 function isAttendanceStatus(value: string | null): value is AttendanceStatus {
   return value !== null && attendanceStatusValues.some((s) => s === value);
 }
@@ -161,10 +171,36 @@ export default function EmployeeAttendancePage() {
 
   const summary = useEmployeePeriodSummary(employeeId, range.from, range.to);
   const days = useDayRecords(filters);
+
+  /*
+    A SECOND read of the days, for the over/under totals only, and deliberately not the grid's.
+
+    Two reasons it cannot reuse `days`. It must ignore this page's status and exception
+    narrowing — "over / under worked for the period" is a fact about the period, not about the
+    chip somebody happens to have pressed — which is what `breakdownFilters` already exists for.
+    And it must cover the WHOLE range in one page: the grid is keyset-paged at fifty, so summing
+    what the grid has loaded would report a total that changes as somebody scrolls.
+
+    One employee-day per calendar day means a year fits inside the cap with room to spare. If a
+    period ever exceeds it the panel says so rather than showing a partial sum.
+  */
+  const varianceDays = useDayRecords(breakdownFilters, VARIANCE_PAGE_SIZE);
   const total = useDayRecordsCount(filters);
   const statusCounts = useDayStatusCounts(breakdownFilters, attendanceStatusValues);
 
   const rows = flattenDayRecords(days.data);
+
+  // `hasNextPage` is the honest signal: it means the range did not fit, so no total is shown.
+  const varianceCapped = varianceDays.hasNextPage === true;
+  /*
+    Keyed on the query's own data, not on a flattened array — `flattenDayRecords` returns a new
+    array every render, so memoising on that would recompute the sum on every keystroke elsewhere
+    on the page while claiming not to.
+  */
+  const variance = useMemo(() => {
+    const rows = flattenDayRecords(varianceDays.data);
+    return rows.length === 0 ? null : periodVariance(rows);
+  }, [varianceDays.data]);
   const person = employee.data ?? null;
   const hasFilter = status !== "" || onlyExceptions;
 
@@ -239,6 +275,36 @@ export default function EmployeeAttendancePage() {
       width: "7rem",
       align: "right",
       render: (r) => <span className="num">{fmtDurationHm(r.total_worked_minutes)}</span>,
+    },
+    {
+      /*
+        Worked minus what the shift asked for, from the same rules as the period total above and
+        as the employee's own screen. Not `overtime_minutes`, which sits three columns along:
+        that is the APPROVED payable figure, and the gap between the two is exactly what an
+        admin opening this page is usually trying to see.
+      */
+      key: "variance",
+      header: t("admin.pAtt.col.variance"),
+      width: "8rem",
+      align: "right",
+      render: (r) => {
+        const v = dayVariance(r);
+        if (!v.counts) return <span className="text-muted-foreground">{t("common.empty")}</span>;
+        return (
+          <span
+            className={cn(
+              "num",
+              v.varianceMinutes > 0
+                ? "text-success"
+                : v.varianceMinutes < 0
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+            )}
+          >
+            {fmtSignedMinutes(v.varianceMinutes)}
+          </span>
+        );
+      },
     },
     {
       key: "payable_worked_minutes",
@@ -401,6 +467,17 @@ export default function EmployeeAttendancePage() {
               error={summary.error}
               onRetry={() => void summary.refetch()}
               periodText={periodLabel(analytics.period)}
+            />
+
+            {/*
+              Over / under worked. Above the counts because it is the question this drill-down
+              gets opened with — the dashboard row that leads here shows the day's variance, and
+              this is the same measure summed over the period.
+            */}
+            <PeriodVariancePanel
+              variance={variance}
+              loading={varianceDays.isPending}
+              capped={varianceCapped}
             />
 
             {/* Total + per-status breakdown, both counted by Postgres. */}

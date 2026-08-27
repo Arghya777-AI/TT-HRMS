@@ -64,11 +64,12 @@ import {
   useAttendanceSummary,
   useDailyTrend,
   useDepartmentBreakdown,
-  useTodayBoard,
 } from "../hooks/useAnalytics";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
 import { DashboardPanelTabs, useDashboardPanel } from "./DashboardPanelTabs";
+import { TodayRoster } from "./TodayRoster";
+import { useTodayRoster } from "../hooks/useTodayRoster";
 import { liveStatusCopy, type AnalyticsLiveStatus } from "../analyticsLive";
 import type { DayClass, DepartmentBreakdownRow } from "../analyticsAggregate";
 import { DAY_CLASS_SLICES, dayClassValue } from "../analyticsHome";
@@ -129,7 +130,7 @@ export function AnalyticsOverview() {
   const [panel, setPanel] = useDashboardPanel();
 
   const options = useAnalyticsFilterOptions();
-  const today = useTodayBoard();
+  const roster = useTodayRoster(panel === "overview");
   const summary = useAttendanceSummary(filters);
   const trend = useDailyTrend(filters);
   const departments = useDepartmentBreakdown(filters);
@@ -239,56 +240,26 @@ export function AnalyticsOverview() {
 
       {panel === "overview" ? (
       <>
-      {/* ── Live: who is on site right now. Independent of the period filter, and
-             labelled so nobody reads it as part of the selected range. ────────── */}
+      {/*
+        ── WHO IS HERE TODAY ─────────────────────────────────────────────────────
+        This replaced six independent tiles — on roll, arrived, yet to arrive, late, overdue,
+        web/mobile — and no names. Six counts is not a picture of a day: they overlap (somebody
+        late is also arrived), so they cannot be read as a whole, and the question people
+        actually open this screen with, "who is in and who is not", needed a different page to
+        answer.
+
+        Three numbers that DO partition the roll, then the list itself. Independent of the period
+        filter above and labelled so, because it is about right now.
+      */}
       <h2 className="mb-2 mt-5 font-display text-lg font-semibold">
         {t("admin.analytics.overview.todayTitle")}
       </h2>
-      <StateBoundary
-        loading={today.isLoading}
-        error={today.error ?? undefined}
-        onRetry={() => void today.refetch()}
-        skeletonRows={1}
-      >
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          <KpiTile
-            label={t("admin.analytics.overview.onRoll")}
-            value={formatNumber(today.data?.tiles.onRoll ?? 0)}
-            to={withFilters("/admin/people", filters)}
-          />
-          <KpiTile
-            label={t("admin.analytics.overview.attended")}
-            value={formatNumber(today.data?.tiles.attended ?? 0)}
-            tone="success"
-            to={withFilters("/admin/attendance/live", filters)}
-          />
-          <KpiTile
-            label={t("admin.analytics.overview.yetToReach")}
-            value={formatNumber(today.data?.tiles.yetToReach ?? 0)}
-            to={withFilters("/admin/attendance/live", filters)}
-          />
-          <KpiTile
-            label={t("admin.analytics.overview.lateIn")}
-            value={formatNumber(today.data?.tiles.lateIn ?? 0)}
-            tone={(today.data?.tiles.lateIn ?? 0) > 0 ? "warn" : undefined}
-            to={withFilters("/admin/attendance/live", filters)}
-          />
-          <KpiTile
-            label={t("admin.analytics.overview.overdue")}
-            value={formatNumber(today.data?.tiles.overdue ?? 0)}
-            tone={(today.data?.tiles.overdue ?? 0) > 0 ? "danger" : undefined}
-            to={withFilters("/admin/attendance/live", filters)}
-          />
-          {/* The client's "web login vs on-premise" split — the only place the day
-              grain can answer it, because punch source is a per-scan column. */}
-          <KpiTile
-            label={t("admin.analytics.overview.webPunches")}
-            value={formatNumber(today.data?.tiles.webPunchDays ?? 0)}
-            hint={t("admin.analytics.overview.webPunchesHint")}
-            to={withFilters("/admin/attendance/punches", filters)}
-          />
-        </div>
-      </StateBoundary>
+      <TodayRoster
+        roster={roster.data}
+        loading={roster.isLoading}
+        error={roster.error ?? undefined}
+        onRetry={() => void roster.refetch()}
+      />
 
       {/* ── The selected period ──────────────────────────────────────────────── */}
       <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">

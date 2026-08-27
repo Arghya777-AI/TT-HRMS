@@ -1574,6 +1574,41 @@ export const en = catalogue({
     same typeface, and payroll would not honour it.
   */
   "attendance.tabs.label": "Attendance views",
+  /*
+    THE TODAY ROSTER. Replaced six independent tiles and no names. Three numbers that actually
+    partition the roll, then the list — because "who is in and who is not" was the question the
+    old dashboard could not answer without opening another screen.
+  */
+  "admin.roster.present": "Present",
+  "admin.roster.absent": "Absent",
+  "admin.roster.onLeave": "On leave",
+  "admin.roster.ofOnRoll": "of {total} on roll",
+  "admin.roster.group.management": "Management",
+  "admin.roster.group.managementHint": "Managerial and executive designations.",
+  "admin.roster.group.staff": "Ground and other staff",
+  "admin.roster.group.staffHint": "Everybody else on roll today.",
+  "admin.roster.col.employee": "Employee",
+  "admin.roster.col.state": "Today",
+  "admin.roster.col.in": "In",
+  "admin.roster.col.out": "Out",
+  "admin.roster.col.method": "Captured via",
+  "admin.roster.col.worked": "Worked",
+  "admin.roster.col.variance": "Over / under",
+  "admin.roster.state.present": "Present",
+  "admin.roster.state.absent": "Absent",
+  // Neither present nor absent: a weekly off, a holiday, or approved leave.
+  "admin.roster.state.off": "Off today",
+  "admin.roster.lateBy": "+{value} late",
+  // Named the way the client names them: the terminal at the door is "on campus", anything else
+  // is the portal. "Gate camera" was the internal name for the same device.
+  "admin.roster.method.gate": "On campus (gate)",
+  "admin.roster.method.web": "Web / phone",
+  // Both, on the same day — worth naming rather than picking one and hiding the other.
+  "admin.roster.method.mixed": "On campus and web",
+  "admin.roster.method.none": "Not captured",
+  "admin.roster.openAria": "Open the attendance record for {name}",
+  "admin.roster.truncated":
+    "This list hit its row limit, so the counts above cover only the rows shown. Filter by department to see a complete picture.",
   "attendance.summaryTab.label": "Full summary",
   "attendance.summaryTab.netAria": "Net time against your shifts",
   "attendance.summaryTab.netLabel": "{month} · against your shifts",
@@ -10209,6 +10244,16 @@ export const en = catalogue({
   "admin.pAtt.kpi.extraWork": "Extra work",
   "admin.pAtt.kpi.lateDeduction": "Late deduction",
   "admin.pAtt.kpi.lateDeductionHint": "Leave days deducted for lateness.",
+  // Over / under worked, for the period and for each day. Worded as "shift" rather than
+  // "expected" because the shift is the thing an employee can point at.
+  "admin.pAtt.variance.net": "Over / under worked",
+  "admin.pAtt.variance.netHint": "Worked, against the shifts rostered.",
+  "admin.pAtt.variance.netCounted": "Over {counted} computed days · {skipped} not processed yet",
+  "admin.pAtt.variance.over": "Worked extra",
+  "admin.pAtt.variance.overHint": "Across {days} days that ran long.",
+  "admin.pAtt.variance.under": "Worked short",
+  "admin.pAtt.variance.underHint": "Across {days} days that fell short.",
+  "admin.pAtt.variance.capped": "This period is too long to total over/under worked in one read. Choose a shorter period — a month or a quarter — and it will be shown.",
   "admin.pAtt.tile.total": "Days in view",
   "admin.pAtt.tile.totalHint": "Counted by Postgres over this grid's filters.",
   "admin.pAtt.tile.breakdown": "By status this month",
@@ -10222,6 +10267,7 @@ export const en = catalogue({
   "admin.pAtt.col.firstIn": "First scan",
   "admin.pAtt.col.lastOut": "Last scan",
   "admin.pAtt.col.worked": "Worked",
+  "admin.pAtt.col.variance": "Over / under",
   "admin.pAtt.col.payable": "Payable",
   "admin.pAtt.col.lateBy": "Late by",
   "admin.pAtt.col.earlyBy": "Early by",

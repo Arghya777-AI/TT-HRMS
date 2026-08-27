@@ -22,7 +22,6 @@ import {
   FileText,
   Fingerprint,
   Gauge,
-  HeartHandshake,
   Home,
   Inbox,
   LifeBuoy,
@@ -87,18 +86,42 @@ const ME_ITEMS: readonly NavItem[] = [
     mobileSlot: 2,
     mobileLabelKey: "shell.nav.attendanceShort",
   },
-  {
-    labelKey: "shell.nav.leave",
-    to: "/me/leave",
-    icon: CalendarDays,
-    cap: "me.view",
-    badge: "leave.pending",
-    mobileSlot: 3,
-  },
-  // Applying is its own task, not a tab of "my leave". It is also where the combined
-  // application lives — the only screen that can draw one request from several balances.
+  /*
+    ── LEAVE IS OFF THE RAIL, NOT OUT OF THE PRODUCT (Aug 2026) ──────────────
+    The venue asked for the Leave button to go from the sidebar. The ROUTES stay:
+    /me/leave and /me/leave/apply still work, still enforce their policies, and are
+    still linked from the home page balances and from an approval notification. A
+    row is navigation; deleting the screens would be deleting the feature, and
+    balances people already hold would become unreachable rather than unused.
+
+    Applying is likewise reachable from /me/apply, which lists every request type.
+
+    ── COMP-OFF IS GONE FROM THE RAIL ENTIRELY ───────────────────────────────
+    Asked for as "hide from everywhere". The rail row and the admin ledger row are
+    removed here and in the route manifest. The comp-off LEDGER is untouched:
+    credits already earned, and their expiry, remain in the database and in the
+    audit trail. Deleting recorded time somebody worked for is not something a
+    navigation change should do.
+  */
+  /* Applying stays on the rail: what was asked to go was the LEAVE button
+     (balances), not the ability to ask for time off. It is also reachable from
+     /me/apply, which lists every request type. */
   { labelKey: "shell.nav.applyLeave", to: "/me/leave/apply", icon: CalendarPlus, cap: "me.view" },
-  { labelKey: "shell.nav.compOff", to: "/me/comp-off", icon: HeartHandshake, cap: "me.view", badge: "compOff.expiring" },
+  /*
+    NO "Comp-off" ROW HERE EITHER.
+
+    Two separate withdrawals meet at this spot and both were asked for, so both
+    hold. `/me/comp-off` is still a registered route — it is in `HIDDEN_FROM_NAV`
+    (`route-manifest.ts`), which is the enumerated exception that keeps the path
+    SERVED while taking it out of every rail. The venue asked for comp-off to be
+    hidden everywhere and for Leave to come off the sidebar; `applyLeave` stays,
+    because applying is not the same as browsing a balance.
+
+    TO RESTORE: put back the row that was here —
+      { labelKey: "shell.nav.compOff", to: "/me/comp-off", icon: HeartHandshake,
+        cap: "me.view", badge: "compOff.expiring" },
+    and take the path out of `HIDDEN_FROM_NAV`.
+  */
   /*
     NO "Salary" ROW HERE, and therefore no fourth mobile slot.
 

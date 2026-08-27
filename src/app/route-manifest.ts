@@ -210,8 +210,8 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   ["/admin/leave/requests", "Leave Requests", "A", "admin-leave", CalendarDays, "Every request, filterable, with decisions."],
   ["/admin/leave/apply", "Apply on behalf", "A", "admin-leave", CalendarDays, "Raise a leave request for an employee who cannot."],
   ["/admin/leave/adjustments", "Manual Adjustments", "A", "admin-leave", CalendarDays, "Credit or debit a balance with a mandatory reason."],
-  ["/admin/leave/comp-off", "Comp-Off Ledger", "A", "admin-leave", HeartHandshake, "Credits earned, used, expiring and lapsed."],
   ["/admin/leave/rollover", "Year-End Rollover", "A/S", "admin-leave", Cog, "Carry forward, lapse and encash at year end."],
+  ["/admin/leave/comp-off", "Comp-Off Ledger", "A", "admin-leave", HeartHandshake, "Credits earned, used, expiring and lapsed."],
   ["/admin/leave/calendar", "Org Leave Calendar", "A", "admin-leave", CalendarDays, "Who is off, org-wide, with density warnings."],
   ["/admin/leave/encashment", "Encashment", "A", "admin-leave", Banknote, "Leave encashment runs and their payouts."],
   ["/admin/leave/ledger/:code", "Balance Ledger", "A", "admin-leave", CalendarDays, "Every credit and debit behind one balance."],
@@ -323,6 +323,23 @@ const ADMIN: readonly RouteMeta[] = ADMIN_ROWS.map(([path, title, tier, domain, 
 }));
 
 /** Every authenticated route, in declaration order. */
+/**
+ * Paths that stay REACHABLE but are never advertised.
+ *
+ * A route in here still resolves, still enforces its policies, and still works as
+ * a link target — it simply does not appear in the rail, the section tabs, or the
+ * command palette. That distinction matters: "hide comp-off" is a request about
+ * navigation, and deleting the route instead would orphan the page, break every
+ * existing link to it, and make credits people have already earned unreachable
+ * rather than merely unadvertised.
+ *
+ * Comp-off, August 2026, at the venue's request.
+ */
+export const HIDDEN_FROM_NAV: ReadonlySet<string> = new Set<string>([
+  "/me/comp-off",
+  "/admin/leave/comp-off",
+]);
+
 export const ROUTES: readonly RouteMeta[] = [...ME, ...TEAM, ...ADMIN];
 
 /** Redirects (legacy paths and section defaults). */

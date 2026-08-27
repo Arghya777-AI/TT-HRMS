@@ -1551,7 +1551,8 @@ export const en = catalogue({
   "attendance.col.in": "In",
   "attendance.col.out": "Out",
   "attendance.col.worked": "Worked",
-  "attendance.col.late": "Late",
+  "attendance.col.late": "Late by",
+  "attendance.col.earlyExit": "Left early by",
   /*
     THE MORE/LESS COLUMN. WORKED on its own cannot answer "did I make my hours" — nine hours is
     a full day on one shift and a short one on another, and nobody reads a shift length off a

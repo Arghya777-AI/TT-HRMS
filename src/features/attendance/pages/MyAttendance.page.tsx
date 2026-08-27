@@ -233,16 +233,39 @@ export default function MyAttendancePage() {
       align: "right",
       render: (row) => (row.day === null ? dash(null) : fmtDurationHm(row.day.total_worked_minutes)),
     },
+    /*
+      ── LATENESS IS SHOWN AT EVERY WIDTH (Aug 2026) ─────────────────────────
+      It was `hideBelow: "lg"`, so it vanished on exactly the device most staff
+      read this on. The venue now watches arrival and departure times, and the
+      first person who should see a lateness figure is the person it belongs to —
+      being marked late on a screen you cannot see is how a payroll conversation
+      starts badly.
+
+      Both figures are the ENGINE's, in hours and minutes through the one shared
+      formatter. Nothing here re-derives a minute from the punch times.
+    */
     {
       key: "late",
       header: t("attendance.col.late"),
       width: "7rem",
       align: "right",
-      hideBelow: "lg",
       render: (row) => {
         const late = row.day?.late_minutes ?? null;
         if (late === null || late <= 0) return dash(null);
         return <span className="text-warning">{fmtDurationHm(late)}</span>;
+      },
+    },
+    {
+      key: "earlyExit",
+      header: t("attendance.col.earlyExit"),
+      width: "7rem",
+      align: "right",
+      /* `is_early_exit` is the engine's own flag; the minutes are only meaningful
+         when it is set, so a zero is a dash rather than "0h 00m". */
+      render: (row) => {
+        const early = row.day?.early_exit_minutes ?? null;
+        if (row.day?.is_early_exit !== true || early === null || early <= 0) return dash(null);
+        return <span className="text-warning">{fmtDurationHm(early)}</span>;
       },
     },
     {

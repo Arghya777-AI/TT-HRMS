@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ROUTES } from "@/app/route-manifest";
+import { HIDDEN_FROM_NAV, ROUTES } from "@/app/route-manifest";
 import { SECTION_NAV_LABEL, hasSectionNav, sectionRoutes } from "./sectionNavModel";
 import { KIOSK_TAB_PATHS } from "@/features/admin/components/KioskSectionNav";
 import { en } from "@/shared/i18n/en";
@@ -113,7 +113,17 @@ describe("a section with ONE screen is in the rail, since it gets no strip", () 
 describe("every screen in a covered section is reachable from that section", () => {
   for (const domain of COVERED) {
     it(`${domain}: every clickable route has a tab`, () => {
-      const clickable = ROUTES.filter((r) => r.domain === domain && !r.path.includes(":"));
+      /*
+        The invariant is "no screen is reachable only by URL", and it is worth
+        keeping. `HIDDEN_FROM_NAV` is its one exception, and an ENUMERATED one:
+        a route in that set is deliberately unadvertised — comp-off, at the
+        venue's request — rather than forgotten. Reading the exception from the
+        manifest means a future hide has to be written down in a reviewable place
+        instead of being achieved by deleting a tab and hoping.
+      */
+      const clickable = ROUTES.filter(
+        (r) => r.domain === domain && !r.path.includes(":") && !HIDDEN_FROM_NAV.has(r.path),
+      );
       const tabbed = new Set(sectionRoutes(domain).map((t) => t.path));
       const missing = clickable.filter((r) => !tabbed.has(r.path)).map((r) => r.path);
       expect(
@@ -169,5 +179,26 @@ describe("labels exist", () => {
         true,
       );
     }
+  });
+});
+
+describe("routes hidden from navigation are hidden, not broken", () => {
+  /*
+    The danger with an exception list is that it becomes a place to bury a route
+    that no longer works. Each hidden path must still be a REAL manifest entry —
+    so "unadvertised" can never quietly become "deleted and forgotten".
+  */
+  it("every hidden path is still a served route", () => {
+    const served = new Set(ROUTES.map((r) => r.path));
+    const dangling = [...HIDDEN_FROM_NAV].filter((p) => !served.has(p));
+    expect(
+      dangling,
+      `HIDDEN_FROM_NAV names paths the router does not serve: ${dangling.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("stays small enough to be read", () => {
+    // Hiding is a per-request decision, not a mechanism for tidying the rail.
+    expect(HIDDEN_FROM_NAV.size).toBeLessThanOrEqual(6);
   });
 });

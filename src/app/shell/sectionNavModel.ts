@@ -9,7 +9,7 @@
  * The register of screens is `ROUTES` itself. Nothing here re-lists a screen, so a
  * new page appears in its section's strip the moment it joins the manifest.
  */
-import { ROUTES } from "@/app/route-manifest";
+import { HIDDEN_FROM_NAV, ROUTES } from "@/app/route-manifest";
 import type { MessageKey } from "@/shared/i18n/en";
 
 /**
@@ -102,7 +102,9 @@ export interface SectionTab {
  * section — the check that would have caught the unreachable-screen bug.
  */
 export function sectionRoutes(domain: string): readonly SectionTab[] {
-  return ROUTES.filter((r) => r.domain === domain && !r.path.includes(":")).map((r) => ({
+  return ROUTES.filter(
+    (r) => r.domain === domain && !r.path.includes(":") && !HIDDEN_FROM_NAV.has(r.path),
+  ).map((r) => ({
     path: r.path,
     title: r.title,
     cap: r.cap,

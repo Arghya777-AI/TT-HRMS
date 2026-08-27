@@ -67,6 +67,36 @@ const CODE_TO_PATH: Readonly<Record<string, string>> = {
   FACE_ENROLMENT: "/me/settings/security",
 };
 
+/**
+ * Types HR has switched on, and which DO have a screen, that this build
+ * deliberately does not offer as a tile.
+ *
+ * A SEPARATE LIST FROM `CODE_TO_PATH`, ON PURPOSE. Deleting a code from that map
+ * would hide its tile too — that is how TRAVEL_REQUISITION was hidden above — but
+ * it would also fold the type into the `hidden` count, and that count is rendered
+ * as "N of these arrive in a later phase". These four are not late; they are
+ * withdrawn. So they are dropped BEFORE the count is taken, and the map goes on
+ * recording where each one lives for whenever one comes back.
+ *
+ * None of them loses its screen. Where each screen now stands:
+ *   COMP_OFF        → /me/comp-off, which still has its own rail row.
+ *   PAYSLIP_REQUEST → /me/helpdesk, where the request is actually raised.
+ *   IT_DECLARATION  → /me/apply/tax, no tile, palette-only.
+ *   BANK_CHANGE     → /me/profile/payment, whose Payment TAB is itself now hidden
+ *                     in `ProfileTabs`, so this one has no employee entrance left
+ *                     at all. That is deliberate and the two changes are a pair:
+ *                     a bank-change tile leading to a withdrawn tab would be the
+ *                     worse of the two states.
+ *
+ * TO RESTORE one: delete its line here. Nothing else needs changing.
+ */
+const SUPPRESSED_CODES: ReadonlySet<string> = new Set([
+  "COMP_OFF",
+  "IT_DECLARATION",
+  "PAYSLIP_REQUEST",
+  "BANK_CHANGE",
+]);
+
 const ROUTE_BY_PATH: Readonly<Record<string, RouteMeta>> = Object.fromEntries(
   ROUTES.map((r) => [r.path, r]),
 );
@@ -86,6 +116,8 @@ function buildTiles(types: readonly RequestType[]): { tiles: Tile[]; hidden: num
   const tiles: Tile[] = [];
   let hidden = 0;
   for (const type of types) {
+    // Withdrawn, not pending — so it is not rendered AND not counted as "later phase".
+    if (SUPPRESSED_CODES.has(type.code)) continue;
     const path = CODE_TO_PATH[type.code];
     const route = path === undefined ? undefined : ROUTE_BY_PATH[path];
     if (path === undefined || route === undefined) {

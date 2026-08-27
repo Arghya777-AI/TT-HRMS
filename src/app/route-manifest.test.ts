@@ -38,11 +38,51 @@ describe("route manifest", () => {
   });
 
   it("scopes /me, /team and /admin to the right capability tier", () => {
+    /*
+      TWO TIERS STOPPED BEING ONE CAP EACH, and neither is relaxed here — both
+      changes are named, so a third cannot arrive silently.
+
+      THE TEAM TIER NOW HAS TWO CAPS, the way the admin tier always has. `/team`
+      (Team Today) carries `team.today` rather than `team.view`: it is restricted
+      to management departments, derived from the reader's own department in
+      `capabilities.ts`. Every other /team screen stays on `team.view`.
+
+      ONE /me ROUTE IS NOT EMPLOYEE-TIER: `/me/holidays` is gated to `admin.access`
+      by product decision. It is listed BY NAME with its expected cap rather than
+      the rule being relaxed, so reverting that route to `me.view` fails this test
+      too — the exception is pinned in both directions. An admin-only screen on a
+      `/me` path is a smell, and this list is where it stays visible.
+
+      What still holds: no /me route may drift onto a team or admin cap it is not
+      named for, and no /team route may end up on `me.view` or an admin cap.
+    */
+    const ME_TIER_EXCEPTIONS: Readonly<Record<string, string>> = {
+      "/me/holidays": "admin.access",
+    };
+    const TEAM_TIER = ["team.view", "team.today"];
     for (const r of ROUTES) {
-      if (r.path.startsWith("/me")) expect(r.cap).toBe("me.view");
-      if (r.path.startsWith("/team")) expect(r.cap).toBe("team.view");
+      if (r.path.startsWith("/me")) {
+        expect(r.cap).toBe(ME_TIER_EXCEPTIONS[r.path] ?? "me.view");
+        continue;
+      }
+      if (r.path.startsWith("/team")) expect(TEAM_TIER).toContain(r.cap);
       if (r.path.startsWith("/admin")) expect(["admin.access", "admin.super"]).toContain(r.cap);
     }
+  });
+
+  it("keeps Team Today on the management-only cap, and its siblings off it", () => {
+    /*
+      Pins the rule itself, not just the tier. `team.today` is the whole mechanism
+      behind "Team Today is for Management, Team Attendance is for everyone" — if
+      `/team` drifts back to `team.view` the restriction silently disappears with
+      no other symptom, and if a sibling picks up `team.today` it silently gains
+      one. The rail row in `nav-model.ts` must name the same cap as `/team` here.
+    */
+    const byPath = new Map(ROUTES.map((r) => [r.path, r.cap]));
+    expect(byPath.get("/team")).toBe("team.today");
+    expect(byPath.get("/team/attendance")).toBe("team.view");
+    const strays = ROUTES.filter((r) => r.cap === "team.today" && r.path !== "/team");
+    expect(strays.map((r) => r.path)).toEqual([]);
   });
 
   it("only registers pages for paths that exist in the manifest", () => {

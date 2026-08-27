@@ -30,8 +30,10 @@ import { MaskedValue } from "@/shared/ui/MaskedValue";
 import { fmtCivilDate, fmtCivilDateWeekday, fmtDateTime } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { formatPaise } from "@/lib/money";
+import { useCan } from "@/app/auth/AuthProvider";
 import { t } from "@/shared/i18n/en";
 import type { MessageKey } from "@/shared/i18n/en";
+import type { Capability } from "@/shared/auth/capabilities";
 import type { PayslipSummary } from "@/features/pay/api/pay.api";
 import type { Announcement, Holiday } from "../api/home.api";
 import { announcementBadge } from "../display";
@@ -45,27 +47,38 @@ interface QuickAction {
   to: string;
   labelKey: MessageKey;
   icon: ComponentType<{ className?: string }>;
+  /** Omit for a tile every signed-in employee may open. */
+  cap?: Capability;
 }
 
 /**
- * Six actions, each a real route from the manifest — never more than eight, and
- * one icon per concept (DR-42). P1.5/P2 destinations are deliberately absent:
+ * Up to six actions, each a real route from the manifest — never more than eight,
+ * and one icon per concept (DR-42). P1.5/P2 destinations are deliberately absent:
  * a tile that lands on "not switched on yet" is not an action.
+ *
+ * `cap` narrows a tile to a reader who can actually open it, for the same reason:
+ * a tile that lands on "you do not have access" is not an action either. Holidays
+ * is admin-tier now (see `FOOTER_ITEMS` in nav-model.ts), so an employee must not
+ * be offered it here.
  */
 const QUICK_ACTIONS: readonly QuickAction[] = [
   { to: "/me/leave/apply", labelKey: "home.quick.applyLeave", icon: CalendarDays },
   { to: "/me/regularizations/new", labelKey: "home.quick.regularize", icon: Wrench },
   { to: "/me/comp-off", labelKey: "home.quick.compOff", icon: HeartHandshake },
   { to: "/me/approvals", labelKey: "home.quick.approvals", icon: Inbox },
-  { to: "/me/holidays", labelKey: "home.quick.holidays", icon: PartyPopper },
+  { to: "/me/holidays", labelKey: "home.quick.holidays", icon: PartyPopper, cap: "admin.access" },
   { to: "/me/payslips", labelKey: "home.quick.payslips", icon: ClipboardList },
 ];
 
 export function QuickActions() {
+  const canAdmin = useCan("admin.access");
+  // The grid is `grid-cols-2 sm:grid-cols-3`, so dropping one tile reflows to five
+  // and needs no layout change.
+  const actions = QUICK_ACTIONS.filter((a) => a.cap === undefined || canAdmin);
   return (
     <HomeCard icon={Zap} title={t("home.quick.title")} className="lg:col-span-3">
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {QUICK_ACTIONS.map((action) => (
+        {actions.map((action) => (
           <li key={action.to}>
             <Button asChild variant="outline" className="h-12 w-full justify-start">
               <Link to={action.to}>
@@ -96,6 +109,15 @@ export interface HolidaysCardProps {
 }
 
 export function UpcomingHolidaysCard({ query, hasCalendar }: HolidaysCardProps) {
+  /*
+    THE CARD STAYS FOR EVERYONE; only its "View all" link is admin-tier.
+
+    What was hidden was the holidays TAB — the screen. When the next holidays are
+    is ordinary information an employee is entitled to see, and this card renders
+    it inline from `home.api`, so removing the card would withhold something
+    nobody asked to withhold. The link would land on a refusal, so that goes.
+  */
+  const canSeeHolidays = useCan("admin.access");
   if (hasCalendar === null) {
     return (
       <HomeCard icon={PartyPopper} title={t("home.holidays.title")}>
@@ -118,11 +140,15 @@ export function UpcomingHolidaysCard({ query, hasCalendar }: HolidaysCardProps) 
     <HomeCard
       icon={PartyPopper}
       title={t("home.holidays.title")}
-      action={
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/me/holidays">{t("home.holidays.viewAll")}</Link>
-        </Button>
-      }
+      {...(canSeeHolidays
+        ? {
+            action: (
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/me/holidays">{t("home.holidays.viewAll")}</Link>
+              </Button>
+            ),
+          }
+        : {})}
     >
       <RegionBody
         query={query}

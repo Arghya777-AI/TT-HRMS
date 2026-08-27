@@ -30,6 +30,14 @@ export interface EmployeeIdentity {
   employeeCode: string | null;
   displayName: string | null;
   photoPath: string | null;
+  /**
+   * The employee's department label, or null when it could not be read.
+   *
+   * Carried on the identity because it is a CAPABILITY INPUT, not decoration:
+   * `capsForRoles` derives `team.today` from it. Null is meaningful — it withholds
+   * that cap rather than assuming the best.
+   */
+  departmentName: string | null;
   /** Forces the /first-run wizard (spec-employee E-01.3). */
   mustChangePassword: boolean;
   /** NULL until the employee has confirmed their details once. */
@@ -88,6 +96,7 @@ async function loadIdentity(userId: string): Promise<{
   employee: EmployeeIdentity;
   roles: string[];
   isManager: boolean;
+  departmentName: string | null;
   profileResolved: boolean;
 }> {
   // Each read is independent and failure-tolerant: a missing table (backend not
@@ -124,12 +133,33 @@ async function loadIdentity(userId: string): Promise<{
   // Same reason as above — the base table is column-scoped and cannot be
   // filtered on reporting_manager_id by `authenticated`.
   let isManager = false;
+  let departmentName: string | null = null;
   const employeeId = employeeRow?.id ?? null;
   if (employeeId) {
-    const team = await supabase
-      .from("v_team_employee_basic")
-      .select("employee_code", { head: true, count: "exact" });
+    /*
+      TWO FACTS FROM ONE VIEW, in parallel, because both are needed before the
+      shell can decide what to render.
+
+      The department read is a SEPARATE query rather than a column on the count
+      probe above: the probe is `head: true` and returns no rows on purpose, since
+      for an admin this view spans every in-scope employee and pulling all of them
+      to find one label would be the expensive way to ask a cheap question. Pinning
+      it with `.eq("id", employeeId)` is the same single-row read
+      `fetchOrgLabels` already does for the profile screen.
+    */
+    const [team, ownRow] = await Promise.all([
+      supabase
+        .from("v_team_employee_basic")
+        .select("employee_code", { head: true, count: "exact" }),
+      supabase
+        .from("v_team_employee_basic")
+        .select("department_name")
+        .eq("id", employeeId)
+        .maybeSingle(),
+    ]);
     isManager = (team.count ?? 0) > 1;
+    const own = (ownRow.data ?? null) as { department_name?: string | null } | null;
+    departmentName = own?.department_name ?? null;
   }
 
   return {
@@ -138,11 +168,13 @@ async function loadIdentity(userId: string): Promise<{
       employeeCode: employeeRow?.employee_code ?? null,
       displayName: employeeRow?.display_name ?? profile?.full_name ?? null,
       photoPath: employeeRow?.photo_path ?? null,
+      departmentName,
       mustChangePassword: profile?.must_change_password === true,
       profileConfirmedAt: profile?.profile_confirmed_at ?? null,
     },
     roles,
     isManager,
+    departmentName,
     profileResolved: profileRes.error === null && profile !== null,
   };
 }
@@ -164,12 +196,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const { employee: emp, roles: r, isManager, profileResolved } = await loadIdentity(
-        nextSession.user.id,
-      );
+      const {
+        employee: emp,
+        roles: r,
+        isManager,
+        departmentName,
+        profileResolved,
+      } = await loadIdentity(nextSession.user.id);
       setEmployee(emp);
       setRoles(r);
-      setCaps(capsForRoles(r, { isManager }));
+      setCaps(capsForRoles(r, { isManager, departmentName }));
       setIdentityResolved(profileResolved);
     } catch {
       // Backend unreachable / not migrated: authenticated users still get the

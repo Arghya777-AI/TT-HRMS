@@ -30,6 +30,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { fmtCivilDate, fmtCivilDayMonthWeekday, fmtDurationHm } from "@/lib/datetime";
 import { dash, EM_DASH } from "@/lib/format";
+import { useCan } from "@/app/auth/AuthProvider";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
 import { useCompOffBalance, useCompOffCredits } from "../hooks/useLeave";
@@ -47,6 +48,7 @@ import {
 const SPENDABLE = new Set(["available", "partially_used"]);
 
 export default function CompOffPage() {
+  const canSeeHolidays = useCan("admin.access");
   const balance = useCompOffBalance();
   const credits = useCompOffCredits();
   const rules = useLeaveTypeRules();
@@ -305,11 +307,21 @@ export default function CompOffPage() {
               icon={HeartHandshake}
               title={t("compOff.empty.title")}
               hint={t("compOff.empty.hint")}
-              action={
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/me/holidays">{t("shell.nav.holidays")}</Link>
-                </Button>
-              }
+              /*
+                The way out of this empty state is the holidays calendar — working a
+                holiday is what earns a credit. That screen is admin-tier now, so an
+                employee gets the empty state with no button rather than a button
+                onto a refusal. The hint still explains where credits come from.
+              */
+              {...(canSeeHolidays
+                ? {
+                    action: (
+                      <Button asChild size="sm" variant="outline">
+                        <Link to="/me/holidays">{t("shell.nav.holidays")}</Link>
+                      </Button>
+                    ),
+                  }
+                : {})}
             />
           }
           partialError={rules.error}

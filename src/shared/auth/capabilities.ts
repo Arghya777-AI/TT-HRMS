@@ -18,11 +18,39 @@
 export type Capability =
   | "me.view" // every authenticated employee — all /me/** routes
   | "team.view" // has reportees (derived server-side) — /team/** routes
+  | "team.today" // team.view AND a management department — /team only
   | "admin.access" // admin console tier A — most /admin/** routes
   | "admin.super" // super_admin-only routes (tier S)
   | "kiosk.operate"; // guard/operator actions on the kiosk surface
 
 export type RoleName = "employee" | "manager" | "admin" | "super_admin" | "kiosk_operator";
+
+/**
+ * Departments whose managers get `team.today`, and therefore Team Today.
+ *
+ * `team.today` is NOT in `ROLE_CAPS`, because no role grants it. It is derived
+ * from the reader's own department, the same way `team.view` is derived from
+ * having reportees — a department is not a role and must not become one.
+ *
+ * MATCHED ON `departments.name`, WHICH IS A DISPLAY STRING, and that is the weak
+ * point of this gate. `departments` also carries a stable `code`, which is what a
+ * rule like this should key on; the code's value in this tenant was not knowable
+ * from the client when this was written, while the name was — "Management", as
+ * printed on every profile. So the trade is deliberate and this is the ONE place
+ * it lives. Rename the department in Admin → Organisation → Departments and Team
+ * Today silently vanishes for its managers, so the rename and this list have to
+ * move together — or this switches to reading the code.
+ *
+ * Compared case-insensitively after trimming, so casing and stray whitespace in
+ * the org master do not decide who sees a screen.
+ */
+export const TEAM_TODAY_DEPARTMENTS: readonly string[] = ["management"];
+
+/** True when this department name is one of `TEAM_TODAY_DEPARTMENTS`. */
+export function isTeamTodayDepartment(departmentName: string | null | undefined): boolean {
+  if (typeof departmentName !== "string") return false;
+  return TEAM_TODAY_DEPARTMENTS.includes(departmentName.trim().toLowerCase());
+}
 
 /**
  * Role → capability, mirroring the DB hierarchy in `app.has_role()`
@@ -66,13 +94,34 @@ const ROLE_CAPS: Record<RoleName, readonly Capability[]> = {
  *   roles query fails or returns nothing — the shell must work before the
  *   backend is live.
  * - `isManager` folds in the server-derived manager flag once available.
+ * - `departmentName` decides `team.today` — see `TEAM_TODAY_DEPARTMENTS`.
  */
-export function capsForRoles(roles: readonly string[], opts: { isManager?: boolean } = {}): Set<Capability> {
+export function capsForRoles(
+  roles: readonly string[],
+  opts: { isManager?: boolean; departmentName?: string | null } = {},
+): Set<Capability> {
   const caps = new Set<Capability>(ROLE_CAPS.employee);
   for (const role of roles) {
     const mapped = ROLE_CAPS[role as RoleName];
     if (mapped) for (const cap of mapped) caps.add(cap);
   }
   if (opts.isManager) caps.add("team.view");
+  /*
+    `team.today` REQUIRES BOTH: the /team surface at all, and a management
+    department. Team Today is a manager's screen, so somebody in Management with
+    no reportees gets nothing — there is no team to show them.
+    An ADMIN is not exempt. `admin` carries `team.view` (see above) but Team Today
+    is a manager surface, not the admin console, and the rule asked for was "only
+    Management" without a carve-out. An admin outside Management therefore keeps
+    the whole /admin console and Team Attendance, and loses this one row.
+
+    THIS FAILS CLOSED, unlike `FirstRunGate`. When the department cannot be read
+    the cap is withheld, because a restriction that evaporates on a failed read is
+    not a restriction — and the cost of being wrong here is one hidden nav row that
+    a reload recovers, not a user locked out of the product.
+  */
+  if (caps.has("team.view") && isTeamTodayDepartment(opts.departmentName)) {
+    caps.add("team.today");
+  }
   return caps;
 }

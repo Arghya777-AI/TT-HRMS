@@ -7,13 +7,22 @@
  * DR-48's "tab strips only with ≥2 tabs".
  *
  * The strip scrolls horizontally in its own container below 768px so the PAGE
- * never scrolls sideways — the eight-tab strip is exactly the kind of wide
+ * never scrolls sideways — the six-tab strip is exactly the kind of wide
  * content that otherwise breaks a 360px viewport.
  *
- * The Salary tab is listed and rendered as a link because its route exists in the
- * manifest, but it is marked `phase: 'P1.5'` there: the router shows the honest
- * "not switched on yet" stub rather than an empty card. It is not this build's
- * screen and is not faked here.
+ * NO SALARY TAB AND NO PAYMENT TAB. Both routes still exist and still render
+ * their pages (`MySalary.page.tsx`, `ProfilePayment.page.tsx`); what is withdrawn
+ * is the employee's way in. Salary's companion change is the "Salary" row removed
+ * from the rail in `nav-model.ts` — removing one and leaving the other would hide
+ * nothing. Payment's companion is the `BANK_CHANGE` tile suppressed in
+ * `ApplyLauncher.page.tsx`, which pointed here.
+ *
+ * HR AND ADMINS ARE UNAFFECTED: the same fields are on the admin's Employee 360
+ * (`admin.p360.tab.payment`), which is a different screen and untouched.
+ *
+ * TO RESTORE: re-add the entries below, in spec order —
+ *   payment between `employment` and `personal`;
+ *   salary  between `documents`  and `history`.
  */
 import { NavLink } from "react-router-dom";
 import { t, type MessageKey } from "@/shared/i18n/en";
@@ -28,11 +37,9 @@ interface TabDef {
 const TABS: readonly TabDef[] = [
   { to: "/me/profile/basic", labelKey: "profile.tab.basic" },
   { to: "/me/profile/employment", labelKey: "profile.tab.employment" },
-  { to: "/me/profile/payment", labelKey: "profile.tab.payment" },
   { to: "/me/profile/personal", labelKey: "profile.tab.personal" },
   { to: "/me/profile/custom", labelKey: "profile.tab.custom" },
   { to: "/me/profile/documents", labelKey: "profile.tab.documents" },
-  { to: "/me/profile/salary", labelKey: "profile.tab.salary" },
   { to: "/me/profile/history", labelKey: "profile.tab.history" },
 ];
 

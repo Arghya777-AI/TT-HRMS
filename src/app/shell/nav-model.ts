@@ -10,7 +10,6 @@
 import type { ComponentType } from "react";
 import {
   Banknote,
-  BadgeCheck,
   BarChart3,
   CalendarDays,
   CalendarPlus,
@@ -33,7 +32,6 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  UserCog,
   UserRound,
   Users,
 } from "lucide-react";
@@ -44,13 +42,11 @@ export type BadgeKey =
   | "attendance.unresolved"
   | "leave.pending"
   | "compOff.expiring"
-  | "salary.new"
   | "profile.incomplete"
   | "approvals.mine"
   | "documents.unacked"
   | "assets.handover"
   | "helpdesk.unread"
-  | "team.approvals"
   | "admin.alerts";
 
 export interface NavItem {
@@ -103,14 +99,24 @@ const ME_ITEMS: readonly NavItem[] = [
   // application lives — the only screen that can draw one request from several balances.
   { labelKey: "shell.nav.applyLeave", to: "/me/leave/apply", icon: CalendarPlus, cap: "me.view" },
   { labelKey: "shell.nav.compOff", to: "/me/comp-off", icon: HeartHandshake, cap: "me.view", badge: "compOff.expiring" },
-  {
-    labelKey: "shell.nav.salary",
-    to: "/me/payslips",
-    icon: Banknote,
-    cap: "me.view",
-    badge: "salary.new",
-    mobileSlot: 4,
-  },
+  /*
+    NO "Salary" ROW HERE, and therefore no fourth mobile slot.
+
+    `/me/payslips` and `/me/profile/salary` are both still routes, still registered
+    and still findable in the command palette — this withdraws the ENTRANCE from the
+    employee's rail, it does not delete the screens. Its companion change is the
+    Salary tab dropped from `ProfileTabs`; the two together are what "hide salary
+    from the employee" means, and hiding one without the other would leave the
+    other as the way in.
+
+    An admin is unaffected in the work they came for: payroll lives under
+    `/admin/payroll/*`, which has its own rail row in ADMIN_ITEMS below.
+
+    TO RESTORE: put back the row that was here —
+      { labelKey: "shell.nav.salary", to: "/me/payslips", icon: Banknote,
+        cap: "me.view", badge: "salary.new", mobileSlot: 4 },
+    re-add "salary.new" to `BadgeKey`, and re-add the tab in `ProfileTabs`.
+  */
   { labelKey: "shell.nav.profile", to: "/me/profile", icon: UserRound, cap: "me.view", badge: "profile.incomplete" },
   { labelKey: "shell.nav.apply", to: "/me/apply", icon: ClipboardList, cap: "me.view" },
   { labelKey: "shell.nav.approvals", to: "/me/approvals", icon: Inbox, cap: "me.view", badge: "approvals.mine" },
@@ -130,15 +136,40 @@ const ME_ITEMS: readonly NavItem[] = [
   { labelKey: "shell.nav.helpdesk", to: "/me/helpdesk", icon: LifeBuoy, cap: "me.view", badge: "helpdesk.unread" },
 ];
 
-/** TEAM group — spec-manager route table. */
+/*
+  TEAM group — spec-manager route table, CUT TO TWO ROWS.
+
+  Team Today and Team Attendance are the section a manager keeps; Team Approvals,
+  Team Leave, Roster & Events, Team Analytics and My Team are withdrawn from the
+  rail. Their routes are untouched and still registered, so nothing 404s and the
+  command palette still finds them — this removes the rail rows only.
+
+  THE ONE WITHDRAWAL WORTH KNOWING ABOUT is Team Approvals, because it is not an
+  orphan afterwards and must not be turned into one. `/me/approvals` — "Awaiting
+  your action", in the MY WORK group — lists every pending manager decision and
+  each row's target is `/team/approvals` (see `buildActions` in
+  `Approvals.page.tsx`). So a manager with requests waiting still reaches the
+  screen by clicking the request, which is a better entrance than a rail row: it
+  arrives with the decision already in hand. The "Open approvals" button on Team
+  Today itself also still navigates there. Deleting the ROUTE would break both of
+  those; removing the rail row breaks neither.
+
+  TO RESTORE any row: re-import the icon it needs (`BadgeCheck` and `UserCog` were
+  dropped from the import list above because only these rows used them), re-add
+  "team.approvals" to `BadgeKey` if you are restoring approvals, and put the row
+  back in spec order:
+    { labelKey: "shell.nav.team.approvals",  to: "/team/approvals",  icon: BadgeCheck, cap: "team.view", badge: "team.approvals" },
+    { labelKey: "shell.nav.team.leave",      to: "/team/leave",      icon: CalendarDays, cap: "team.view" },
+    { labelKey: "shell.nav.team.roster",     to: "/team/roster",     icon: CalendarDays, cap: "team.view" },
+    { labelKey: "shell.nav.team.analytics",  to: "/team/analytics",  icon: BarChart3, cap: "team.view" },
+    { labelKey: "shell.nav.team.people",     to: "/team/people",     icon: UserCog, cap: "team.view" },
+*/
 const TEAM_ITEMS: readonly NavItem[] = [
-  { labelKey: "shell.nav.team.today", to: "/team", icon: Users, cap: "team.view" },
-  { labelKey: "shell.nav.team.approvals", to: "/team/approvals", icon: BadgeCheck, cap: "team.view", badge: "team.approvals" },
+  // `team.today`, NOT `team.view`: Management departments only. The cap is derived
+  // from the reader's own department in `capabilities.ts`; the row and the route
+  // (`/team` in route-manifest.ts) must name the SAME cap or one of them lies.
+  { labelKey: "shell.nav.team.today", to: "/team", icon: Users, cap: "team.today" },
   { labelKey: "shell.nav.team.attendance", to: "/team/attendance", icon: Clock, cap: "team.view" },
-  { labelKey: "shell.nav.team.leave", to: "/team/leave", icon: CalendarDays, cap: "team.view" },
-  { labelKey: "shell.nav.team.roster", to: "/team/roster", icon: CalendarDays, cap: "team.view" },
-  { labelKey: "shell.nav.team.analytics", to: "/team/analytics", icon: BarChart3, cap: "team.view" },
-  { labelKey: "shell.nav.team.people", to: "/team/people", icon: UserCog, cap: "team.view" },
 ];
 
 /** ADMIN group — section landings from the spec-admin route table. */
@@ -225,12 +256,36 @@ export function navGroupsFor(has: (cap: NavItem["cap"]) => boolean): readonly Na
 
 /** Footer items (rail bottom / More sheet tail). */
 export const FOOTER_ITEMS: readonly NavItem[] = [
-  { labelKey: "shell.nav.holidays", to: "/me/holidays", icon: CalendarDays, cap: "me.view" },
+  /*
+    HOLIDAYS IS ADMIN-TIER, not employee-tier — `admin.access`, which both `admin`
+    and `super_admin` carry, and which IS the "admin level" tier: there is no `hr`
+    role in `public.app_role`, so HR staff hold `admin` and are covered by this.
+
+    The route `/me/holidays` carries the same cap (see route-manifest.ts), so a
+    typed URL gets `RequireCap`'s refusal rather than the calendar, and the three
+    employee-facing links that used to lead here — two on Home, one on Comp-off —
+    are gated on the same cap so nothing leads an employee to a refusal.
+
+    NOTE FOR WHOEVER REVISITS THIS: it is an admin-gated screen sitting on a `/me`
+    path, which is why `route-manifest.test.ts` needs a documented exception. The
+    admin's own holiday screen is `/admin/time/holidays` ("Holiday Calendars"),
+    which is where calendars are actually edited; this one is the read-only
+    employee view of "the calendar that applies to you".
+  */
+  { labelKey: "shell.nav.holidays", to: "/me/holidays", icon: CalendarDays, cap: "admin.access" },
   { labelKey: "shell.nav.notifications", to: "/me/notifications", icon: Inbox, cap: "me.view" },
   { labelKey: "shell.nav.security", to: "/me/settings/security", icon: Fingerprint, cap: "me.view" },
 ];
 
-/** Mobile bottom bar: the four slotted ME items, in slot order. */
+/**
+ * Mobile bottom bar: the slotted ME items, in slot order.
+ *
+ * THREE of them now — Home, Attendance, Leave — plus the "More" trigger the shell
+ * appends, so four cells. Slot 4 was Salary and is deliberately vacant rather than
+ * back-filled: promoting some other screen into a phone's primary navigation is a
+ * different decision from hiding this one, and the bar is `flex-1` per cell, so it
+ * lays out correctly at any count.
+ */
 export const MOBILE_ITEMS: readonly NavItem[] = [...ME_ITEMS]
   .filter((i): i is NavItem & { mobileSlot: 1 | 2 | 3 | 4 } => i.mobileSlot !== undefined)
   .sort((a, b) => a.mobileSlot - b.mobileSlot);

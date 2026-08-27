@@ -101,7 +101,10 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/policies/:slug", title: "Policy", hint: "Scroll-tracked reader with acknowledgement gate.", cap: "me.view", domain: "policies", phase: "P1", icon: ScrollText },
   { path: "/me/helpdesk", title: "Help desk", hint: "Raise a ticket to HR, Payroll, Stores or IT.", cap: "me.view", domain: "helpdesk", phase: "P1.5", icon: LifeBuoy },
   { path: "/me/helpdesk/:id", title: "Ticket", hint: "The conversation and its service-level clock.", cap: "me.view", domain: "helpdesk", phase: "P1.5", icon: LifeBuoy },
-  { path: "/me/holidays", title: "Holidays", hint: "The Karnataka calendar and your optional-holiday picks.", cap: "me.view", domain: "holidays", phase: "P1", icon: CalendarDays },
+  // `admin.access`, NOT `me.view` — the one /me route that is not employee-tier.
+  // Paired with the footer row in nav-model.ts; see the note there, and the
+  // documented exception in route-manifest.test.ts.
+  { path: "/me/holidays", title: "Holidays", hint: "The Karnataka calendar and your optional-holiday picks.", cap: "admin.access", domain: "holidays", phase: "P1", icon: CalendarDays },
   { path: "/me/notifications", title: "Notifications", hint: "Everything the system has told you, newest first.", cap: "me.view", domain: "notifications", phase: "P1", icon: Bell },
   { path: "/me/settings", title: "Settings", hint: "Channels, account security, and what the system records about you.", cap: "me.view", domain: "settings", phase: "P1", icon: Cog },
   { path: "/me/settings/notifications", title: "Notification preferences", hint: "Choose channels; some notices can't be switched off.", cap: "me.view", domain: "settings", phase: "P1", icon: Cog },
@@ -123,7 +126,10 @@ const ME: readonly RouteMeta[] = [
 
 /* ── Manager (spec-manager route table) ───────────────────────────────────── */
 const TEAM: readonly RouteMeta[] = [
-  { path: "/team", title: "Team Today", hint: "Live presence board: in, yet to reach, late, on leave.", cap: "team.view", domain: "team", phase: "P1", icon: Users },
+  // `team.today` (Management departments only), paired with the rail row in
+  // nav-model.ts. `RequireCap` therefore shows the honest refusal to a manager
+  // outside Management who types the URL, instead of the board.
+  { path: "/team", title: "Team Today", hint: "Live presence board: in, yet to reach, late, on leave.", cap: "team.today", domain: "team", phase: "P1", icon: Users },
   { path: "/team/approvals", title: "Team Approvals", hint: "Leave, regularizations, comp-off, OT and claims to decide.", cap: "team.view", domain: "team", phase: "P1", icon: Inbox },
   { path: "/team/attendance", title: "Team Attendance", hint: "Your team's days, exceptions and trends.", cap: "team.view", domain: "team", phase: "P1", icon: Clock },
   { path: "/team/leave", title: "Team Leave", hint: "Leave board with coverage against booked events.", cap: "team.view", domain: "team", phase: "P1", icon: CalendarDays },

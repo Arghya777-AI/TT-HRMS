@@ -952,6 +952,22 @@ export function employeeFormError(values: FormValues, todayIst: string): string 
   if (doj !== null && doj > todayIst && (values["employment_status"] ?? "") !== "pre_joining") {
     return t("admin.people.err.futureJoinNotPreJoining");
   }
+  /*
+    THE MIRROR OF THE RULE ABOVE, AND THE ONE THAT WAS MISSING.
+
+    A future joining date was already forced to `pre_joining`. The opposite — a joining date
+    that has ALREADY PASSED, left on this form's `pre_joining` default — was accepted silently,
+    and it is not a harmless inconsistency: `pre_joining` is absent from `PUNCHABLE_STATUSES` in
+    BOTH `kiosk-punch` and `attendance-self-punch`, so the employee cannot record attendance at
+    the gate or from the portal. The gate recognises their face, at full confidence, and then
+    refuses — which reads as a broken camera rather than as a status nobody set.
+
+    Four employees reached production this way before anybody worked out why. The wizard is the
+    only place that can catch it cheaply, so it catches it here.
+  */
+  if (doj !== null && doj <= todayIst && (values["employment_status"] ?? "") === "pre_joining") {
+    return t("admin.people.err.pastJoinStillPreJoining");
+  }
   return null;
 }
 

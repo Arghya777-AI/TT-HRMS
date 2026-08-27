@@ -5045,6 +5045,10 @@ export const en = catalogue({
   "admin.people.err.confirmedBeforeDoj": "The confirmation date cannot fall before the joining date.",
   "admin.people.err.futureJoinNotPreJoining":
     "The joining date is in the future, so the status must be Pre-joining until they actually start.",
+  // Names the consequence, because "the status is inconsistent" would not tell an admin that
+  // the person they just created cannot punch at the gate or from the portal.
+  "admin.people.err.pastJoinStillPreJoining":
+    "The joining date has already passed, so Pre-joining is no longer true — and an employee left on Pre-joining cannot record attendance at the gate or from the portal. Set the status to Active (or On probation, if that is the arrangement).",
 
   // §2 Add Employee wizard — /admin/people/new
   "admin.people.add.title": "Add employee",
@@ -9764,6 +9768,16 @@ export const en = catalogue({
   "admin.onboarding.col.action": "Confirm",
   "admin.onboarding.confirm": "Confirm",
   "admin.onboarding.alreadyConfirmed": "Confirmed",
+  /*
+    Recording that somebody actually started. `joined` projects to `active`, and it was the one
+    lifecycle event no screen could write — see the Onboarding page's own note. Worded around
+    attendance because that is what it unblocks.
+  */
+  "admin.onboarding.markJoined": "Mark as joined",
+  "admin.onboarding.joined.title": "Record that {name} has joined",
+  "admin.onboarding.joined.description":
+    "This records their joining on {date} and moves them from Pre-joining to Active. Until it is recorded they cannot punch at the gate or from the portal — the gate recognises them and refuses. Like every lifecycle event this is permanent and can only be reversed by another event, so say why.",
+  "admin.onboarding.joined.cta": "Record joining",
   "admin.onboarding.confirm.title": "Confirm {name} in their role",
   "admin.onboarding.confirm.description":
     "Their probation was due to end {date}. This records a permanent lifecycle event and moves them to active — it can be reversed later only by recording another event, never edited.",

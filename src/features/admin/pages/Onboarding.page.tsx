@@ -27,7 +27,7 @@
  */
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ClipboardList, FileText, UserPlus, X } from "lucide-react";
+import { ClipboardList, FileText, LogIn, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
@@ -201,11 +201,29 @@ export default function OnboardingPage() {
     row cannot be edited afterwards, only reversed by another event. So it goes
     through the reason dialog every other sensitive admin change uses, and the
     sentence typed there becomes the event's own `reason`.
+
+    ── WHY `joined` IS HERE TOO ─────────────────────────────────────────────────
+    `ele_status_projection` maps `joined → active`, and that was the ONLY route from
+    `pre_joining` to a status attendance accepts. Nothing in the app could write it: between
+    them, every screen could record `confirmed`, `rehired`, `promoted`, `transferred`,
+    `department_changed` and `manager_changed` — and nothing else. `employee_lifecycle_events`
+    was empty in production, and the only reason 78 people could punch is that the bulk import
+    sets `employment_status` directly, bypassing the stream.
+
+    So every employee added through the wizard was stuck at `pre_joining` forever, and
+    `pre_joining` is absent from `PUNCHABLE_STATUSES` in both `kiosk-punch` and
+    `attendance-self-punch`. Their face matched at the gate at 0.85–0.92 confidence and the
+    punch was refused; the portal's punch button returned SELF_PUNCH_EMPLOYEE_INACTIVE. Neither
+    said why, because neither could: the refusal is correct, the status was wrong.
+
+    This register is the right home for it — it is the joiners board, and `pre_joining` is one
+    of the two stages it exists to show.
   */
-  const prompt = useReasonPrompt<{ employee: LifecycleEmployee }>();
+  const prompt = useReasonPrompt<{ employee: LifecycleEmployee; action: "joined" | "confirmed" }>();
   const confirmEvent = useRecordLifecycleEvent();
   const actorProfileId = useProfileId();
   const confirming = confirmEvent.isPending ? (prompt.target?.employee.id ?? null) : null;
+  const promptAction = prompt.target?.action ?? "confirmed";
 
   const columns: DataGridColumn<LifecycleEmployee>[] = [
     {
@@ -305,24 +323,48 @@ export default function OnboardingPage() {
       */
       key: "confirm",
       header: t("admin.onboarding.col.action"),
-      width: "9rem",
+      width: "11rem",
       align: "right",
-      render: (r) =>
-        r.confirmed_on !== null ? (
-          <span className="text-xs text-muted-foreground">{t("admin.onboarding.alreadyConfirmed")}</span>
-        ) : (
+      render: (r) => {
+        if (r.confirmed_on !== null) {
+          return (
+            <span className="text-xs text-muted-foreground">{t("admin.onboarding.alreadyConfirmed")}</span>
+          );
+        }
+        /*
+          Somebody who has not joined cannot be confirmed — the next act in their life is
+          starting, not passing probation. Offering "Confirm" against a `pre_joining` row was
+          offering the wrong step and hiding the only one that mattered.
+        */
+        if (r.employment_status === "pre_joining") {
+          return (
+            <Button
+              size="sm"
+              // Default, not outline: on a row that cannot punch, this is the fix, not an option.
+              disabled={confirming !== null}
+              onClick={() => {
+                prompt.ask({ employee: r, action: "joined" });
+              }}
+            >
+              <LogIn className="mr-1.5 size-3.5" aria-hidden />
+              {t("admin.onboarding.markJoined")}
+            </Button>
+          );
+        }
+        return (
           <Button
             size="sm"
             variant="outline"
             disabled={confirming !== null}
             onClick={() => {
-              prompt.ask({ employee: r });
+              prompt.ask({ employee: r, action: "confirmed" });
             }}
           >
             <CheckCircle2 className="mr-1.5 size-3.5" aria-hidden />
             {t("admin.onboarding.confirm")}
           </Button>
-        ),
+        );
+      },
     },
   ];
 
@@ -536,14 +578,30 @@ export default function OnboardingPage() {
 
       <ReasonDialog
         open={prompt.isOpen}
-        title={t("admin.onboarding.confirm.title", {
-          name: prompt.target?.employee.display_name ?? "",
-        })}
-        description={t("admin.onboarding.confirm.description", {
-          date: fmtCivilDate(prompt.target?.employee.confirmation_due_date ?? null),
-        })}
+        title={
+          promptAction === "joined"
+            ? t("admin.onboarding.joined.title", {
+              name: prompt.target?.employee.display_name ?? "",
+            })
+            : t("admin.onboarding.confirm.title", {
+              name: prompt.target?.employee.display_name ?? "",
+            })
+        }
+        description={
+          promptAction === "joined"
+            ? t("admin.onboarding.joined.description", {
+              date: fmtCivilDate(prompt.target?.employee.date_of_join ?? null),
+            })
+            : t("admin.onboarding.confirm.description", {
+              date: fmtCivilDate(prompt.target?.employee.confirmation_due_date ?? null),
+            })
+        }
         minLength={SENSITIVE_REASON_LENGTH}
-        confirmLabel={t("admin.onboarding.confirm.cta")}
+        confirmLabel={
+          promptAction === "joined"
+            ? t("admin.onboarding.joined.cta")
+            : t("admin.onboarding.confirm.cta")
+        }
         pending={confirmEvent.isPending}
         errorMessage={confirmEvent.userMessage}
         onConfirm={(reason) => {
@@ -552,14 +610,22 @@ export default function OnboardingPage() {
           confirmEvent.save(
             {
               employeeId: target.employee.id,
-              eventType: "confirmed",
+              eventType: target.action,
               /*
-                TODAY, not the due date. The confirmation takes effect when it is
-                decided — backdating it to a due date three weeks ago would
-                rewrite three weeks of employment status, and the projection
-                trigger would happily do it.
+                THE TWO EVENTS TAKE EFFECT ON DIFFERENT DATES, AND NEITHER IS A GUESS.
+
+                A confirmation takes effect when it is DECIDED — today. Backdating it to a due
+                date three weeks ago would rewrite three weeks of employment status, and the
+                projection trigger would happily do it.
+
+                Joining is the opposite: it took effect on the day they started, which is
+                already recorded as `date_of_join`. Stamping today would claim somebody who has
+                been at work for ten days joined this morning — and it is exactly the ten days
+                of silence this action exists to end. It falls back to today only when no
+                joining date is on the record at all.
               */
-              effectiveDate: today,
+              effectiveDate:
+                target.action === "joined" ? (target.employee.date_of_join ?? today) : today,
               recordedBy: actorProfileId,
             },
             reason,

@@ -356,9 +356,20 @@ export function orgPlacementGroup(refs: PeopleRefs, excludeSelf?: string): Field
     title: t("admin.people.group.placement"),
     fields: [
       {
+        /*
+          REQUIRED. The department is what almost every downstream grouping keys off —
+          approvals routing, headcount, and every report that is read by team. An employee with
+          none is not neutral; they simply fall out of those views without appearing anywhere as
+          missing.
+
+          Safe to require because the list is populated and inline creation is allowed:
+          `allowOther` lets an admin add a new department here rather than abandoning the wizard
+          to go and create one first.
+        */
         name: "department_id",
         label: t("admin.people.field.department"),
         kind: "select",
+        required: true,
         help: t("admin.people.help.department"),
         options: refs.departments,
         allowOther: true,

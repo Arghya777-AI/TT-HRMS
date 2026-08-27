@@ -136,6 +136,16 @@ export function usePeopleRefs(): PeopleRefs {
   const shifts = useRefOptions("shifts");
   const weeklyOffRules = useRefOptions("weeklyOffRules");
   const holidayCalendars = useRefOptions("holidayCalendars");
+  /*
+    The attendance policy list. It used to be hardcoded empty here with the note "no
+    attendance-policy master hook exists yet" — which was true once and had stopped being true:
+    `useRefOptions` already serves this entity, and `PolicyAssignments` has been using it.
+
+    The stale comment cost more than a blank dropdown. Making the field required turned an empty
+    select into a wizard that could not be completed at all, because the one option it demanded
+    could never be chosen. Three active policies were in the database the whole time.
+  */
+  const attendancePolicies = useRefOptions("attendancePolicies");
   const managers = useEmployeeRefOptions();
   const payPeriods = usePayPeriods();
 
@@ -152,9 +162,7 @@ export function usePeopleRefs(): PeopleRefs {
       shifts: opts(shifts.data),
       weeklyOffRules: opts(weeklyOffRules.data),
       holidayCalendars: opts(holidayCalendars.data),
-      // No attendance-policy master hook exists yet; an empty list renders an
-      // empty select rather than a wrong one. Reported, not faked.
-      attendancePolicies: [],
+      attendancePolicies: opts(attendancePolicies.data),
       payPeriods: (payPeriods.data ?? []).map((p) => ({ value: p.id, label: p.name })),
       managers: opts(managers.data),
       // The 360's Payment tab supplies this per employee; the wizard has no
@@ -171,6 +179,7 @@ export function usePeopleRefs(): PeopleRefs {
     shifts.data,
     weeklyOffRules.data,
     holidayCalendars.data,
+    attendancePolicies.data,
     payPeriods.data,
     managers.data,
   ]);

@@ -5045,10 +5045,6 @@ export const en = catalogue({
   "admin.people.err.confirmedBeforeDoj": "The confirmation date cannot fall before the joining date.",
   "admin.people.err.futureJoinNotPreJoining":
     "The joining date is in the future, so the status must be Pre-joining until they actually start.",
-  // Names the consequence, because "the status is inconsistent" would not tell an admin that
-  // the person they just created cannot punch at the gate or from the portal.
-  "admin.people.err.pastJoinStillPreJoining":
-    "The joining date has already passed, so Pre-joining is no longer true — and an employee left on Pre-joining cannot record attendance at the gate or from the portal. Set the status to Active (or On probation, if that is the arrangement).",
 
   // §2 Add Employee wizard — /admin/people/new
   "admin.people.add.title": "Add employee",

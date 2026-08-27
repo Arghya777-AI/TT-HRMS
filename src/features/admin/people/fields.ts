@@ -953,21 +953,23 @@ export function employeeFormError(values: FormValues, todayIst: string): string 
     return t("admin.people.err.futureJoinNotPreJoining");
   }
   /*
-    THE MIRROR OF THE RULE ABOVE, AND THE ONE THAT WAS MISSING.
+    ── THE MIRROR RULE THAT WAS ADDED HERE, AND THEN DELIBERATELY REMOVED ───────
+    For one day this refused a joining date that had already passed while the status was still
+    this form's `pre_joining` default. The reason was consequence, not tidiness: `pre_joining`
+    was absent from `PUNCHABLE_STATUSES` in both punch paths, so such an employee could not
+    record attendance anywhere — four of them reached production that way.
 
-    A future joining date was already forced to `pre_joining`. The opposite — a joining date
-    that has ALREADY PASSED, left on this form's `pre_joining` default — was accepted silently,
-    and it is not a harmless inconsistency: `pre_joining` is absent from `PUNCHABLE_STATUSES` in
-    BOTH `kiosk-punch` and `attendance-self-punch`, so the employee cannot record attendance at
-    the gate or from the portal. The gate recognises their face, at full confidence, and then
-    refuses — which reads as a broken camera rather than as a status nobody set.
+    That consequence is gone. `pre_joining` is now punchable at the gate and from the portal
+    (see the note on `kiosk-punch`'s `PUNCHABLE_STATUSES`), which was the venue's decision: a
+    person at the door is at the door, and a paperwork discrepancy reconciles better from a
+    recorded scan than from a missing one.
 
-    Four employees reached production this way before anybody worked out why. The wizard is the
-    only place that can catch it cheaply, so it catches it here.
+    So the rule would now block a save for a state that works. That is a barrier with nothing
+    behind it. What remains is a data point rather than a fault — somebody's status says they
+    have not started when they have — and the Onboarding register is where it belongs: it lists
+    every `pre_joining` joiner with a "Mark as joined" action, which fixes the record without
+    standing between an admin and a save.
   */
-  if (doj !== null && doj <= todayIst && (values["employment_status"] ?? "") === "pre_joining") {
-    return t("admin.people.err.pastJoinStillPreJoining");
-  }
   return null;
 }
 

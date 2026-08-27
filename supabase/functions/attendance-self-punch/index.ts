@@ -311,6 +311,9 @@ const DEFAULT_DESCRIPTOR_MODEL = "faceapi-rn34-128d-v1";
  * punch would be a bug waiting to be found by an employee, not by us.
  */
 const PUNCHABLE_STATUSES: ReadonlySet<string> = new Set([
+  // `pre_joining` included — see `kiosk-punch`'s note. It is the wizard's DEFAULT, so excluding
+  // it silently blocked every employee added through the app from punching at all.
+  "pre_joining",
   "active",
   "on_probation",
   "confirmed",

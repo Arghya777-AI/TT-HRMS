@@ -171,12 +171,30 @@ const EMPLOYEE_PHOTO_BUCKET = "employee-photos";
 const DESCRIPTOR_MODEL = "faceapi-rn34-128d-v1";
 
 /**
- * Statuses at which a person may be recorded at the gate. `absconding` and
- * `on_long_leave` ARE allowed on purpose — someone who turns up is a fact HR
- * needs, flagged for review, not an event to refuse. The excluded four are
- * "this person has no business punching": not joined, suspended, gone.
+ * Statuses at which a person may be recorded at the gate.
+ *
+ * The governing principle: SOMEONE WHO TURNS UP IS A FACT HR NEEDS. `absconding` and
+ * `on_long_leave` were always allowed on that reasoning — flagged for review, not refused.
+ *
+ * ── WHY `pre_joining` IS NOW ON THIS LIST ────────────────────────────────────
+ * It used to be excluded as "this person has no business punching", and in the abstract that
+ * reads well. In practice it was the opposite of a safeguard. `pre_joining` is the wizard's
+ * default and the table's, so it is where every employee added through the app STARTS — and
+ * with nothing in the product able to move them off it, four people reached production unable
+ * to punch anywhere. Their faces matched at the gate at 0.85–0.92 confidence against a 0.62
+ * threshold, and every punch was refused. To the person standing at the camera, and to whoever
+ * they complained to, that is a broken terminal.
+ *
+ * The venue's call, and the right one for this venue: a person at the door is at the door. If
+ * the paperwork says they have not started, that is a discrepancy for HR to reconcile — and it
+ * reconciles far better from a recorded scan than from an absence of one. Refusing the punch
+ * did not prevent the shift; it only lost the evidence that it happened.
+ *
+ * Still excluded, and these are deliberate: `suspended` (told not to come in), `exited`,
+ * `retired`. Those are refusals with someone's decision behind them.
  */
 const PUNCHABLE_STATUSES: ReadonlySet<string> = new Set([
+  "pre_joining",
   "active",
   "on_probation",
   "confirmed",

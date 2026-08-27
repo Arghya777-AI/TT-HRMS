@@ -65,6 +65,8 @@ import {
   type LedgerRow,
   type OrgCalendarFilters,
   type RolloverRun,
+  rolloverLeaveYear,
+  type RolloverResult,
 } from "../api/leave-config.api";
 
 /** One page of a ledger statement. 50 keeps a year of movements to two pages. */
@@ -438,5 +440,41 @@ export function useEncashmentLedgerCount(
     queryKey: qk.admin.list({ ...encashmentKeyParts(f), count: true }),
     queryFn: ({ signal }) => countEncashmentLedger(f, signal),
     retry: shouldRetryQuery,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// The year-end rollover
+// -----------------------------------------------------------------------------
+
+export interface RolloverInput {
+  readonly fromLeaveYear: number;
+  /** False only when an administrator has read the preview and meant it. */
+  readonly dryRun: boolean;
+}
+
+/**
+ * Preview or commit a year-end close.
+ *
+ * `SENSITIVE_REASON_LENGTH` for the same reason `useSaveLeaveType` uses it, only
+ * more so: this writes a carry, a lapse and a zeroed year for every employee at
+ * once, and the sentence is the only thing that will explain it to somebody
+ * reading their own ledger next April.
+ *
+ * A DRY RUN IS STILL AN AUDITED WRITE, because it is: it inserts a
+ * `leave_year_rollovers` row with `dry_run = true`, which is what the history
+ * panel on this screen reads. Treating it as a plain read would have left those
+ * rows with no author.
+ */
+export function useRolloverLeaveYear(): AuditedMutationResult<RolloverResult, RolloverInput> {
+  return useAuditedMutation<RolloverResult, RolloverInput>({
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    invalidate: [qk.admin.leaveAll()],
+    mutationFn: (input, reason) =>
+      rolloverLeaveYear({
+        fromLeaveYear: input.fromLeaveYear,
+        reason,
+        dryRun: input.dryRun,
+      }),
   });
 }

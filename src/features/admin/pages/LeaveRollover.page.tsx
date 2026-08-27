@@ -48,13 +48,14 @@ import { KpiTile } from "@/shared/ui/KpiTile";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
-import { fmtDateTime } from "@/lib/datetime";
+import { fmtDate, fmtDateTime, istToday } from "@/lib/datetime";
 import { dash, formatDays, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import type { LeaveType } from "../api/leave.api";
 import type { RolloverRun } from "../api/leave-config.api";
 import { CountTile } from "../components/CountTile";
 import { Notice } from "../components/Notice";
+import { ReasonActionButton } from "../components/ReasonActionButton";
 import { unavailableHint } from "../command-vocab";
 import {
   ROLLOVER_STATUS_CHIP,
@@ -70,6 +71,7 @@ import {
   useRolloverRuns,
   useRolloverTypeCounts,
   type RolloverTypeCounts,
+  useRolloverLeaveYear,
 } from "../hooks/useLeaveConfig";
 
 /** A count in a grid cell: the number, or an honest reason it is missing. */
@@ -90,6 +92,7 @@ function CountCell({
 }
 
 export default function AdminLeaveRolloverPage() {
+  const rollover = useRolloverLeaveYear();
   const leaveYear = useCurrentLeaveYear();
   const types = useAdminLeaveTypes();
   const runs = useRolloverRuns();
@@ -140,6 +143,17 @@ export default function AdminLeaveRolloverPage() {
   // is an FY start year, so the destination year is the next one. This is a label,
   // not a business figure — every days figure on the screen is a server column.
   const toYear = fromYear === null ? null : fromYear + 1;
+
+  /*
+    THE YEAR END, AS ONE FACT.
+
+    April basis: leave year Y ends 31-Mar-(Y+1) — the same expression
+    `rollover_leave_year` computes. The commit button and the sentence explaining
+    why it is disabled both read this, so the screen cannot offer a close the
+    server will refuse, nor refuse one the server would accept.
+  */
+  const yearEnd = fromYear === null ? null : `${String(fromYear + 1)}-03-31`;
+  const yearHasEnded = yearEnd !== null && istToday() > yearEnd;
 
   const typeColumns: DataGridColumn<RolloverTypeCounts>[] = [
     {
@@ -303,15 +317,105 @@ export default function AdminLeaveRolloverPage() {
       />
 
       {/*
-        A NOTE, NOT A WARNING. There is nothing here for an administrator to fix:
-        the rollover job does not exist on this deployment, which is a fact about
-        the build rather than about their leave data. Drawn in amber behind a
-        triangle it read as an error somebody had to chase.
+        A NOTE, NOT A WARNING — still. What it says has changed: migration
+        20260827110000 deployed `rollover_leave_year`, so this screen now runs the
+        year end instead of explaining why it cannot. The note describes what the
+        two buttons do, because "commit" on a control that rewrites every balance
+        in the venue should not be the first time somebody reads what it means.
       */}
       <Notice tone="note" className="mb-5">
-        <p className="font-medium">{t("adminLeave.rollover.noEngine.title")}</p>
-        <p className="mt-1">{t("adminLeave.rollover.noEngine.body")}</p>
+        <p className="font-medium">{t("adminLeave.rollover.engine.title")}</p>
+        <p className="mt-1">{t("adminLeave.rollover.engine.body")}</p>
       </Notice>
+
+      <section className="mb-5 rounded-lg border bg-card p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <ReasonActionButton
+            label={t("adminLeave.rollover.action.dryRun")}
+            title={t("adminLeave.rollover.action.dryRunTitle", {
+              year: fromYear === null ? "—" : leaveYearLabel(fromYear),
+            })}
+            description={t("adminLeave.rollover.action.dryRunDesc")}
+            requireTypedReason
+            minLength={15}
+            disabled={fromYear === null}
+            disabledHint={
+              leaveYear.error === null ? undefined : unavailableHint(leaveYear.error)
+            }
+            onConfirm={(reason) =>
+              rollover.mutateAsync({
+                input: { fromLeaveYear: fromYear as number, dryRun: true },
+                reason,
+              })
+            }
+          />
+          <ReasonActionButton
+            label={t("adminLeave.rollover.action.commit")}
+            title={t("adminLeave.rollover.action.commitTitle", {
+              year: fromYear === null ? "—" : leaveYearLabel(fromYear),
+            })}
+            description={t("adminLeave.rollover.action.commitDesc")}
+            variant="default"
+            requireTypedReason
+            minLength={15}
+            disabled={fromYear === null || !yearHasEnded}
+            /*
+              The server refuses a mid-year commit anyway. Saying so HERE means the
+              administrator reads it before typing a reason, rather than after —
+              and the two sentences come from the same fact, the leave year's own
+              end date, so they cannot drift apart.
+            */
+            disabledHint={
+              fromYear !== null && !yearHasEnded
+                ? t("adminLeave.rollover.notYetEnded", {
+                    year: leaveYearLabel(fromYear),
+                    end: fmtDate(yearEnd as string),
+                  })
+                : leaveYear.error === null
+                  ? undefined
+                  : unavailableHint(leaveYear.error)
+            }
+            onConfirm={(reason) =>
+              rollover.mutateAsync({
+                input: { fromLeaveYear: fromYear as number, dryRun: false },
+                reason,
+              })
+            }
+          />
+        </div>
+
+        {rollover.data !== undefined ? (
+          <div className="mt-4 rounded-md border bg-muted/30 p-4 text-sm">
+            <p className="font-medium">
+              {t("adminLeave.rollover.result.heading")}{" "}
+              <span className="text-muted-foreground">
+                {rollover.data.dry_run
+                  ? t("adminLeave.rollover.result.dryRun")
+                  : t("adminLeave.rollover.result.committed")}
+              </span>
+            </p>
+            <ul className="mt-2 space-y-1">
+              {rollover.data.types.map((r) => (
+                <li key={r.run_id} className="text-muted-foreground">
+                  {t("adminLeave.rollover.result.line", {
+                    type: r.leave_type_name,
+                    employees: formatNumber(r.employees),
+                    carried: formatDays(r.days_carried),
+                    lapsed: formatDays(r.days_lapsed),
+                  })}
+                  {r.negative_balances_left_alone > 0 ? (
+                    <span className="ml-1">
+                      {t("adminLeave.rollover.result.negatives", {
+                        count: formatNumber(r.negative_balances_left_alone),
+                      })}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </section>
 
       <section className="mb-5 rounded-lg border bg-card p-5">
         <h2 className="font-display text-base font-semibold">

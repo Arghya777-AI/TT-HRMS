@@ -210,6 +210,28 @@ export default function AdminLeaveBalancesPage() {
         },
       },
       {
+        key: "adjust",
+        header: t("admin.leaveBal.col.adjust"),
+        width: "7rem",
+        align: "right",
+        render: (row) => (
+          /*
+            Prefilled with the employee and the leave type, because those are the
+            two fields most easily got wrong by hand — and adjusting the wrong
+            person's balance is not a mistake the screen can detect afterwards.
+          */
+          <span onClick={(event) => event.stopPropagation()}>
+            <Button variant="outline" size="sm" asChild>
+              <Link
+                to={`/admin/leave/adjustments?emp=${row.employee_id}&type=${row.leave_type_id}`}
+              >
+                {t("admin.leaveBal.adjust")}
+              </Link>
+            </Button>
+          </span>
+        ),
+      },
+      {
         key: "nearest_expiry",
         header: t("admin.leaveBal.col.expiry"),
         width: "12rem",
@@ -238,6 +260,18 @@ export default function AdminLeaveBalancesPage() {
         icon={Scale}
         title={t("admin.leaveBal.title")}
         subtitle={t("admin.leaveBal.subtitle")}
+        actions={
+          /*
+            THE WAY IN. `adjust_leave_balance` and `/admin/leave/adjustments` have
+            both existed since migration 039300, and neither was reachable from the
+            screen where somebody LOOKS at a balance — so the answer to "how do I
+            add leave" was "know the URL". One button, on the page where the
+            question is asked.
+          */
+          <Button asChild size="sm">
+            <Link to="/admin/leave/adjustments">{t("admin.leaveBal.adjustBalance")}</Link>
+          </Button>
+        }
       />
 
       <Notice tone="info" className="mb-4">

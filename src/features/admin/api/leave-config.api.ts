@@ -55,6 +55,8 @@ import {
   type Cursor,
   type Filter,
   type Page,
+  rpcAudited,
+  dbDate,
 } from "@/shared/api/query";
 import {
   LEAVE_TYPES_TABLE,
@@ -400,3 +402,75 @@ export function countEncashmentLedger(
 /* Re-exported so a calendar screen importing this module does not also have to
  * reach into `leave.api` for the status union its tiles are keyed by. */
 export type { LeaveRequestStatus };
+
+
+// -----------------------------------------------------------------------------
+// The year-end rollover, which now has an engine behind it
+// -----------------------------------------------------------------------------
+
+export const ROLLOVER_LEAVE_YEAR_FN = "rollover_leave_year";
+
+/** One leave type's share of a rollover run. */
+const rolloverTypeResultSchema = z.object({
+  run_id: dbUuid,
+  leave_type: z.string(),
+  leave_type_name: z.string(),
+  employees: dbInt,
+  days_carried: dbNumeric,
+  days_lapsed: dbNumeric,
+  cap_days: dbNumeric,
+  negative_balances_left_alone: dbInt,
+});
+export type RolloverTypeResult = z.infer<typeof rolloverTypeResultSchema>;
+
+const rolloverResultSchema = z.object({
+  dry_run: z.boolean(),
+  from_leave_year: dbInt,
+  to_leave_year: dbInt,
+  year_end: dbDate,
+  types: z.array(rolloverTypeResultSchema),
+});
+export type RolloverResult = z.infer<typeof rolloverResultSchema>;
+
+/**
+ * Close a leave year — or preview closing it.
+ *
+ * `public.rollover_leave_year` (migration 20260827110000) carries each balance
+ * forward up to that type's `max_carry_forward_days`, lapses the excess and zeroes
+ * the closing year. The screen used to say this had no engine; it does now.
+ *
+ * `dryRun` DEFAULTS TO TRUE and the caller must pass `false` deliberately. The
+ * preview is computed by the same query as the commit, inside Postgres, which is
+ * the whole reason this is not projected in the browser: a preview that later
+ * disagreed with the ledger would be worse than no preview.
+ *
+ * The function refuses a reason under fifteen characters, a year that has not
+ * ended, and a second committed run over the same year — so this does not restate
+ * those rules, it only carries the answer back.
+ */
+export async function rolloverLeaveYear(
+  input: {
+    readonly fromLeaveYear: number;
+    readonly reason: string;
+    readonly dryRun?: boolean;
+    readonly leaveTypeId?: string | null;
+  },
+  opts: { readonly requestId?: string; readonly signal?: AbortSignal } = {},
+): Promise<RolloverResult> {
+  const rows = await rpcAudited(
+    ROLLOVER_LEAVE_YEAR_FN,
+    {
+      p_from_leave_year: input.fromLeaveYear,
+      p_reason: input.reason,
+      p_dry_run: input.dryRun ?? true,
+      p_leave_type_id: input.leaveTypeId ?? null,
+    },
+    rolloverResultSchema,
+    { reason: input.reason, minReasonLength: 15, ...opts },
+  );
+  const first = rows[0];
+  if (first === undefined) {
+    throw new Error("rollover_leave_year returned nothing, which it never should");
+  }
+  return first;
+}

@@ -118,7 +118,8 @@ export default function AdminLeaveAdjustmentsPage() {
   const [params] = useSearchParams();
   const [form, setForm] = useState<FormState>({
     employeeId: params.get("emp") ?? "",
-    leaveTypeId: "",
+    /* Arriving from a row on /admin/leave/balances, which knows both. */
+    leaveTypeId: params.get("type") ?? "",
     direction: "credit",
     days: "",
     effectiveDate: nowIstDate(),

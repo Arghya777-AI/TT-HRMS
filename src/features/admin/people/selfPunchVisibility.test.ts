@@ -17,12 +17,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  SELF_PUNCH_FIELDS,
-  timePolicyGroups,
-  withoutForbiddenSelfPunch,
-  type FieldGroup,
-} from "./fields";
+import type { FieldGroup, FieldSpec } from "../masters/fields";
+import { SELF_PUNCH_FIELDS, timePolicyGroups, withoutForbiddenSelfPunch } from "./fields";
 
 const NO_REFS = {
   companies: [],
@@ -45,7 +41,7 @@ const OFFICE = "22222222-2222-2222-2222-222222222222";
 const RESTRICTED = new Set([GROUND]);
 
 const fieldNames = (groups: readonly FieldGroup[]): string[] =>
-  groups.flatMap((g) => g.fields.map((f) => f.name));
+  groups.flatMap((g) => g.fields.map((f: FieldSpec) => f.name));
 
 describe("withoutForbiddenSelfPunch", () => {
   const policy = timePolicyGroups(NO_REFS);

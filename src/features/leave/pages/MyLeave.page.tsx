@@ -10,7 +10,7 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarDays, CalendarPlus, CalendarRange, HeartHandshake, Inbox } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarRange, Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -27,8 +27,9 @@ import { useLeaveBalances, useLeaveRequests ,
 } from "../hooks/useLeave";
 import { useLeaveTypeRules, useMyLeaveContext, useWithdrawLeave } from "../hooks/useLeaveApply";
 import { isProbationLocked, type LeaveTypeRule } from "../api/leave-apply.api";
-import type { LeaveBalance, LeaveRequest, LeaveRequestStatus } from "../api/leave.api";
+import type { LeaveRequest, LeaveRequestStatus } from "../api/leave.api";
 import { LeaveBalanceCard } from "../components/LeaveBalanceCard";
+import { splitBalances } from "./myLeaveBalances";
 import { LeaveBalanceRings } from "../components/LeaveBalanceRings";
 import { fmtDays, LEAVE_STATUS_MAP } from "../components/leave-vocab";
 import { toast } from "sonner";
@@ -76,17 +77,34 @@ export default function MyLeavePage() {
   /**
    * Hour-unit types (PERM short permission) are a chip strip, not a card — a
    * "2 of 2 remaining" permission is not a day balance (spec E-05).
+   *
+   * ── DRIVEN BY THE OFFERED TYPES, NOT BY THE BALANCE ROWS ──────────────────
+   *
+   * This iterated `balances.data`, so a type only appeared once the employee had a
+   * `leave_balances` row for it — and a row is only written when something credits
+   * or debits days. Across the venue that meant Maternity, Paternity and Week-off
+   * had rows for two employees and nobody else, so this screen showed two cards
+   * while /me/leave/apply showed five: the apply form reads the TYPES and joins
+   * balances, this one read the balances and inferred the types. Two screens, two
+   * answers to "what leave do I have".
+   *
+   * Now `rules.data` leads — the active types, which is what the venue has decided
+   * to offer — and a type with no balance row renders as a real zero. "Maternity
+   * Leave: 0 available" is a fact; the card's absence was read as the entitlement
+   * not existing.
    */
-  const { cardBalances, chipBalances } = useMemo(() => {
-    const cards: LeaveBalance[] = [];
-    const chips: LeaveBalance[] = [];
-    for (const balance of balances.data ?? []) {
-      const rule = ruleByTypeId.get(balance.leave_type_id);
-      if (rule?.unit === "hour") chips.push(balance);
-      else cards.push(balance);
-    }
-    return { cardBalances: cards, chipBalances: chips };
-  }, [balances.data, ruleByTypeId]);
+  /*
+    The leave year as the SERVER computed it, borrowed from any real balance row.
+    Every employee holds sick and earned rows, so this is present in practice; the
+    fallback of 0 only shows on a person with no ledger history at all, where every
+    card is zero anyway and the year is a label nothing reads.
+  */
+  const leaveYear = balances.data?.[0]?.leave_year ?? 0;
+
+  const { cardBalances, chipBalances } = useMemo(
+    () => splitBalances(rules.data ?? [], balances.data ?? [], leaveYear),
+    [balances.data, rules.data, leaveYear],
+  );
 
   const lastRecomputed = balances.data?.find((b) => b.last_recomputed_at !== null)?.last_recomputed_at ?? null;
 
@@ -229,12 +247,13 @@ export default function MyLeavePage() {
                 {t("leave.nav.calendar")}
               </Link>
             </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/me/comp-off">
-                <HeartHandshake className="h-4 w-4" aria-hidden />
-                {t("leave.nav.compOff")}
-              </Link>
-            </Button>
+            {/*
+              NO COMP-OFF BUTTON. The venue asked for comp-off to be hidden
+              everywhere, and `HIDDEN_FROM_NAV` took `/me/comp-off` out of the
+              rails — but an in-page button is not a rail, so this one survived the
+              change and kept the screen reachable. The route is still SERVED; only
+              the entrances are gone.
+            */}
             <Button asChild size="sm">
               <Link to="/me/leave/apply">
                 <CalendarPlus className="h-4 w-4" aria-hidden />
@@ -268,7 +287,7 @@ export default function MyLeavePage() {
               hint={t("leave.balances.empty.hint")}
               action={
                 <Button asChild size="sm" variant="outline">
-                  <Link to="/me/comp-off">{t("leave.nav.compOff")}</Link>
+                  <Link to="/me/leave/apply">{t("leave.nav.apply")}</Link>
                 </Button>
               }
             />

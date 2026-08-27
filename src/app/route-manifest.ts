@@ -338,6 +338,16 @@ const ADMIN: readonly RouteMeta[] = ADMIN_ROWS.map(([path, title, tier, domain, 
 export const HIDDEN_FROM_NAV: ReadonlySet<string> = new Set<string>([
   "/me/comp-off",
   "/admin/leave/comp-off",
+  /*
+    Encashment is not offered at this venue. The screen and its RPCs are unchanged
+    and the path is still SERVED — a link already sent, or a bookmark, still
+    resolves — it simply has no entrance in any rail. That is the same treatment
+    comp-off gets, and it is why this is an enumerated set rather than a `hidden`
+    flag on the route: removing the route outright breaks the reachability
+    invariants in `link-targets.test.ts` and `route-manifest.test.ts`, which exist
+    to catch a screen nobody can get to.
+  */
+  "/admin/leave/encashment",
 ]);
 
 export const ROUTES: readonly RouteMeta[] = [...ME, ...TEAM, ...ADMIN];

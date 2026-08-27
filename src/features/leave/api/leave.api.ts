@@ -31,6 +31,7 @@ import {
   type Cursor,
   type Filter,
   type Page,
+  isTrue,
 } from "@/shared/api/query";
 
 export const LEAVE_BALANCE_VIEW = "v_leave_balance_current";
@@ -148,6 +149,8 @@ export const leaveBalanceSchema = z.object({
   expiring_soon_days: dbNumeric,
   nearest_expiry: dbDateNullable,
   last_recomputed_at: dbTimestampNullable,
+  /** `leave_types.is_active`, appended to the view by 20260827150000. */
+  leave_type_active: z.boolean(),
 });
 
 export type LeaveBalance = z.infer<typeof leaveBalanceSchema>;
@@ -182,13 +185,28 @@ export type LeaveBalance = z.infer<typeof leaveBalanceSchema>;
   with the admin console.
 */
 
-/** Balances for the current leave year, one per eligible type. */
+/**
+ * Balances for the current leave year, one per type the employee can still use.
+ *
+ * `leave_type_active` IS FILTERED HERE, and the reason is worth stating. A
+ * "Casual Leave — available to use — -0.5" card appeared on this screen for a type
+ * that migration 039600 merged away and soft-deleted: the view joined
+ * `leave_types` with no predicate, so a stale balance row kept drawing a card for
+ * something nobody could apply for. 20260827150000 closed the DELETED half in the
+ * view, where it belongs — every consumer had the same hole.
+ *
+ * RETIRED types are a different question and are deliberately left to the caller.
+ * A type switched off may still hold days somebody is owed, so the view returns
+ * them and the ADMIN register keeps showing them — that is where a leftover gets
+ * settled. On the employee's own screen a card they cannot apply from is
+ * furniture, so this read drops them.
+ */
 export async function fetchLeaveBalances(
   employeeId: string,
   signal?: AbortSignal,
 ): Promise<LeaveBalance[]> {
   const rows = await selectMany(LEAVE_BALANCE_VIEW, leaveBalanceSchema, {
-    filters: [eq("employee_id", employeeId)],
+    filters: [eq("employee_id", employeeId), isTrue("leave_type_active")],
     order: [{ column: "leave_type_code", ascending: true }],
     limit: 50,
     ...(signal ? { signal } : {}),

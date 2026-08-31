@@ -157,13 +157,25 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * GEOFENCE — RECORDED, AND NEVER SILENT EITHER WAY
  * ─────────────────────────────────────────────────────────────────────────────
+ *   NO COORDINATES                          → REFUSED. See below.
+ *   accuracy coarser than 2 km              → REFUSED (an IP-derived fix, not a location)
  *   coordinates + a location with lat/lng   → `geofence_ok` = (distance ≤ radius)
  *   outside the fence                       → RECORDED, geofence_ok = false,
  *                                             needs_review = true
- *   no coordinates shared                   → geofence_ok = NULL (not evaluated)
  *   location has no lat/lng configured      → geofence_ok = NULL (not evaluated)
  *   accuracy wider than the fence           → needs_review = true, whatever the
  *                                             comparison said
+ *
+ * THE FIRST TWO LINES ARE NEW AND THEY REVERSE WHAT THIS FILE USED TO DO. Coordinates were
+ * optional and a refusal produced `geofence_ok = NULL`, which the rest of this comment defends
+ * at length as "honest". It is honest, and it was still the wrong trade for a SELF-punch: this
+ * is the one route where nobody saw the person arrive, so the location is not metadata about the
+ * punch, it is the only evidence the punch happened anywhere in particular. The venue asked for
+ * it to be mandatory off the back of that.
+ *
+ * Refusing is not the same as dropping a punch, and INV-9 still holds. A dropped punch is work
+ * that cannot be proven; a refused REQUEST is an employee who is told, on screen, to turn
+ * location on and tap again. Nothing is lost, and the fix is in their hands.
  *
  * A punch outside the fence is never dropped (INV-9: losing the punch is a person
  * who cannot prove they came to work) and never accepted as if it were inside.
@@ -373,7 +385,18 @@ const ProbeMetrics = z
   })
   .strict();
 
-/** Browser geolocation, when the user granted it. Bounds validated, never trusted. */
+/**
+ * Browser geolocation. Bounds validated, never trusted, and now REQUIRED.
+ *
+ * `accuracyMetres` keeps its own ceiling separate from the 100 km bound that merely rejects
+ * nonsense. A browser with location "enabled" can still hand back an IP-derived fix accurate to
+ * tens of kilometres, which satisfies the letter of the requirement and answers nothing — the
+ * whole point of demanding a location is to know whether somebody was at the venue. A GPS or
+ * wifi fix indoors is typically under 100 m; an IP fix is 5-50 km. `MAX_ACCURACY_M` sits far
+ * above the first and far below the second, so a real fix taken in a basement still passes.
+ */
+const MAX_ACCURACY_M = 2_000;
+
 const Geo = z
   .object({
     latitude: z.number().min(-90).max(90),
@@ -389,7 +412,18 @@ const SelfPunchBody = z
       .array(z.number().finite())
       .length(DESCRIPTOR_DIM, `Expected ${DESCRIPTOR_DIM} floats.`),
     metrics: ProbeMetrics,
-    geo: Geo.optional(),
+    /*
+      MANDATORY. It was `.optional()`, and the header above documented "no coordinates shared →
+      geofence_ok = NULL (not evaluated)" as a supported outcome. The venue's decision is that a
+      punch taken away from the gate must say where it was taken: a self-punch is the one route
+      where nobody watched the person arrive, so the coordinates ARE the evidence, and an
+      optional field meant the evidence was optional. Refusing at the schema is what makes it
+      impossible to store a locationless self-punch, rather than merely discouraged.
+
+      The KIOSK is untouched — that is `kiosk-punch`, a different function, where a guard and a
+      fixed camera at a known gate already establish the place.
+    */
+    geo: Geo,
     /** Stable per-browser id the app generates; provenance, not an identifier. */
     deviceId: z.string().trim().min(8).max(128).optional(),
     /** Minted when the button was pressed; the permanent per-punch dedup key. */
@@ -1553,6 +1587,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // ── STEP 7 · Validate ─────────────────────────────────────────────────────
     const { data: body, raw } = await parseBody(req, SelfPunchBody, { maxBytes: MAX_BODY_BYTES });
     idempotencyKey = requireIdempotencyKey(req);
+
+    /*
+      The accuracy ceiling, checked here rather than in the schema so the employee gets a
+      sentence naming the number instead of a field-validation message. A fix this coarse is
+      almost always IP-derived — the browser reports a city, not a place — and storing it beside
+      a real GPS fix would make the two indistinguishable to whoever reads the punch later.
+
+      Separate code from the missing-location case: "turn location on" and "your location is too
+      vague, step outside or wait for a better fix" are different instructions, and one refusal
+      covering both would give half the callers the wrong one.
+    */
+    if (
+      body.geo.accuracyMetres !== undefined &&
+      body.geo.accuracyMetres > MAX_ACCURACY_M
+    ) {
+      const reported = Math.round(body.geo.accuracyMetres);
+      throw unprocessable(
+        [{
+          pointer: "/geo/accuracyMetres",
+          code: "too_coarse",
+          detail: `${reported} m reported, ${MAX_ACCURACY_M} m is the widest accepted.`,
+        }],
+        `Your device reported a location accurate to about ${reported} m, which is too vague to record where you punched from. Turn on precise location (GPS) for this site, or move somewhere with a clearer signal, and try again.`,
+        "SELF_PUNCH_LOCATION_TOO_COARSE",
+      );
+    }
 
     const actorLog = log.child({ actor_id: auth.userId, employee_id: auth.employeeId });
 

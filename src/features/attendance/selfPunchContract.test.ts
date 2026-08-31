@@ -84,6 +84,70 @@ function schemaKeys(source: string, constName: string): string[] {
   return keys.sort();
 }
 
+/**
+ * Whatever is chained onto a named `z.object({ … })` after it closes.
+ *
+ * Shares `schemaKeys`' brace-depth scan rather than guessing a byte offset, so the modifiers
+ * (`.strict()`, `.optional()`) can be asserted on regardless of what the schema contains.
+ */
+function afterObject(source: string, constName: string): string {
+  const start = source.indexOf(`const ${constName} = z`);
+  if (start === -1) throw new Error(`${constName} not found in the function source`);
+  const open = source.indexOf(".object({", start);
+  if (open === -1) throw new Error(`${constName} is not a z.object`);
+  let depth = 0;
+  for (let i = open + ".object(".length; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      // One past the matching brace, then past the `)` that closes `.object(`.
+      if (depth === 0) return source.slice(source.indexOf(")", i) + 1, i + 200);
+    }
+  }
+  throw new Error(`${constName} object never closes`);
+}
+
+/**
+ * The chain that follows an inline `z.object({ … })`, found by a marker rather than a name.
+ *
+ * Brace-depth scan, like `afterObject`, so it survives however many lines and comments the
+ * object body runs to. A fixed byte window here is what broke this file's `.strict()` assertion
+ * once already.
+ */
+function chainAfterObjectAt(source: string, marker: string): string {
+  const start = source.indexOf(marker);
+  if (start === -1) throw new Error(`${marker} not found`);
+  const open = source.indexOf(".object({", start);
+  if (open === -1) throw new Error(`no .object( after ${marker}`);
+  let depth = 0;
+  for (let i = open + ".object(".length; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return source.slice(source.indexOf(")", i) + 1, i + 200);
+    }
+  }
+  throw new Error(`object after ${marker} never closes`);
+}
+
+/**
+ * Whatever follows one field's type inside a named schema — its `.optional()`, say.
+ *
+ * Scans from the key to the end of its line, tolerating the multi-line comments the schema
+ * carries. Enough to tell a required field from an optional one, which is the only thing asked
+ * of it.
+ */
+function afterField(source: string, constName: string, field: string): string {
+  const start = source.indexOf(`const ${constName} = z`);
+  if (start === -1) throw new Error(`${constName} not found`);
+  const at = source.indexOf(`\n    ${field}: `, start);
+  if (at === -1) throw new Error(`${field} not found in ${constName}`);
+  const from = at + `\n    ${field}: `.length;
+  return source.slice(from, source.indexOf("\n", from));
+}
+
 const REQUEST: SelfPunchRequest = {
   descriptor: Array.from({ length: 128 }, (_, i) => (i % 2 === 0 ? 0.1 : -0.1)),
   metrics: {
@@ -107,15 +171,93 @@ describe("attendance-self-punch request contract", () => {
   const source = readFileSync(FN_PATH, "utf8");
 
   it("the function's body schema is .strict() — so an unknown key is fatal, not ignored", () => {
-    const idx = source.indexOf("const SelfPunchBody = z");
-    expect(idx, "SelfPunchBody not found").toBeGreaterThan(-1);
-    expect(source.slice(idx, idx + 1200)).toContain(".strict()");
+    /*
+      Scanned to the object's real closing brace, not a fixed 1200-character window from the
+      declaration. The window version broke the moment a comment inside the schema grew — it
+      reported "SelfPunchBody is not .strict()" when `.strict()` was right there, four lines past
+      the cutoff. A test whose truth depends on how verbose the neighbouring comments are is
+      worse than no test: this one failed on a change that could not possibly have affected it.
+    */
+    expect(afterObject(source, "SelfPunchBody")).toMatch(/^\s*\.strict\(\)/);
   });
 
   it("posts exactly the keys the function accepts, and no others", () => {
     const accepted = schemaKeys(source, "SelfPunchBody");
     const posted = Object.keys(buildSelfPunchBody(REQUEST, "first")).sort();
     expect(posted).toEqual(accepted);
+  });
+
+  it("makes the location MANDATORY, and the kiosk exempt", () => {
+    /*
+      A self-punch is the one route where nobody watched the person arrive, so the coordinates
+      are the only evidence it happened anywhere in particular. `geo` was `.optional()` and a
+      refusal produced `geofence_ok = NULL`; the venue's decision is that this route must carry
+      a location.
+
+      Asserted on the schema line itself rather than on prose, because the failure is silent: an
+      `.optional()` here does not break anything, it just quietly allows a locationless punch
+      again.
+    */
+    /*
+      `toContain`, not an anchored `toMatch`. The first version of this line was
+      `/^\s*\.optional\(\)/` against the slice "Geo.optional()," — which starts with "Geo", so
+      the anchor never matched and the assertion passed whether the field was optional or not.
+      Caught by reintroducing `.optional()` and watching the test stay green.
+    */
+    expect(afterField(source, "SelfPunchBody", "geo")).not.toContain(".optional()");
+
+    // The gate is a DIFFERENT function, and it must stay location-tolerant: a fixed camera at a
+    // known gate with a guard beside it already establishes the place. Its `geo` is declared
+    // inline over several lines, so the chain is read by scanning to the object's real close.
+    const kiosk = readFileSync(
+      join(process.cwd(), "supabase/functions/kiosk-punch/index.ts"),
+      "utf8",
+    );
+    expect(chainAfterObjectAt(kiosk, "geo: z")).toContain(".optional()");
+  });
+
+  it("refuses a fix too coarse to mean anything, separately from a missing one", () => {
+    /*
+      A browser with location "enabled" can still return an IP-derived fix accurate to tens of
+      kilometres. That satisfies the letter of the requirement and answers nothing, and stored
+      beside a real GPS fix the two are indistinguishable later.
+    */
+    expect(source).toContain("SELF_PUNCH_LOCATION_TOO_COARSE");
+    expect(source).toMatch(/const MAX_ACCURACY_M = 2_000;/);
+    // Its own code, because "turn location on" and "your fix is too vague" need different fixes.
+    expect(source).toContain('pointer: "/geo/accuracyMetres"');
+  });
+
+  it("no longer retries without the coordinates", () => {
+    /*
+      The client used to strip a rejected `geo` and re-send. Against a function that now requires
+      it that can only fail — and it costs a second `secure.face_match_log` refusal row for one
+      tap, overstating the evidence a spoofing investigation reads.
+    */
+    const api = readFileSync(
+      join(process.cwd(), "src/features/attendance/api/selfPunch.api.ts"),
+      "utf8",
+    );
+    const code = api.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+    expect(code).not.toContain("refusedOnlyTheLocation");
+    expect(code).not.toContain('postPunch(request, "fallback"');
+  });
+
+  it("stops before the camera when there is no location", () => {
+    /*
+      Loading the face engine, taking camera permission and capturing frames before discovering
+      the request cannot succeed wastes all three and reports the wrong error — the employee is
+      told the punch failed, not that location is off.
+    */
+    const card = readFileSync(
+      join(process.cwd(), "src/features/attendance/components/SelfPunchCard.tsx"),
+      "utf8",
+    );
+    expect(card).toContain("if (geoRef.current === null)");
+    expect(card).toContain("locationRequiredMessage(location.status)");
+    // Before the engine and camera steps, not after them.
+    expect(card.indexOf("if (geoRef.current === null)"))
+      .toBeLessThan(card.indexOf("await loadFaceModels()"));
   });
 
   it("posts geo under the function's own field names", () => {

@@ -434,35 +434,12 @@ function refuse(error: TTApiError): PunchRefused {
   }
 }
 
-/**
- * Retry-without-coordinates: the request body was rejected while it carried a
- * `geo`, AND the rejection was about the `geo`. Attendance must not be lost to a
- * location the function would not take, so the punch is re-sent once without it
- * — under the SAME idempotency key, so if the first attempt did in fact land,
- * the second replays rather than duplicating.
- *
- * The `refusedOnlyTheLocation` guard is load-bearing. A blanket "any 422 while a
- * geo was attached" retry re-sends the same descriptor after a refusal that had
- * nothing to do with the location (`liveness_below_threshold`,
- * `detection_score_below_minimum`, a non-unit descriptor), which writes a SECOND
- * refusal row into `secure.face_match_log` for one tap and overstates the
- * evidence a spoofing investigation reads.
- */
-const VALIDATION_STATUS = 422;
-
-/** `errors[]` of an RFC 9457 422 — `problemSchema` passes it through untyped. */
-const problemFieldsSchema = z.object({
-  errors: z.array(z.object({ pointer: z.string() })).optional(),
-});
-
-/** True when every field the function rejected was part of the `geo` object. */
-function refusedOnlyTheLocation(error: TTApiError): boolean {
-  const parsed = problemFieldsSchema.safeParse(error.problem);
-  if (!parsed.success) return false;
-  const items = parsed.data.errors;
-  if (items === undefined || items.length === 0) return false;
-  return items.every((item) => item.pointer === "/geo" || item.pointer.startsWith("/geo/"));
-}
+/*
+  `refusedOnlyTheLocation`, `problemFieldsSchema` and `VALIDATION_STATUS` lived here to decide
+  whether a 422 was about the coordinates, so the punch could be re-sent without them. The retry
+  is gone (see `selfPunch` below), and so are they — a predicate with no caller is a trap for
+  whoever reads it next and assumes the behaviour still exists.
+*/
 
 /**
  * `SignInGeo` → the function's wire shape, and the translation is REQUIRED, not
@@ -545,8 +522,7 @@ async function postPunch(
     buildSelfPunchBody(request, attempt),
     selfPunchResultSchema,
     {
-      idempotencyKey:
-        attempt === "first" ? request.clientEventId : retryKeyFor(request.clientEventId),
+      idempotencyKey: attempt === "first" ? request.clientEventId : retryKeyFor(request.clientEventId),
       ...(signal ? { signal } : {}),
     },
   );
@@ -565,7 +541,13 @@ export async function selfPunch(
   request: SelfPunchRequest,
   signal?: AbortSignal,
 ): Promise<SelfPunchOutcome> {
-  let locationAttached = request.geo !== null;
+  /*
+    Always true for a punch that reaches this point: `SelfPunchCard` refuses to start without a
+    fix and the function refuses a body without one. Kept as a field rather than deleted because
+    `PunchRecorded` is also how a HISTORICAL punch renders, and punches taken before location
+    became mandatory genuinely have none.
+  */
+  const locationAttached = request.geo !== null;
   let result: z.infer<typeof selfPunchResultSchema>;
 
   try {
@@ -577,27 +559,22 @@ export async function selfPunch(
     if (first instanceof z.ZodError) {
       return { kind: "unreadable", message: t("me.punch.error.unreadable") };
     }
-    // The body was refused FOR THE COORDINATES: drop them and try once.
-    if (
-      first instanceof TTApiError &&
-      first.status === VALIDATION_STATUS &&
-      locationAttached &&
-      refusedOnlyTheLocation(first)
-    ) {
-      locationAttached = false;
-      try {
-        result = await postPunch(request, "fallback", signal);
-      } catch (second) {
-        if (second instanceof TTApiError && second.isIdempotentReplay) {
-          return { kind: "already_recorded", message: t("me.punch.done.alreadyRecorded") };
-        }
-        if (second instanceof z.ZodError) {
-          return { kind: "unreadable", message: t("me.punch.error.unreadable") };
-        }
-        if (second instanceof TTApiError) return refuse(second);
-        throw second;
-      }
-    } else if (first instanceof TTApiError) {
+    /*
+      ── THE GEO-LESS RETRY IS GONE ─────────────────────────────────────────────
+      A 422 that named only the `geo` used to strip the coordinates and re-send, so a location
+      the function would not take could not cost somebody their attendance. That was right while
+      coordinates were optional. `attendance-self-punch` now REQUIRES them, so the retry could
+      only ever fail — the stripped body is missing a mandatory field — and it would fail
+      expensively: a second request means a second refusal row in `secure.face_match_log` for
+      one tap, overstating the evidence a spoofing investigation reads. That harm is the exact
+      one the old guard was written to avoid, and removing the retry is what actually avoids it.
+
+      It would also have fired on the new `SELF_PUNCH_LOCATION_TOO_COARSE`, whose pointer is
+      `/geo/accuracyMetres` — refusing a vague fix and then retrying with no fix at all.
+
+      A location refusal now surfaces as itself, and the card tells the employee what to enable.
+    */
+    if (first instanceof TTApiError) {
       return refuse(first);
     } else if (first instanceof TypeError) {
       // `fetch` never reached the function — offline, DNS, blocked.

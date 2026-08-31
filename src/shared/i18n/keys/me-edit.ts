@@ -256,17 +256,44 @@ export const keysMeEdit = {
   // that reason alone. So none of these sentences promises a review; they say
   // what is true, that the punch is recorded without a location. The review
   // sentence is `me.punch.done.review`, rendered only when the server says so.
+  /*
+    ── THESE FOUR USED TO SAY THE OPPOSITE ────────────────────────────────────
+    "Your punch will be recorded without one" was true, and is not any more:
+    `attendance-self-punch` refuses a request with no coordinates. Leaving the old wording would
+    have promised a punch the server was about to reject — the worst kind of stale copy, because
+    the person acts on it and then sees a failure they were told would not happen.
+
+    A punch away from the gate is the one route where nobody watched the person arrive, so the
+    location is not decoration on the record, it is the record. The gate camera is named in each
+    one, because it is the route that needs none of this.
+  */
   "me.punch.location.reason":
-    "When you tap the button we ask your browser for your location, so your punch shows where it was taken. If you say no, the punch is still recorded — just without a location.",
+    "When you tap the button we ask your browser for your location, so your punch shows where it was taken. Attendance from the web needs it — if you say no, use the gate camera instead.",
   "me.punch.location.asking": "Waiting for your answer to the browser's location prompt…",
   "me.punch.location.granted": "Location shared, accurate to about {metres} m.",
-  "me.punch.location.denied": "No location shared. Your punch will be recorded without one.",
+  "me.punch.location.denied": "No location shared, so this punch cannot be recorded from the web.",
   "me.punch.location.unavailable":
-    "This browser cannot share a location. Your punch will be recorded without one.",
+    "This browser cannot share a location, so it cannot record a punch. Use the gate camera.",
   "me.punch.location.error":
-    "Your location could not be read in time. Your punch will be recorded without one.",
+    "Your location could not be read in time, so this punch was not recorded. Tap again.",
+  /*
+    Still needed, and still true — for the PAST. Punches taken before location became mandatory
+    have no fix, and this is what their detail line says. It is not reachable for a new punch.
+  */
   "me.punch.location.dropped":
-    "Your location could not be attached to this punch, so it was recorded without one.",
+    "No location was stored with this punch. Punches taken before location became mandatory do not have one.",
+  /*
+    Why the punch STOPPED, before the camera was ever opened. One per outcome, because the fixes
+    are genuinely different: a permission the person can grant, a device setting they must turn
+    on, or a weak signal where moving is the only remedy. A single "location is required" leaves
+    most people stuck.
+  */
+  "me.punch.locationRequired.denied":
+    "Attendance from the web needs your location, and this browser has it blocked for this site. Allow location from the icon in the address bar (or your browser's site settings), then tap again. The gate camera does not need this.",
+  "me.punch.locationRequired.unavailable":
+    "Attendance from the web needs your location, and this device cannot provide it — location services are off, or the page is not on a secure connection. Turn location on for your browser and tap again, or use the gate camera instead.",
+  "me.punch.locationRequired.error":
+    "Your location could not be read just now — the signal is often weak indoors. Move near a window or step outside and tap again. The gate camera does not need a location.",
 
   // The face check, and its honest limits
   "me.punch.face.title": "Face check",

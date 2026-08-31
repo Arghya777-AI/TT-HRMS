@@ -149,6 +149,25 @@ function guidanceFor(verdict: FrameVerdict): string | null {
   return null;
 }
 
+/**
+ * Why the punch stopped, and what the employee should do about it.
+ *
+ * One sentence per outcome, because the fixes are genuinely different: a browser permission a
+ * person can grant, a device setting they have to turn on, or a signal problem where moving is
+ * the only remedy. A single "location is required" would leave most of them stuck.
+ */
+function locationRequiredMessage(status: SignInLocationStatus): string {
+  switch (status) {
+    case "denied":
+      return t("me.punch.locationRequired.denied");
+    case "unavailable":
+      return t("me.punch.locationRequired.unavailable");
+    default:
+      // "error" and anything unsettled: position unavailable or the fix timed out.
+      return t("me.punch.locationRequired.error");
+  }
+}
+
 /** The location line, after the ask has settled. `null` = nothing to say yet. */
 function locationLine(status: SignInLocationStatus, geo: SignInGeo | null): string | null {
   switch (status) {
@@ -497,12 +516,31 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
     setFrameCount(0);
     setGuidance(null);
 
-    // 1. LOCATION FIRST, with the reason already on screen (it is in the idle
-    //    body above this button). A refusal is not a failure: `ask()` resolves
-    //    null and the ceremony continues to the camera.
+    /*
+      1. LOCATION FIRST, AND IT IS NOW A HARD REQUIREMENT.
+
+      This used to read "a refusal is not a failure" and carry on to the camera, sending the
+      punch with no coordinates. `attendance-self-punch` now REFUSES such a request, so
+      continuing would spend the engine load, the camera permission and five seconds of the
+      employee's face on a request that cannot succeed — and the error they finally saw would be
+      about a punch, not about location.
+
+      So it stops here, before the camera, with the one instruction that fixes it. The gate
+      kiosk is unaffected: a guard and a fixed camera at a known gate already establish where
+      somebody was.
+    */
     setPhase({ name: "location" });
     geoRef.current = await location.ask();
     if (attemptRef.current !== token) return;
+    if (geoRef.current === null) {
+      stopCamera();
+      setPhase({
+        name: "failed",
+        // The reason differs — denied, unavailable, timed out — and so does the fix.
+        message: locationRequiredMessage(location.status),
+      });
+      return;
+    }
 
     // 2. ENGINE. Normally already warm from the mount prefetch.
     setPhase({ name: "engine" });

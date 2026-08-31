@@ -72,9 +72,44 @@ describe("the roster's counts", () => {
     expect(api).toContain("expected > 0 ? row.worked_minutes - expected : null");
   });
 
-  it("groups on the designation flags, not on department", () => {
-    expect(api).toContain("is_managerial");
-    expect(api).toContain("is_executive");
+  it("groups on DEPARTMENT, not on designation flags", () => {
+    /*
+      THE REGRESSION THIS REPLACED. Grouping on `designations.is_managerial / is_executive` read
+      "management first" as "the managers first". The live data: of 20 people in the Management
+      DEPARTMENT only 2 carry the flag, while Johar Lal Ree (Ground) does — so the dashboard
+      headed a block "Management" that contained him and omitted most of Management.
+
+      Asserted on the CODE, not on the file text: an earlier version of this test grepped for
+      "is_managerial" and kept passing after the flags were removed, because the header comment
+      explains why they went. A grep that a comment can satisfy is not a guard.
+    */
+    const code = api.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+    expect(code).toContain("row.departmentId");
+    expect(code).not.toContain("is_managerial");
+    expect(code).not.toContain("is_executive");
+  });
+
+  it("builds the groups from the data instead of a fixed list", () => {
+    /*
+      Four of twenty-one departments have people. A hardcoded list would render seventeen empty
+      tables and would silently omit a department created later.
+    */
+    const code = api.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+    expect(code).toMatch(/new Map<string, RosterRow\[\]>\(\)/);
+    expect(code).toContain("byDepartment");
+  });
+
+  it("gives every group its own present/absent/on-leave numbers", () => {
+    // A venue-wide pair of totals cannot answer "is Restaurant short today".
+    expect(api).toContain("counts: countRows(groupRows)");
+    expect(api).toContain("counts: countRows(rows)");
+  });
+
+  it("pins Management first and puts no-department last", () => {
+    expect(api).toContain('const LEAD_DEPARTMENT = "Management"');
+    // Headcount then name, so the order is stable rather than dependent on row arrival.
+    expect(api).toContain("b.counts.onRoll - a.counts.onRoll");
+    expect(api).toContain("a.name.localeCompare(b.name)");
   });
 });
 

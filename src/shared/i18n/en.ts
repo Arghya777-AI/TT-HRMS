@@ -1583,10 +1583,15 @@ export const en = catalogue({
   "admin.roster.absent": "Absent",
   "admin.roster.onLeave": "On leave",
   "admin.roster.ofOnRoll": "of {total} on roll",
-  "admin.roster.group.management": "Management",
-  "admin.roster.group.managementHint": "Managerial and executive designations.",
-  "admin.roster.group.staff": "Ground and other staff",
-  "admin.roster.group.staffHint": "Everybody else on roll today.",
+  /*
+    The group heading is the DEPARTMENT NAME, straight from the record — so there is no key for
+    it. The four keys that were here ("Management" / "Managerial and executive designations." /
+    "Ground and other staff" / "Everybody else on roll today.") described a designation-based
+    split that grouped the wrong people, and a hardcoded label would have gone on drifting from
+    whatever the departments are actually called.
+  */
+  "admin.roster.group.onRoll": "{n} on roll",
+  "admin.roster.group.none": "No department set",
   "admin.roster.col.employee": "Employee",
   "admin.roster.col.state": "Today",
   "admin.roster.col.in": "In",

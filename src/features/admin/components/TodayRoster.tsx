@@ -28,13 +28,16 @@
  */
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarOff, Globe, ScanFace, UserCheck, UserX } from "lucide-react";
+import { CalendarOff, Globe, MapPin, ScanFace, UserCheck, UserX } from "lucide-react";
+import { formatDistance } from "@/lib/venueDistance";
+import { openStreetMapUrl } from "@/lib/punchPlace";
 import { t } from "@/shared/i18n/en";
 import { fmtDurationHm } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import type {
   CaptureMethod,
+  PunchFixOnRoster,
   RosterCounts,
   RosterGroup,
   RosterRow,
@@ -193,6 +196,73 @@ function MethodCell({ method }: { method: CaptureMethod }): React.JSX.Element {
   );
 }
 
+/**
+ * Where the punch was taken, and how far that is from the venue.
+ *
+ * ── WHY THE GATE READS DIFFERENTLY FROM THE WEB ──────────────────────────────
+ * A gate punch's coordinates are barely information: the tablet is bolted to a known wall, and
+ * its 844 recorded fixes sit inside about 17 m × 32 m. So a gate row says "at the gate" and
+ * offers the map link without a number, because "12 m from the venue" is GPS noise dressed up
+ * as a fact.
+ *
+ * A WEB punch is the whole reason this column exists. Nobody watched the person arrive, so the
+ * distance IS the evidence — and it is stated plainly, in metres under a kilometre and
+ * kilometres above, with the map link beside it. That is the "see location" an admin asked for.
+ *
+ * ── WHAT IT REFUSES TO SAY ───────────────────────────────────────────────────
+ * With no venue point configured there is no distance, and this renders the coordinates alone
+ * rather than inventing a centre to measure from. And a fix too coarse to resolve the venue's
+ * own radius is marked as approximate instead of being presented as a clean inside/outside — a
+ * ±800 m reading against a 300 m fence has an error bar wider than the thing measured.
+ */
+function LocationCell({ fix }: { fix: PunchFixOnRoster | null }): React.JSX.Element {
+  if (fix === null) return <span className="text-muted-foreground">—</span>;
+
+  const href = openStreetMapUrl({
+    latitude: fix.latitude,
+    longitude: fix.longitude,
+    accuracyMetres: fix.accuracyMetres,
+  });
+
+  const distance = fix.distance;
+  const label = fix.via === "gate"
+    ? t("admin.roster.loc.atGate")
+    : distance === null
+      ? t("admin.roster.loc.noVenue")
+      : t("admin.roster.loc.away", { d: formatDistance(distance.metres) });
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        // The row itself opens the person, so the map link must not also trigger that.
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:decoration-solid",
+          fix.via === "web" && distance !== null && !distance.withinFence
+            ? "text-warning"
+            : "text-muted-foreground",
+        )}
+        title={t("admin.roster.loc.mapTitle", {
+          lat: fix.latitude.toFixed(6),
+          lng: fix.longitude.toFixed(6),
+          acc: fix.accuracyMetres === null ? "?" : String(Math.round(fix.accuracyMetres)),
+        })}
+      >
+        <MapPin className="size-3.5 shrink-0" aria-hidden />
+        {label}
+      </a>
+      {distance?.coarse === true ? (
+        <span className="text-[10px] uppercase text-muted-foreground">
+          {t("admin.roster.loc.approx")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function StateCell({ row }: { row: RosterRow }): React.JSX.Element {
   if (row.attended) {
     return (
@@ -287,7 +357,7 @@ function Group({
 
       {/* The table scrolls inside its own box; the page never scrolls sideways. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[52rem] text-sm">
+        <table className="w-full min-w-[64rem] text-sm">
           <thead>
             <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">{t("admin.roster.col.employee")}</th>
@@ -295,6 +365,7 @@ function Group({
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.in")}</th>
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.out")}</th>
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.method")}</th>
+              <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.location")}</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">{t("admin.roster.col.worked")}</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">{t("admin.roster.col.variance")}</th>
             </tr>
@@ -340,6 +411,7 @@ function Group({
                   {row.lastOutHm ?? <span className="text-muted-foreground">—</span>}
                 </td>
                 <td className="px-3 py-2.5"><MethodCell method={row.method} /></td>
+                <td className="px-3 py-2.5"><LocationCell fix={row.fix} /></td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
                   {row.attended ? fmtDurationHm(row.workedMinutes) : <span className="text-muted-foreground">—</span>}
                 </td>

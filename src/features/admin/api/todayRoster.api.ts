@@ -34,9 +34,12 @@
  * shift's grace, which this repo has already been bitten by once.
  */
 import { z } from "zod";
-import { selectMany } from "@/shared/api/query";
+import { eq, selectMany } from "@/shared/api/query";
+import { istToday } from "@/lib/datetime";
+import { distanceFromVenue, type VenueDistance, type VenuePoint } from "@/lib/venueDistance";
 import { t } from "@/shared/i18n/en";
 import { fetchTodayBoard } from "./analytics.api";
+import { V_PUNCH_DETAIL } from "./attendance.api";
 import type { TodayBoardRow } from "./attendance.api";
 
 /** How the day's attendance reached the system. */
@@ -71,6 +74,25 @@ export interface RosterRow {
   readonly varianceMinutes: number | null;
   readonly lateMinutes: number;
   readonly punchCount: number;
+  /**
+   * WHERE the day's punches were taken, and how far from the venue.
+   *
+   * Null when today's punches carry no coordinates. That is the normal state for the 27 gate
+   * punches out of 908 whose tablet withheld a fix, and for every punch recorded before a
+   * location became mandatory on the web route.
+   */
+  readonly fix: PunchFixOnRoster | null;
+}
+
+/** One punch's position, plus what it means relative to the venue. */
+export interface PunchFixOnRoster {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly accuracyMetres: number | null;
+  /** `gate` or `web`, so a distance can be read in the light of who was watching. */
+  readonly via: "gate" | "web";
+  /** Null when nobody has told this system where the venue is. */
+  readonly distance: VenueDistance | null;
 }
 
 /** The same four figures, whether for one department or the whole venue. */
@@ -91,6 +113,14 @@ export interface RosterGroup {
 
 export interface TodayRoster {
   readonly groups: readonly RosterGroup[];
+  /**
+   * The venue's reference point, or null when `locations.lat/lng` are unset.
+   *
+   * Surfaced rather than swallowed: with no venue point there are no distances anywhere on this
+   * screen, and an admin needs to know that is a missing setting rather than everybody
+   * happening to punch from the gate.
+   */
+  readonly venue: VenuePoint | null;
   /** The venue total. Deliberately the sum of the groups, never a separate query. */
   readonly counts: RosterCounts;
   /** True when the underlying board read hit its row cap. */
@@ -111,6 +141,32 @@ const employeeDesignationSchema = z.object({
   designations: z.object({ name: z.string().nullable() }).nullable(),
 });
 
+/**
+ * Today's punches, coordinates only.
+ *
+ * `v_attendance_today_board` carries no position, so the fixes come from
+ * `v_attendance_punch_detail` — the same view the punch log renders, filtered to the IST date
+ * the board is already about. Read as its own query rather than joined into the board, because
+ * the board is a shared view four screens depend on and widening it needs a migration this
+ * environment cannot apply.
+ */
+const punchFixSchema = z.object({
+  employee_id: z.string().uuid(),
+  punched_at: z.string(),
+  source: z.string(),
+  lat: z.union([z.number(), z.string()]).nullable(),
+  lng: z.union([z.number(), z.string()]).nullable(),
+  location_accuracy_m: z.union([z.number(), z.string()]).nullable(),
+});
+
+/** The venue. One row — the primary location. */
+const venueSchema = z.object({
+  name: z.string(),
+  lat: z.union([z.number(), z.string()]).nullable(),
+  lng: z.union([z.number(), z.string()]).nullable(),
+  geofence_radius_m: z.number().int().nullable(),
+});
+
 const shiftDurationSchema = z.object({
   id: z.string().uuid(),
   duration_minutes: z.number().int().nullable(),
@@ -126,6 +182,20 @@ const LEAVE_STATUSES = new Set(["on_leave", "on_leave_half", "comp_off_availed"]
 
 /** Pinned first, by name, because it is the group the venue's owner reads first. */
 const LEAD_DEPARTMENT = "Management";
+
+/**
+ * A Postgres `numeric` as a number.
+ *
+ * PostgREST serialises `numeric` as a STRING, to keep the precision JSON floats would lose.
+ * `lat`, `lng` and `location_accuracy_m` are all numeric, so every one of them arrives as
+ * "12.864249" — and `Number(undefined)` is NaN while `Number(null)` is 0, which is a coordinate
+ * on the Gulf of Guinea. Hence the explicit null path.
+ */
+function num(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function methodFor(row: TodayBoardRow): CaptureMethod {
   if (row.punch_count === 0) return "none";
@@ -156,7 +226,8 @@ export async function fetchTodayRoster(
     Three reads in parallel. The board is the one that matters; the other two are small
     reference sets that would otherwise serialise behind it for no reason.
   */
-  const [board, designations, shifts] = await Promise.all([
+  const today = istToday();
+  const [board, designations, shifts, fixes, venues] = await Promise.all([
     fetchTodayBoard(signal ? { signal } : {}),
     selectMany("employees", employeeDesignationSchema, {
       columns: "id, designations(name)",
@@ -166,7 +237,65 @@ export async function fetchTodayRoster(
       columns: "id, duration_minutes",
       ...(signal ? { signal } : {}),
     }),
+    selectMany(V_PUNCH_DETAIL, punchFixSchema, {
+      columns: "employee_id, punched_at, source, lat, lng, location_accuracy_m",
+      filters: [eq("ist_date", today)],
+      // Oldest first, so the reduce below can prefer a later punch by simply overwriting.
+      order: [{ column: "punched_at", ascending: true }],
+      ...(signal ? { signal } : {}),
+    }),
+    selectMany("locations", venueSchema, {
+      columns: "name, lat, lng, geofence_radius_m",
+      filters: [eq("is_primary", true)],
+      limit: 1,
+      ...(signal ? { signal } : {}),
+    }),
   ]);
+
+  /*
+    The venue point. BOTH halves or nothing — a latitude with no longitude is not half a
+    position, it is no position, and treating it as one would put a distance from the equator on
+    screen. `geofence_radius_m` is NOT NULL DEFAULT 300 on the table; the fallback covers only a
+    row that could not be read.
+  */
+  const venueRow = venues[0];
+  const venueLat = num(venueRow?.lat);
+  const venueLng = num(venueRow?.lng);
+  const venue: VenuePoint | null =
+    venueRow === undefined || venueLat === null || venueLng === null
+      ? null
+      : {
+        lat: venueLat,
+        lng: venueLng,
+        radiusM: venueRow.geofence_radius_m ?? 300,
+        name: venueRow.name,
+      };
+
+  /*
+    One fix per employee, and WEB WINS over the gate.
+
+    Not "the latest punch": a person who punches from home in the morning and at the gate in the
+    afternoon would show 0 m, and the 4 km reading — the one an admin actually needs to see — is
+    the one that disappears. A gate punch's position is barely information, since the tablet is
+    bolted to a known wall; a web punch's position is the entire reason this column exists.
+  */
+  const fixByEmployee = new Map<string, PunchFixOnRoster>();
+  for (const row of fixes) {
+    const lat = num(row.lat);
+    const lng = num(row.lng);
+    if (lat === null || lng === null) continue;
+    const via = row.source === "web" || row.source === "mobile" ? "web" : "gate";
+    const existing = fixByEmployee.get(row.employee_id);
+    if (existing !== undefined && existing.via === "web" && via === "gate") continue;
+    const accuracyMetres = num(row.location_accuracy_m);
+    fixByEmployee.set(row.employee_id, {
+      latitude: lat,
+      longitude: lng,
+      accuracyMetres,
+      via,
+      distance: distanceFromVenue({ latitude: lat, longitude: lng, accuracyMetres }, venue),
+    });
+  }
 
   const designationByEmployee = new Map(designations.map((d) => [d.id, d.designations?.name ?? null]));
   const durationByShift = new Map(shifts.map((s) => [s.id, s.duration_minutes ?? 0]));
@@ -198,6 +327,7 @@ export async function fetchTodayRoster(
       varianceMinutes: expected > 0 ? row.worked_minutes - expected : null,
       lateMinutes: row.late_minutes,
       punchCount: row.punch_count,
+      fix: fixByEmployee.get(row.employee_id) ?? null,
     };
   });
 
@@ -237,6 +367,7 @@ export async function fetchTodayRoster(
 
   return {
     groups,
+    venue,
     counts: countRows(rows),
     truncated: board.provenance.truncated,
   };

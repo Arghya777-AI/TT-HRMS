@@ -113,6 +113,42 @@ describe("the roster's counts", () => {
   });
 });
 
+describe("where a punch was taken", () => {
+  it("prefers a WEB fix over a gate fix for the same person", () => {
+    /*
+      Not "the latest punch". Somebody who punches from home in the morning and at the gate in
+      the afternoon would show 0 m, and the 4 km reading — the one an admin actually needs — is
+      the one that vanishes. A gate fix is barely information anyway: the tablet is bolted to a
+      known wall.
+    */
+    expect(api).toContain('existing.via === "web" && via === "gate"');
+  });
+
+  it("coerces Postgres numerics, because null is a real coordinate", () => {
+    /*
+      PostgREST serialises `numeric` as a STRING to preserve precision. `Number(null)` is 0, and
+      (0, 0) is a point in the Gulf of Guinea — so a missing latitude would render as a punch
+      taken 1,700 km off the coast of Africa rather than as no fix at all.
+    */
+    expect(api).toContain("function num(");
+    expect(api).toContain("value === null || value === undefined) return null");
+  });
+
+  it("needs BOTH halves of the venue point, or it has none", () => {
+    // A latitude with no longitude is not half a position.
+    expect(api).toContain("venueLat === null || venueLng === null");
+  });
+
+  it("shares one haversine with the functions that enforce the fences", () => {
+    /*
+      A second copy is how this dashboard ends up disagreeing with the `geofence_ok` stored on
+      the very row it is describing.
+    */
+    const helper = read("src", "lib", "venueDistance.ts");
+    expect(helper).toContain('from "../../supabase/functions/_shared/geofence"');
+  });
+});
+
 describe("the dashboard no longer opens on the six tiles", () => {
   it("shows the roster where the overlapping counts were", () => {
     const overview = read("src", "features", "admin", "components", "AnalyticsOverview.tsx");

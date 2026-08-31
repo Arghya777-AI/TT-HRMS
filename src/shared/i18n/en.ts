@@ -1599,6 +1599,16 @@ export const en = catalogue({
   "admin.roster.col.in": "In",
   "admin.roster.col.out": "Out",
   "admin.roster.col.method": "Captured via",
+  "admin.roster.col.location": "Location",
+  /*
+    A gate punch gets no distance. The tablet is bolted to a known wall and its own fixes spread
+    over ~17 m x 32 m, so a number there would be GPS noise presented as a measurement.
+  */
+  "admin.roster.loc.atGate": "At the gate",
+  "admin.roster.loc.away": "{d} from venue",
+  "admin.roster.loc.noVenue": "Venue location not set",
+  "admin.roster.loc.approx": "approx",
+  "admin.roster.loc.mapTitle": "Open in a map — {lat}, {lng} (accurate to about {acc} m)",
   "admin.roster.col.worked": "Worked",
   "admin.roster.col.variance": "Over / under",
   "admin.roster.state.present": "Present",

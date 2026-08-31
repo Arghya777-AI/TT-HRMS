@@ -675,6 +675,8 @@ export const keysRecovered = {
   "admin.leaveBal.col.accruedThisMonth": "Accrued this month",
   "admin.leaveBal.filter.department": "Department",
   "admin.leaveBal.filter.allDepartments": "All departments",
+  "admin.people.field.excludeFromLeaveTracking": "Not tracked for leave",
+  "admin.people.help.excludeFromLeaveTracking": "Hides this person from the leave balances register. Reporting only \u2014 accrual, applying for leave and any existing balance are untouched, and clearing this puts them straight back. Meant for administrators who run the system rather than staff whose leave is tracked.",
   "admin.leaveBal.col.extraWorkIn": "Extra work in {month} (hours)",
   "admin.leaveBal.col.suggestedWeekOffs": "Suggested week-offs from {month}",
   "admin.leaveBal.col.employeeCode": "Employee code",

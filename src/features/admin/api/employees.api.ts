@@ -147,6 +147,7 @@ export const DIRECTORY_COLUMNS = [
   "work_email",
   "mobile",
   "employment_status",
+  "exclude_from_leave_tracking",
   "employment_type",
   "date_of_join",
   "confirmation_due_date",
@@ -199,6 +200,8 @@ export const directoryRowSchema = z.object({
   profile_completeness_pct: dbIntNullable,
   deleted_at: dbTimestampNullable,
   updated_at: dbTimestamp,
+  /** Reporting flag (20260831130000): hidden from the leave balances register. */
+  exclude_from_leave_tracking: z.boolean(),
 });
 export type DirectoryRow = z.infer<typeof directoryRowSchema>;
 

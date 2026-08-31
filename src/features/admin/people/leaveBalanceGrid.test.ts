@@ -130,6 +130,38 @@ describe("pivotBalances", () => {
     expect(pivotBalances([], columns)).toEqual([]);
   });
 
+  it("gives an employee with NO balances a line of zeros", () => {
+    /*
+      Reported: Management showed 14 of its 19 people. Trisha K had never been
+      credited anything, so deriving rows from the balances dropped her from a
+      screen headed "Leave Balances" — absence reading as "not an employee".
+    */
+    const out = pivotBalances([bal("e1", "t-el", 31)], columns, ["e1", "e-trisha"]);
+    expect(out).toHaveLength(2);
+    const trisha = out.find((r) => r.employeeId === "e-trisha");
+    expect(trisha?.byTypeId.get("t-el")).toEqual({ available: 0, used: 0 });
+    expect(trisha?.byTypeId.get("t-sl")).toEqual({ available: 0, used: 0 });
+    expect(trisha?.lastRecomputedAt).toBeNull();
+  });
+
+  it("does not duplicate somebody who is both in scope and has balances", () => {
+    const out = pivotBalances([bal("e1", "t-el", 31)], columns, ["e1"]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.byTypeId.get("t-el")?.available).toBe(31);
+  });
+
+  it("stamps the fallback leave year on a row that had none to read", () => {
+    const out = pivotBalances([], columns, ["e-trisha"], 2026);
+    expect(out[0]?.leaveYear).toBe(2026);
+  });
+
+  it("still works with no scope given — only those holding leave", () => {
+    /* The old behaviour, kept so a caller without an employee list is not forced to
+       invent one. */
+    const out = pivotBalances([bal("e1", "t-el", 31)], columns);
+    expect(out.map((r) => r.employeeId)).toEqual(["e1"]);
+  });
+
   it("keeps employees apart", () => {
     const out = pivotBalances(
       [bal("e1", "t-el", 31), bal("e2", "t-el", 3.5), bal("e2", "t-sl", 4)],

@@ -34,6 +34,7 @@ function grantedInsertColumns(): Set<string> {
   const files = [
     "supabase/migrations/20260801005100_admin_employee_write_access.sql",
     "supabase/migrations/20260801043800_add_employee_needs_its_own_columns.sql",
+    "supabase/migrations/20260831130000_not_everyone_holds_leave.sql",
   ];
   const granted = new Set<string>();
   for (const file of files) {

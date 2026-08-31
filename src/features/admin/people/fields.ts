@@ -582,6 +582,19 @@ export function timePolicyGroups(refs: PeopleRefs): readonly FieldGroup[] {
           kind: "checkbox",
           help: t("admin.people.help.excludeFromAttendance"),
         },
+        {
+          /*
+            A REPORTING flag, and the help text has to say so — the two checkboxes
+            above it change what the engine computes, and somebody reading three in
+            a row will assume this one does too. It hides the person from the leave
+            balances register and touches nothing else: no accrual stops, no balance
+            is deleted, and clearing it puts them and their figures straight back.
+          */
+          name: "exclude_from_leave_tracking",
+          label: t("admin.people.field.excludeFromLeaveTracking"),
+          kind: "checkbox",
+          help: t("admin.people.help.excludeFromLeaveTracking"),
+        },
       ],
     },
   ];
@@ -855,6 +868,7 @@ export const NEW_EMPLOYEE_DEFAULTS: Readonly<Record<string, string>> = {
   restrict_punch_to_venue_ip: "true",
   exclude_from_attendance: "false",
   exclude_from_payroll: "false",
+  exclude_from_leave_tracking: "false",
 };
 
 /**

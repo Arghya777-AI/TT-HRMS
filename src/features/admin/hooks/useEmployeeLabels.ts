@@ -24,6 +24,14 @@ export interface EmployeeLabel {
   readonly name: string;
   readonly department: string | null;
   readonly designation: string | null;
+  /**
+   * `employees.employment_status`. Already in `DIRECTORY_COLUMNS` and simply not
+   * kept before — the balances grid needs it to leave departed staff out of a list
+   * of people who hold leave.
+   */
+  readonly employmentStatus: string;
+  /** `employees.exclude_from_leave_tracking` — kept off the leave register. */
+  readonly excludeFromLeaveTracking: boolean;
 }
 
 function toLabel(row: DirectoryRow): EmployeeLabel {
@@ -33,6 +41,8 @@ function toLabel(row: DirectoryRow): EmployeeLabel {
     name: row.display_name,
     department: row.department_name,
     designation: row.designation_name,
+    employmentStatus: row.employment_status,
+    excludeFromLeaveTracking: row.exclude_from_leave_tracking,
   };
 }
 

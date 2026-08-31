@@ -149,13 +149,56 @@ export default function AdminLeaveBalancesPage() {
      before filtering. `capped` still measures the FETCHED count, so that warning
      keeps meaning what it says. */
   const inDepartment = useMemo(() => {
-    if (departmentName === ALL_DEPARTMENTS || departmentName === "") return fetched;
-    return fetched.filter(
-      (row) => labels.data?.get(row.employee_id)?.department === departmentName,
-    );
+    const inScope = fetched.filter((row) => {
+      const label = labels.data?.get(row.employee_id);
+      /*
+        The exclusion has to be applied to the BALANCE rows as well as to the
+        employee scope. Filtering only the scope would still let somebody through
+        who is excluded AND holds days, because those rows arrive from the view
+        rather than from the employee list.
+      */
+      if (label?.excludeFromLeaveTracking === true) return false;
+      if (departmentName === ALL_DEPARTMENTS || departmentName === "") return true;
+      return label?.department === departmentName;
+    });
+    return inScope;
   }, [fetched, departmentName, labels.data]);
 
   const typeColumns = useMemo(() => columnTypes(types.data ?? []), [types.data]);
+
+  /*
+    EVERYBODY IN SCOPE GETS A LINE, not only those who hold leave.
+
+    The grid used to be built from the balance rows, so Management showed 14 of its
+    19 people — Trisha K and Preethi Machani were absent because nothing had ever
+    been credited to them, and so were the three accounts whose test data had just
+    been deleted. On a screen headed "Leave Balances", missing reads as "not an
+    employee" rather than "holds nothing".
+
+    Exited staff are left out: their balance is settled at full-and-final, and a
+    departed person among the people who hold leave is noise. That check is why
+    `EmployeeLabel` now carries `employmentStatus` — the column was already fetched
+    and simply not kept.
+  */
+  const employeeIdsInScope = useMemo(() => {
+    const ids: string[] = [];
+    for (const label of (labels.data ?? new Map()).values()) {
+      if (label.employmentStatus === "exited" || label.employmentStatus === "pre_joining") continue;
+      /* Administrators who run the system rather than staff whose leave is tracked
+         (20260831130000). A reporting flag only — their balances are untouched, and
+         clearing it puts them and their figures straight back. */
+      if (label.excludeFromLeaveTracking) continue;
+      if (
+        departmentName !== ALL_DEPARTMENTS &&
+        departmentName !== "" &&
+        label.department !== departmentName
+      ) {
+        continue;
+      }
+      ids.push(label.id);
+    }
+    return ids;
+  }, [labels.data, departmentName]);
 
   const extraByEmployee = useMemo(() => {
     const map = new Map<string, { extra: number; ot: number }>();
@@ -165,8 +208,16 @@ export default function AdminLeaveBalancesPage() {
     return map;
   }, [extraWork.data]);
   const rows = useMemo(
-    () => pivotBalances(inDepartment, typeColumns),
-    [inDepartment, typeColumns],
+    () =>
+      pivotBalances(
+        inDepartment,
+        typeColumns,
+        employeeIdsInScope,
+        /* The leave year any real row carries; only used to key a row for somebody
+           who has none, and the grid shows no year column. */
+        inDepartment[0]?.leave_year ?? 0,
+      ),
+    [inDepartment, typeColumns, employeeIdsInScope],
   );
 
   /*

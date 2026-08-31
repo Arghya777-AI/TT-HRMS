@@ -21,10 +21,21 @@
  * view; the per-type detail lives one click away in the balance ledger, which is
  * where the credits and debits behind a number belong anyway.
  *
- * A TYPE WITH NO BALANCE ROW READS ZERO IN BOTH COLUMNS, NOT BLANK. Maternity, paternity and
- * week-off are granted per case at this venue, so most people have no row for
- * them. Zero is the truth — nothing has been granted — and it is a number the
- * reader can act on. An empty cell would be indistinguishable from a failed read.
+ * A TYPE WITH NO BALANCE ROW READS ZERO IN BOTH COLUMNS, NOT BLANK. Maternity,
+ * paternity and week-off are granted per case at this venue, so most people have no
+ * row for them. Zero is the truth — nothing has been granted — and it is a number
+ * the reader can act on. An empty cell would be indistinguishable from a failed read.
+ *
+ * AND AN EMPLOYEE WITH NO BALANCE ROW AT ALL STILL GETS A LINE.
+ *
+ * This used to derive its rows FROM the balances, so somebody with no leave data
+ * anywhere simply did not appear: Management showed 14 of its 19 people, and Trisha
+ * K, Preethi Machani and the three accounts whose test data had just been deleted
+ * were missing from a screen headed "Leave Balances". Absence read as "not an
+ * employee" rather than "holds nothing".
+ *
+ * So the rows come from the EMPLOYEES in scope and the balances are joined onto
+ * them. Everybody in the department appears; those with nothing show zeros.
  */
 import type { LeaveBalance, LeaveType } from "../api/leave.api";
 
@@ -77,6 +88,14 @@ export function columnTypes(types: readonly LeaveType[]): readonly LeaveType[] {
 export function pivotBalances(
   rows: readonly LeaveBalance[],
   columns: readonly LeaveType[],
+  /**
+   * Everybody who should have a line, whether or not they hold any leave. Pass an
+   * empty array to fall back to "only those with balances" — the old behaviour, kept
+   * so a caller that has no employee list is not forced to invent one.
+   */
+  employeeIdsInScope: readonly string[] = [],
+  /** The leave year to stamp on a row for somebody with no balances to read it from. */
+  fallbackLeaveYear = 0,
 ): readonly PivotedBalance[] {
   const byEmployee = new Map<
     string,
@@ -103,6 +122,21 @@ export function pivotBalances(
       (entry.recomputed === null || row.last_recomputed_at > entry.recomputed)
     ) {
       entry.recomputed = row.last_recomputed_at;
+    }
+  }
+
+  /*
+    Every employee in scope gets an entry, created empty if the balances had nothing
+    for them. Done before the output loop so the zero-filling below is identical for
+    everybody and there is no second code path for "has no balances".
+  */
+  for (const employeeId of employeeIdsInScope) {
+    if (!byEmployee.has(employeeId)) {
+      byEmployee.set(employeeId, {
+        year: fallbackLeaveYear,
+        cells: new Map<string, TypeCell>(),
+        recomputed: null,
+      });
     }
   }
 

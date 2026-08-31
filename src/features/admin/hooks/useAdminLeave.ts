@@ -48,10 +48,25 @@ export const LEAVE_ROW_CAP = 500;
 // -----------------------------------------------------------------------------
 
 /** Active + retired leave types — the grid needs names for historical rows too. */
+/**
+ * The leave types the venue OFFERS — sick, earned, week-off, maternity, paternity.
+ *
+ * This fetched `includeInactive: true`, and six screens share it: the balances
+ * grid, adjustments, requests, the org calendar, encashment, the ledger and the
+ * year-end rollover. Every one of their type dropdowns therefore offered
+ * Bereavement, Leave Without Pay, Comp-Off, On Duty and Casual — types this venue
+ * retired. Picking one returns an empty grid, or worse, offers to credit days in a
+ * leave nobody can take.
+ *
+ * Retired types are still readable where they matter: `leave_types` itself is what
+ * the Leave Type Master reads, through `MasterScreen`'s own "include inactive"
+ * toggle, so un-retiring one is still possible. This hook is for pickers, and a
+ * picker should not offer what cannot be chosen.
+ */
 export function useAdminLeaveTypes(): UseQueryResult<LeaveType[], Error> {
   return useQuery({
     queryKey: qk.admin.leaveTypes(),
-    queryFn: ({ signal }) => fetchLeaveTypes({ includeInactive: true }, signal),
+    queryFn: ({ signal }) => fetchLeaveTypes({ includeInactive: false }, signal),
     staleTime: 5 * 60 * 1000,
     retry: shouldRetryQuery,
   });

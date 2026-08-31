@@ -246,6 +246,14 @@ export const balanceSchema = z.object({
   expiring_soon_days: dbNumeric,
   nearest_expiry: dbDateNullable,
   last_recomputed_at: dbTimestampNullable,
+  /**
+   * Accrual credited in the CURRENT IST month (20260831120000).
+   *
+   * `accrued_days` above is the YEAR-TO-DATE total, and conflating the two is what
+   * put 8 under "Accrued this month" for Sunil M against a balance of 2 — he has
+   * eight monthly sick-leave accruals and only one of them is August's.
+   */
+  accrued_this_month_days: dbNumeric,
 });
 export type LeaveBalance = z.infer<typeof balanceSchema>;
 

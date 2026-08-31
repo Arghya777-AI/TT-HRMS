@@ -27,12 +27,15 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
-import { fmtCivilDate } from "@/lib/datetime";
 import { dash, formatDays } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
-import type { LeaveBalance } from "../api/leave.api";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
+import {
+  columnTypes,
+  pivotBalances,
+  type PivotedBalance,
+} from "../people/leaveBalanceGrid";
 import { SelectField, type SelectOption } from "../components/Field";
 import { useEmployeeLabels, useEmployeeOptions } from "../hooks/useEmployeeLabels";
 import {
@@ -41,26 +44,73 @@ import {
   useAdminLeaveTypes,
 } from "../hooks/useAdminLeave";
 
+/**
+ * The department this page opens on. A venue-specific default living in one named
+ * constant rather than scattered through the component — change this line to open
+ * on Ground instead.
+ */
+const DEFAULT_DEPARTMENT = "Management";
+
+/** Explicit "everyone", so it survives having a default. */
+const ALL_DEPARTMENTS = "*";
+
 export default function AdminLeaveBalancesPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
 
   const employeeId = params.get("emp");
   const leaveTypeId = params.get("type");
+  /*
+    MANAGEMENT BY DEFAULT.
+
+    This page opens on the department the venue actually reads it for: Management
+    is 19 people, Ground is 45, and arriving at 86 rows sorted by nobody's
+    preference means scrolling every time. `?dept=` in the URL still selects any
+    other department, and ALL_DEPARTMENTS is an explicit choice in the picker
+    rather than an absence — otherwise "show me everyone" would be unreachable
+    once a default exists.
+
+    Falls back to everyone if there is no department by this name, so a venue
+    without a Management department is not left staring at an empty grid.
+  */
+  const departmentParam = params.get("dept");
 
   const labels = useEmployeeLabels();
   const employeeChoices = useEmployeeOptions(labels.data);
   const types = useAdminLeaveTypes();
   const balances = useAdminLeaveBalances({ employeeId, leaveTypeId });
 
-  const typeChoices: SelectOption[] = useMemo(
-    () =>
-      (types.data ?? []).map((type) => ({
-        value: type.id,
-        label: type.name,
-      })),
-    [types.data],
+
+  /*
+    DEPARTMENT, FROM THE LABEL MAP RATHER THAN A NEW READ.
+
+    `EmployeeLabel` already carries `department`, and `v_leave_balance_current` has
+    no department column — so this costs nothing and needs no migration. Asked for
+    because the venue reads this page by department: Management is 19 people of 83,
+    and scrolling past 45 Ground staff to reach them is the whole complaint.
+  */
+  const departmentNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const label of (labels.data ?? new Map<string, { department: string | null }>()).values()) {
+      if (label.department !== null && label.department !== "") seen.add(label.department);
+    }
+    return [...seen].sort();
+  }, [labels.data]);
+
+  const departmentChoices: SelectOption[] = useMemo(
+    () => [
+      { value: ALL_DEPARTMENTS, label: t("admin.leaveBal.filter.allDepartments") },
+      ...departmentNames.map((name) => ({ value: name, label: name })),
+    ],
+    [departmentNames],
   );
+
+  /* The default only applies while the labels are loaded enough to know the
+     department exists; until then it is treated as "everyone", so the grid does not
+     flash empty. */
+  const departmentName =
+    departmentParam ??
+    (departmentNames.includes(DEFAULT_DEPARTMENT) ? DEFAULT_DEPARTMENT : ALL_DEPARTMENTS);
 
   function setParam(name: string, value: string): void {
     const next = new URLSearchParams(params);
@@ -69,141 +119,110 @@ export default function AdminLeaveBalancesPage() {
     setParams(next, { replace: false });
   }
 
-  const rows = balances.data ?? [];
-  const capped = rows.length >= LEAVE_ROW_CAP;
+  /* `?? []` builds a NEW array every render, so a memo depending on it never holds
+     and the filter below would re-run on every keystroke elsewhere on the page.
+     Anchored on `balances.data` itself, which react-query keeps stable. */
+  const fetched = useMemo(() => balances.data ?? [], [balances.data]);
+  const capped = fetched.length >= LEAVE_ROW_CAP;
 
-  const columns: DataGridColumn<LeaveBalance>[] = useMemo(
+  /* Applied after the fetch, which is safe at this size: the whole venue holds ~86
+     balance rows against a cap in the hundreds, so nothing is lost to the cap
+     before filtering. `capped` still measures the FETCHED count, so that warning
+     keeps meaning what it says. */
+  const inDepartment = useMemo(() => {
+    if (departmentName === ALL_DEPARTMENTS || departmentName === "") return fetched;
+    return fetched.filter(
+      (row) => labels.data?.get(row.employee_id)?.department === departmentName,
+    );
+  }, [fetched, departmentName, labels.data]);
+
+  const typeColumns = useMemo(() => columnTypes(types.data ?? []), [types.data]);
+  const rows = useMemo(
+    () => pivotBalances(inDepartment, typeColumns),
+    [inDepartment, typeColumns],
+  );
+
+  /*
+    ONE ROW PER EMPLOYEE, ONE COLUMN PER LEAVE TYPE.
+
+    The view returns a row per employee PER TYPE, which made 14 Management staff
+    into 28 rows with a "Leave type" cell and a filter to narrow it. The venue reads
+    this page against a statement shaped one line per person, so the type moved from
+    a cell to a COLUMN HEADER and the type filter went with it — every type is
+    visible at once, so there is nothing left to filter.
+
+    The per-type figures went too: Opening, Accrued this month, Lapsed, Spendable
+    and Nearest expiry would each need a column per type, and five types by six
+    figures is thirty columns nobody reads. The credits and debits behind any number
+    are one click away in that employee's ledger.
+
+    The type columns are NOT sortable, as asked: they carry the type's name and the
+    number, nothing else.
+  */
+  const columns: DataGridColumn<PivotedBalance>[] = useMemo(
     () => [
       {
         key: "employee",
         header: t("admin.leaveBal.col.employee"),
-        width: "14rem",
+        width: "16rem",
         sortable: true,
-        sortValue: (row) => labels.data?.get(row.employee_id)?.name ?? "",
+        sortValue: (row) => labels.data?.get(row.employeeId)?.name ?? "",
         render: (row) => {
-          const label = labels.data?.get(row.employee_id);
+          const label = labels.data?.get(row.employeeId);
           return <PersonCell name={label?.name ?? null} code={label?.code ?? null} />;
         },
       },
-      {
-        key: "leave_type_name",
-        header: t("admin.leaveBal.col.type"),
-        width: "12rem",
-        sortable: true,
-        render: (row) => (
-          <span className="flex flex-col leading-tight">
-            <span>{row.leave_type_name}</span>
-            <span className="text-xs text-muted-foreground">
-              {row.is_paid ? t("admin.leaveBal.paid") : t("admin.leaveBal.unpaid")}
+      /*
+        TWO COLUMNS PER TYPE: available, then used.
+        
+        The header spells out the type and the figure in full — "Earned Leave ·
+        available" — rather than grouping them under one type heading. `DataGridColumn.header`
+        is a plain string, so a spanning header is not available, and an abbreviated
+        one would be guesswork on the reader's part. Mislabelling a number is exactly
+        what put 8 under "Accrued this month", so these say what they are.
+        
+        Available is emphasised because it is the figure most rows are read for; used
+        sits beside it in muted type as context, not competition.
+      */
+      ...typeColumns.flatMap((type) => [
+        {
+          key: `avail:${type.id}`,
+          header: t("admin.leaveBal.col.typeAvailable", { type: type.name }),
+          width: "8rem",
+          align: "right" as const,
+          render: (row: PivotedBalance) => (
+            <span className="num font-semibold">
+              {formatDays(row.byTypeId.get(type.id)?.available ?? 0)}
             </span>
-          </span>
-        ),
-      },
-      {
-        key: "leave_year",
-        header: t("admin.leaveBal.col.year"),
-        width: "6rem",
-        align: "right",
-        hideBelow: "lg",
-        render: (row) => <span className="num">{row.leave_year}</span>,
-      },
-      {
-        key: "opening_days",
-        header: t("admin.leaveBal.col.opening"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "lg",
-        render: (row) => formatDays(row.opening_days),
-      },
-      {
-        key: "accrued_days",
-        header: t("admin.leaveBal.col.accrued"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "md",
-        render: (row) => formatDays(row.accrued_days),
-      },
-      {
-        key: "carried_forward_days",
-        header: t("admin.leaveBal.col.carried"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "lg",
-        render: (row) => formatDays(row.carried_forward_days),
-      },
-      {
-        key: "adjusted_days",
-        header: t("admin.leaveBal.col.adjusted"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "lg",
-        render: (row) => formatDays(row.adjusted_days),
-      },
-      {
-        key: "entitlement_days",
-        header: t("admin.leaveBal.col.entitlement"),
-        width: "8rem",
-        align: "right",
-        hideBelow: "md",
-        render: (row) => formatDays(row.entitlement_days),
-      },
-      {
-        key: "availed_days",
-        header: t("admin.leaveBal.col.availed"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "md",
-        render: (row) => formatDays(row.availed_days),
-      },
-      {
-        key: "pending_days",
-        header: t("admin.leaveBal.col.pending"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "md",
-        render: (row) => formatDays(row.pending_days),
-      },
-      {
-        key: "lapsed_days",
-        header: t("admin.leaveBal.col.lapsed"),
-        width: "7rem",
-        align: "right",
-        hideBelow: "lg",
-        render: (row) => formatDays(row.lapsed_days),
-      },
-      {
-        key: "available_days",
-        header: t("admin.leaveBal.col.available"),
-        width: "8rem",
-        align: "right",
-        sortable: true,
-        render: (row) => (
-          <span className="num font-semibold">{formatDays(row.available_days)}</span>
-        ),
-      },
-      {
-        key: "available_after_pending",
-        header: t("admin.leaveBal.col.spendable"),
-        width: "9rem",
-        align: "right",
-        render: (row) => formatDays(row.available_after_pending),
-      },
+          ),
+        },
+        {
+          key: `used:${type.id}`,
+          header: t("admin.leaveBal.col.typeUsed", { type: type.name }),
+          width: "7rem",
+          align: "right" as const,
+          hideBelow: "lg" as const,
+          render: (row: PivotedBalance) => (
+            <span className="num text-muted-foreground">
+              {formatDays(row.byTypeId.get(type.id)?.used ?? 0)}
+            </span>
+          ),
+        },
+      ]),
       {
         key: "ledger",
         header: t("admin.leaveBal.col.ledger"),
-        width: "8rem",
+        width: "7rem",
         align: "right",
         render: (row) => {
-          const code = labels.data?.get(row.employee_id)?.code;
+          const code = labels.data?.get(row.employeeId)?.code;
           if (code === undefined) return dash(null);
-          // The cell swallows the click so the row's own navigation cannot race
-          // the link the reader actually pressed.
+          /* No `?type=` any more — a pivoted row is not about one type, so the
+             ledger opens on the employee and lets them pick. */
           return (
             <span onClick={(event) => event.stopPropagation()}>
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/admin/leave/ledger/${code}?type=${row.leave_type_code}`}>
-                  {t("admin.leaveBal.openLedger")}
-                </Link>
+                <Link to={`/admin/leave/ledger/${code}`}>{t("admin.leaveBal.openLedger")}</Link>
               </Button>
             </span>
           );
@@ -215,43 +234,19 @@ export default function AdminLeaveBalancesPage() {
         width: "7rem",
         align: "right",
         render: (row) => (
-          /*
-            Prefilled with the employee and the leave type, because those are the
-            two fields most easily got wrong by hand — and adjusting the wrong
-            person's balance is not a mistake the screen can detect afterwards.
-          */
+          /* Prefilled with the employee only, for the same reason: the row no
+             longer names a single type. The form still asks for one. */
           <span onClick={(event) => event.stopPropagation()}>
             <Button variant="outline" size="sm" asChild>
-              <Link
-                to={`/admin/leave/adjustments?emp=${row.employee_id}&type=${row.leave_type_id}`}
-              >
+              <Link to={`/admin/leave/adjustments?emp=${row.employeeId}`}>
                 {t("admin.leaveBal.adjust")}
               </Link>
             </Button>
           </span>
         ),
       },
-      {
-        key: "nearest_expiry",
-        header: t("admin.leaveBal.col.expiry"),
-        width: "12rem",
-        hideBelow: "lg",
-        render: (row) => {
-          if (row.nearest_expiry === null) return dash(null);
-          return (
-            <span className="flex flex-col leading-tight">
-              <span>{fmtCivilDate(row.nearest_expiry)}</span>
-              <span className="num text-xs text-warning">
-                {t("admin.leaveBal.expiringSoon", {
-                  days: formatDays(row.expiring_soon_days),
-                })}
-              </span>
-            </span>
-          );
-        },
-      },
     ],
-    [labels.data],
+    [labels.data, typeColumns],
   );
 
   return (
@@ -295,15 +290,22 @@ export default function AdminLeaveBalancesPage() {
         <DataGrid
           columns={columns}
           rows={rows}
-          rowKey={(row) => `${row.employee_id}:${row.leave_type_id}:${row.leave_year}`}
+          rowKey={(row) => `${row.employeeId}:${row.leaveYear}`}
           pageSize={25}
           onRowClick={(row) => {
-            const code = labels.data?.get(row.employee_id)?.code;
+            const code = labels.data?.get(row.employeeId)?.code;
             if (code === undefined) return;
-            navigate(`/admin/leave/ledger/${code}?type=${row.leave_type_code}`);
+            navigate(`/admin/leave/ledger/${code}`);
           }}
           toolbar={
             <div className="grid w-full gap-3 sm:grid-cols-2">
+              <SelectField
+                label={t("admin.leaveBal.filter.department")}
+                value={departmentName}
+                options={departmentChoices}
+                onChange={(value) => setParam("dept", value)}
+                disabled={labels.isLoading}
+              />
               <SelectField
                 label={t("admin.common.filter.employee")}
                 value={employeeId ?? ""}
@@ -312,14 +314,6 @@ export default function AdminLeaveBalancesPage() {
                 onChange={(value) => setParam("emp", value)}
                 disabled={labels.isLoading}
               />
-              <SelectField
-                label={t("admin.leaveBal.filter.type")}
-                value={leaveTypeId ?? ""}
-                options={typeChoices}
-                placeholder={t("admin.leaveBal.filter.allTypes")}
-                onChange={(value) => setParam("type", value)}
-                disabled={types.isLoading}
-              />
             </div>
           }
           emptyState={
@@ -327,7 +321,7 @@ export default function AdminLeaveBalancesPage() {
               icon={CalendarDays}
               title={t("admin.leaveBal.empty.title")}
               hint={
-                employeeId !== null || leaveTypeId !== null
+                employeeId !== null || leaveTypeId !== null || departmentName !== ALL_DEPARTMENTS
                   ? t("admin.leaveBal.empty.filtered")
                   : t("admin.leaveBal.empty.hint")
               }

@@ -619,3 +619,82 @@ export async function submitLeaveAdjustment(
   }
   return result;
 }
+
+
+// -----------------------------------------------------------------------------
+// Extra work last month — the basis for a suggested week-off
+// -----------------------------------------------------------------------------
+
+export const ATTENDANCE_DAYS_TABLE = "attendance_days";
+
+const attendanceExtraSchema = z.object({
+  employee_id: dbUuid,
+  /** Worked on a weekly off or a holiday. */
+  extra_work_minutes: dbInt,
+  /** Extra time beyond the shift on a normal working day. */
+  overtime_minutes: dbInt,
+});
+
+export interface ExtraWorkRow {
+  readonly employee_id: string;
+  readonly extra_work_minutes: number;
+  readonly overtime_minutes: number;
+  /** Days of that month with a record for this person. */
+  readonly days_recorded: number;
+}
+
+/**
+ * One month of extra work per employee, for the week-off suggestion.
+ *
+ * READ FROM `attendance_days`, NOT FROM `v_attendance_monthly_summary`.
+ *
+ * The view exists and looks perfect for this — it has `extra_work_minutes`,
+ * `overtime_minutes` and a year/month key. It is also EMPTY: zero rows, for every
+ * month, while `attendance_days` holds 1,555 rows for August alone. It is keyed on
+ * `pay_period_id`, and whatever links a day to a pay period is not populated here,
+ * so every join drops. Using it would have shipped a suggestion column that read
+ * blank forever and looked like a bug in the arithmetic.
+ *
+ * Summing in the browser is acceptable at this size — one month is roughly 1,600
+ * rows of three small columns — and it reads the same table the attendance screens
+ * do, so the suggestion cannot disagree with the days behind it.
+ */
+export async function fetchMonthlyExtraWork(
+  year: number,
+  month: number,
+  signal?: AbortSignal,
+): Promise<ExtraWorkRow[]> {
+  const from = `${String(year)}-${String(month).padStart(2, "0")}-01`;
+  /* The 0th of next month is the last of this one, and JS rolls December for us. */
+  const last = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 0));
+  const to = `${String(year)}-${String(month).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`;
+
+  const rows = await selectMany(ATTENDANCE_DAYS_TABLE, attendanceExtraSchema, {
+    columns: "employee_id, extra_work_minutes, overtime_minutes",
+    filters: [gte("ist_date", from), lte("ist_date", to)],
+    /* A month of a venue this size is ~1,600 rows; the cap is a guard, not a page. */
+    limit: 5000,
+    ...(signal ? { signal } : {}),
+  });
+
+  const byEmployee = new Map<string, ExtraWorkRow>();
+  for (const row of rows) {
+    const current = byEmployee.get(row.employee_id);
+    if (current === undefined) {
+      byEmployee.set(row.employee_id, {
+        employee_id: row.employee_id,
+        extra_work_minutes: row.extra_work_minutes,
+        overtime_minutes: row.overtime_minutes,
+        days_recorded: 1,
+      });
+    } else {
+      byEmployee.set(row.employee_id, {
+        employee_id: row.employee_id,
+        extra_work_minutes: current.extra_work_minutes + row.extra_work_minutes,
+        overtime_minutes: current.overtime_minutes + row.overtime_minutes,
+        days_recorded: current.days_recorded + 1,
+      });
+    }
+  }
+  return [...byEmployee.values()];
+}

@@ -38,6 +38,8 @@ import {
   type LeaveRequest,
   type LeaveRequestStatus,
   type LeaveType,
+  fetchMonthlyExtraWork,
+  type ExtraWorkRow,
 } from "../api/leave.api";
 
 /** Hard row cap on every org-wide grid: keyset paging, never OFFSET. */
@@ -284,5 +286,25 @@ export function useLeaveAdjustment(
     invalidate: [qk.admin.leaveAll()],
     mutationFn: (input, reason) => submitLeaveAdjustment(input, reason),
     ...(onDone ? { onSuccess: (_d: LeaveAdjustmentResult, input: LeaveAdjustmentInput) => onDone(input) } : {}),
+  });
+}
+
+
+/**
+ * Extra work in the month a week-off suggestion should be drawn from.
+ *
+ * The month comes from `referenceMonth(istToday())` — before the 15th the month that
+ * just ended, from the 15th the month you are in — so this hook is given a year and
+ * month rather than deciding for itself, and the rule stays in one tested place.
+ */
+export function useMonthlyExtraWork(
+  year: number,
+  month: number,
+): UseQueryResult<ExtraWorkRow[], Error> {
+  return useQuery({
+    queryKey: qk.admin.list({ extraWork: true, year, month }),
+    queryFn: ({ signal }) => fetchMonthlyExtraWork(year, month, signal),
+    staleTime: 5 * 60 * 1000,
+    retry: shouldRetryQuery,
   });
 }

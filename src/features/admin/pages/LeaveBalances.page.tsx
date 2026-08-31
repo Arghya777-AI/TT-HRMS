@@ -19,7 +19,7 @@
  *
  * @route /admin/leave/balances
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, Scale } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,13 @@ import { dash, formatDays } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { Notice } from "../components/Notice";
 import { PersonCell } from "../components/PersonCell";
+import { AnalyticsExportButtons } from "../components/AnalyticsExportButtons";
+import { BulkAdjustSheet } from "../components/BulkAdjustSheet";
+import { useMonthlyExtraWork } from "../hooks/useAdminLeave";
+import { istToday } from "@/lib/datetime";
+import { referenceMonth, suggestWeekOffs } from "../people/weekOffSuggestion";
+import { defaultFilters } from "@/lib/analyticsFilters";
+import type { ExportColumn } from "@/lib/exportReport";
 import {
   columnTypes,
   pivotBalances,
@@ -56,6 +63,18 @@ const ALL_DEPARTMENTS = "*";
 
 export default function AdminLeaveBalancesPage() {
   const [params, setParams] = useSearchParams();
+  const [bulkOpen, setBulkOpen] = useState(false);
+
+  /*
+    THE EXPORT CARRIES THE SAME SUGGESTION THE SHEET SHOWS.
+
+    Asked for explicitly: whatever the screen suggests should be in the file too.
+    Both read `referenceMonth(istToday())` and `suggestWeekOffs`, so the number in
+    the spreadsheet and the number in the sheet cannot disagree — which they would
+    within a day of each other if the file recomputed it its own way.
+  */
+  const period = useMemo(() => referenceMonth(istToday()), []);
+  const extraWork = useMonthlyExtraWork(period.year, period.month);
   const navigate = useNavigate();
 
   const employeeId = params.get("emp");
@@ -137,6 +156,14 @@ export default function AdminLeaveBalancesPage() {
   }, [fetched, departmentName, labels.data]);
 
   const typeColumns = useMemo(() => columnTypes(types.data ?? []), [types.data]);
+
+  const extraByEmployee = useMemo(() => {
+    const map = new Map<string, { extra: number; ot: number }>();
+    for (const row of extraWork.data ?? []) {
+      map.set(row.employee_id, { extra: row.extra_work_minutes, ot: row.overtime_minutes });
+    }
+    return map;
+  }, [extraWork.data]);
   const rows = useMemo(
     () => pivotBalances(inDepartment, typeColumns),
     [inDepartment, typeColumns],
@@ -159,6 +186,79 @@ export default function AdminLeaveBalancesPage() {
     The type columns are NOT sortable, as asked: they carry the type's name and the
     number, nothing else.
   */
+  /*
+    THE EXPORT COLUMNS ARE BUILT FROM THE SAME `typeColumns` AS THE GRID.
+
+    `exportReport` takes the ROWS, not the DOM — deliberately, per its own header:
+    scraping the table would export whichever page the reader had paged to, with
+    their sort and whatever their viewport hid. Deriving both column sets from one
+    array is the same discipline one level up: add a leave type and it appears in
+    the file and on screen together, or in neither.
+
+    `filters` carries the department, because a spreadsheet headed "Leave balances"
+    that silently holds only Management is a lie about the venue — the engine prints
+    it at the top of the file.
+  */
+  const exportColumns: ExportColumn<PivotedBalance>[] = useMemo(
+    () => [
+      {
+        key: "employee_code",
+        header: t("admin.leaveBal.col.employeeCode"),
+        format: (row) => labels.data?.get(row.employeeId)?.code ?? "",
+      },
+      {
+        key: "employee",
+        header: t("admin.leaveBal.col.employee"),
+        format: (row) => labels.data?.get(row.employeeId)?.name ?? "",
+      },
+      {
+        key: "department",
+        header: t("admin.leaveBal.filter.department"),
+        format: (row) => labels.data?.get(row.employeeId)?.department ?? "",
+      },
+      ...typeColumns.flatMap((type) => [
+        {
+          key: `avail:${type.id}`,
+          header: t("admin.leaveBal.col.typeAvailable", { type: type.name }),
+          align: "right" as const,
+          format: (row: PivotedBalance) =>
+            String(row.byTypeId.get(type.id)?.available ?? 0),
+        },
+        {
+          key: `used:${type.id}`,
+          header: t("admin.leaveBal.col.typeUsed", { type: type.name }),
+          align: "right" as const,
+          format: (row: PivotedBalance) => String(row.byTypeId.get(type.id)?.used ?? 0),
+        },
+      ]),
+      /*
+        Two more columns, at the end: the hours behind the suggestion and the
+        suggestion itself. Named with the month they came from, because a column
+        headed "Suggested week-offs" with no period on it is worthless a fortnight
+        later — the same reason `exportReport` insists on printing the filters.
+      */
+      {
+        key: "extra_work_hours",
+        header: t("admin.leaveBal.col.extraWorkIn", { month: period.label }),
+        align: "right" as const,
+        format: (row: PivotedBalance) => {
+          const minutes = extraByEmployee.get(row.employeeId)?.extra;
+          return minutes === undefined ? "" : String(Math.round(minutes / 6) / 10);
+        },
+      },
+      {
+        key: "suggested_weekoffs",
+        header: t("admin.leaveBal.col.suggestedWeekOffs", { month: period.label }),
+        align: "right" as const,
+        format: (row: PivotedBalance) => {
+          const minutes = extraByEmployee.get(row.employeeId)?.extra;
+          return minutes === undefined ? "" : String(suggestWeekOffs(minutes));
+        },
+      },
+    ],
+    [labels.data, typeColumns, period.label, extraByEmployee],
+  );
+
   const columns: DataGridColumn<PivotedBalance>[] = useMemo(
     () => [
       {
@@ -249,6 +349,27 @@ export default function AdminLeaveBalancesPage() {
     [labels.data, typeColumns],
   );
 
+  /*
+    THE SHEET GETS EXACTLY THE ROWS ON SCREEN, department filter included. Offering
+    all 83 when the reader had narrowed to Management would answer a question they
+    did not ask, and "Adjust all" has to mean all of what they are looking at.
+  */
+  const bulkPeople = useMemo(
+    () =>
+      rows.map((row) => {
+        const label = labels.data?.get(row.employeeId);
+        return {
+          employeeId: row.employeeId,
+          employeeCode: label?.code ?? "",
+          employeeName: label?.name ?? "",
+          byTypeId: new Map(
+            [...row.byTypeId].map(([typeId, cell]) => [typeId, cell.available]),
+          ) as ReadonlyMap<string, number>,
+        };
+      }),
+    [rows, labels.data],
+  );
+
   return (
     <div className="container py-6">
       <PageHeader
@@ -263,9 +384,39 @@ export default function AdminLeaveBalancesPage() {
             add leave" was "know the URL". One button, on the page where the
             question is asked.
           */
-          <Button asChild size="sm">
-            <Link to="/admin/leave/adjustments">{t("admin.leaveBal.adjustBalance")}</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <AnalyticsExportButtons
+              title={t("admin.leaveBal.title")}
+              subtitle={
+                departmentName === ALL_DEPARTMENTS
+                  ? t("admin.leaveBal.filter.allDepartments")
+                  : departmentName
+              }
+              filename={`leave-balances-${departmentName === ALL_DEPARTMENTS ? "all" : departmentName}`}
+              columns={exportColumns}
+              rows={rows}
+              filters={defaultFilters()}
+              {...(departmentName === ALL_DEPARTMENTS ? {} : { labels: { department: departmentName } })}
+            />
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              {t("admin.leaveBal.adjustAll")}
+            </Button>
+            <Button asChild size="sm">
+              <Link to="/admin/leave/adjustments">{t("admin.leaveBal.adjustBalance")}</Link>
+            </Button>
+          </div>
+        }
+      />
+
+      <BulkAdjustSheet
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        types={typeColumns}
+        people={bulkPeople}
+        scopeLabel={
+          departmentName === ALL_DEPARTMENTS
+            ? t("admin.leaveBal.filter.allDepartments")
+            : departmentName
         }
       />
 

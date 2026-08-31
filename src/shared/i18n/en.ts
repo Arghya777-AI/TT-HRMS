@@ -1591,6 +1591,8 @@ export const en = catalogue({
     whatever the departments are actually called.
   */
   "admin.roster.group.onRoll": "{n} on roll",
+  // Names the count, so "Others 3" cannot be read as three people from one unnamed department.
+  "admin.roster.breakdown.others": "Others ({n} departments)",
   "admin.roster.group.none": "No department set",
   "admin.roster.col.employee": "Employee",
   "admin.roster.col.state": "Today",

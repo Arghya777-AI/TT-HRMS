@@ -48,25 +48,81 @@ export interface TodayRosterProps {
   onRetry: () => void;
 }
 
-/** The three headline numbers. Unlike the old tiles, these partition the roll. */
-function Blocks({ counts }: { counts: Roster["counts"] }): React.JSX.Element {
+/**
+ * How many departments get named in a block's breakdown before the rest become "Others".
+ *
+ * Four departments have anybody in them today, so the practical effect is Management, Ground
+ * and Restaurant named, with Coorg and the unassigned folded into Others. A cap rather than a
+ * list, because a venue that grows to fifteen departments must not get a fifteen-line stat block.
+ */
+const NAMED_IN_BREAKDOWN = 3;
+
+/** One metric, split across departments. */
+type Metric = "present" | "absent" | "onLeave";
+
+interface BreakdownPart {
+  readonly key: string;
+  readonly name: string;
+  readonly value: number;
+}
+
+/**
+ * The department split for one metric, in the same order the tables below use.
+ *
+ * Zeroes are KEPT for a named department. "Ground 0" is the whole point of a breakdown — a
+ * present count of 60 that silently omitted Ground would read as though Ground were not on the
+ * roll, when what actually happened is that none of them scanned.
+ */
+function breakdownFor(groups: readonly RosterGroup[], metric: Metric): BreakdownPart[] {
+  const named = groups.slice(0, NAMED_IN_BREAKDOWN).map((g) => ({
+    key: g.key,
+    name: g.name,
+    value: g.counts[metric],
+  }));
+  const rest = groups.slice(NAMED_IN_BREAKDOWN);
+  if (rest.length === 0) return named;
+  return [
+    ...named,
+    {
+      key: "__others",
+      name: t("admin.roster.breakdown.others", { n: String(rest.length) }),
+      value: rest.reduce((sum, g) => sum + g.counts[metric], 0),
+    },
+  ];
+}
+
+/**
+ * The three headline numbers, each split by department.
+ *
+ * Unlike the six tiles this replaced, the three partition the roll — so they can be read as a
+ * whole. The split was asked for because a total alone cannot be acted on: "60 present" is a
+ * fact about the venue, "Ground 30" is a fact somebody can do something about. Same grouping
+ * and same order as the tables below, so the eye can move between them.
+ */
+function Blocks({
+  counts,
+  groups,
+}: {
+  counts: Roster["counts"];
+  groups: readonly RosterGroup[];
+}): React.JSX.Element {
   const blocks = [
     {
-      key: "present",
+      key: "present" as const,
       icon: UserCheck,
       label: t("admin.roster.present"),
       value: counts.present,
       tone: "text-success",
     },
     {
-      key: "absent",
+      key: "absent" as const,
       icon: UserX,
       label: t("admin.roster.absent"),
       value: counts.absent,
       tone: counts.absent > 0 ? "text-destructive" : "text-muted-foreground",
     },
     {
-      key: "leave",
+      key: "onLeave" as const,
       icon: CalendarOff,
       label: t("admin.roster.onLeave"),
       value: counts.onLeave,
@@ -88,6 +144,26 @@ function Blocks({ counts }: { counts: Roster["counts"] }): React.JSX.Element {
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {t("admin.roster.ofOnRoll", { total: String(counts.onRoll) })}
           </p>
+
+          {/*
+            The split. A definition list rather than a sentence: these are label/number pairs
+            somebody scans down rather than reads.
+          */}
+          <dl className="mt-3 space-y-1 border-t pt-2">
+            {breakdownFor(groups, b.key).map((part) => (
+              <div key={part.key} className="flex items-baseline justify-between gap-3">
+                <dt className="truncate text-[11px] text-muted-foreground">{part.name}</dt>
+                <dd
+                  className={cn(
+                    "shrink-0 font-mono text-xs font-semibold tabular-nums",
+                    part.value === 0 ? "text-muted-foreground" : b.tone,
+                  )}
+                >
+                  {part.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       ))}
     </div>
@@ -311,7 +387,7 @@ export function TodayRoster({
     >
       {roster === undefined ? null : (
         <div className="space-y-4">
-          <Blocks counts={roster.counts} />
+          <Blocks counts={roster.counts} groups={roster.groups} />
 
           {roster.truncated ? (
             <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">

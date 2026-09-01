@@ -62,6 +62,15 @@ export interface RosterRow {
   readonly onLeave: boolean;
   readonly firstInHm: string | null;
   readonly lastOutHm: string | null;
+  /**
+   * The raw instants, for the live on-site clock.
+   *
+   * The `_hm` strings are pre-rendered IST wall clocks and cannot be subtracted; `elapsedOnSite`
+   * needs real timestamps. Both come from the same view row, so there is no second source of
+   * truth about when somebody arrived.
+   */
+  readonly firstInAt: string | null;
+  readonly lastOutAt: string | null;
   readonly method: CaptureMethod;
   readonly workedMinutes: number;
   readonly expectedMinutes: number;
@@ -321,6 +330,8 @@ export async function fetchTodayRoster(
       onLeave: row.status !== null && LEAVE_STATUSES.has(row.status),
       firstInHm: row.first_in_hm,
       lastOutHm: row.last_out_hm,
+      firstInAt: row.first_in_at,
+      lastOutAt: row.last_out_at,
       method: methodFor(row),
       workedMinutes: row.worked_minutes,
       expectedMinutes: expected,

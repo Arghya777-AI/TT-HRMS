@@ -31,16 +31,17 @@
  * ── EVERY NAME IS A DOOR ─────────────────────────────────────────────────────
  * The employee name links to their full record, so the panel is a way in rather than a dead end.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { formatNumber } from "@/lib/format";
-import { fmtDurationHm, nowEpochMs } from "@/lib/datetime";
+import { fmtDurationHm } from "@/lib/datetime";
 import type { BoardRow } from "../attendanceBoard";
 import { bucketMembers, sortMembers, type BucketMetric } from "../departmentTotals";
 import { elapsedOnSite, formatElapsed } from "../liveWorked";
+import { useTick } from "../hooks/useTick";
 import { useLeaveOnDate } from "../hooks/useLeaveOnDate";
 import type { LeaveOnDate } from "../api/leave-on-date.api";
 
@@ -52,23 +53,6 @@ export interface BucketDrillDownProps {
   /** The date the board is showing, for the leave lookup. */
   readonly istDate: string;
   readonly columnCount: number;
-}
-
-/**
- * One second, and only while something is actually running.
- *
- * A timer that keeps firing after everybody has scanned out would re-render the panel forever for
- * no visible change; `anyRunning` turns it off. `Date` is read here rather than in the pure
- * `elapsedOnSite`, which is what keeps that function testable.
- */
-function useTick(anyRunning: boolean): number {
-  const [nowMs, setNowMs] = useState<number>(nowEpochMs);
-  useEffect(() => {
-    if (!anyRunning) return;
-    const id = window.setInterval(() => setNowMs(nowEpochMs()), 1000);
-    return () => window.clearInterval(id);
-  }, [anyRunning]);
-  return nowMs;
 }
 
 export function BucketDrillDown({

@@ -30,6 +30,8 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarOff, Globe, MapPin, ScanFace, UserCheck, UserX } from "lucide-react";
 import { formatDistance } from "@/lib/venueDistance";
+import { elapsedOnSite, formatElapsed } from "../liveWorked";
+import { useTick } from "../hooks/useTick";
 import { openStreetMapUrl } from "@/lib/punchPlace";
 import { t } from "@/shared/i18n/en";
 import { fmtDurationHm } from "@/lib/datetime";
@@ -285,8 +287,80 @@ function StateCell({ row }: { row: RosterRow }): React.JSX.Element {
   );
 }
 
+/**
+ * Hours worked — and it must never say a person who has been here since 09:20 has done nothing.
+ *
+ * ── THE TWO BUGS THIS FIXES ──────────────────────────────────────────────────
+ * It used to render `row.attended ? worked : "—"`. That hid REAL hours: Deepesh punched in at
+ * 07:59 and out at 09:28, which the engine recorded as 88 minutes worked and — correctly, since
+ * 88 minutes does not earn a day — a status of `absent`. `attended` is false for `absent`, so
+ * the column showed "—" against 1h 28m of actual work.
+ *
+ * And it showed a bare "0h 00m" for the 54 people who had scanned IN and not yet OUT. That is
+ * the engine being right and the screen being useless: `total_worked_minutes` counts COMPLETED
+ * intervals, so it is genuinely 0 until somebody scans out. Rendering that beside "Present"
+ * reads as a whole shift of nothing.
+ *
+ * ── SO: THE ENGINE'S FIGURE WHEN THERE IS ONE, A LIVE CLOCK WHEN THERE IS NOT ─
+ * The two are labelled differently on purpose and are NOT the same measurement. The engine's
+ * number is paid time, with the shift's unpaid break already subtracted. The live clock is
+ * wall-clock time since the first scan with nothing deducted, so it runs ahead by exactly that
+ * break — which is why it is captioned "on site" and never "worked".
+ */
+function WorkedCell({ row, nowMs }: { row: RosterRow; nowMs: number }): React.JSX.Element {
+  const elapsed = elapsedOnSite({
+    firstInAt: row.firstInAt,
+    lastOutAt: row.lastOutAt,
+    nowMs,
+    // This table is today, by construction — `fetchTodayRoster` reads the today board.
+    isLive: true,
+  });
+
+  if (row.workedMinutes > 0) {
+    return (
+      <span className="inline-flex flex-col items-end leading-tight">
+        <span>{fmtDurationHm(row.workedMinutes)}</span>
+        {/* Still here after an out-scan: the engine's figure is settled, the clock is not. */}
+        {elapsed.running ? (
+          <span className="text-[10px] text-muted-foreground">
+            {t("admin.roster.onSite", { value: formatElapsed(elapsed) })}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+
+  if (elapsed.running) {
+    return (
+      <span className="inline-flex flex-col items-end leading-tight">
+        <span className="text-foreground">{formatElapsed(elapsed)}</span>
+        <span className="text-[10px] text-muted-foreground">{t("admin.roster.onSiteTag")}</span>
+      </span>
+    );
+  }
+
+  return <span className="text-muted-foreground">—</span>;
+}
+
+/**
+ * Over or under the shift — but only once the day has an end.
+ *
+ * ── WHY THE `attended` GATE WENT ─────────────────────────────────────────────
+ * It suppressed the figure for anybody the engine had not called present, which included
+ * Deepesh at 88 minutes worked against an 8-hour shift. That is a −6h 32m day and precisely the
+ * row somebody wants to see; hiding it behind a status flag made the shortest day on the
+ * dashboard the one with no number.
+ *
+ * ── WHY AN OPEN DAY STILL SHOWS NOTHING ──────────────────────────────────────
+ * It used to read "−8h 00m" for everybody who had scanned in and not out, because worked was 0
+ * against an expected 480. Somebody who arrived twenty minutes ago has not failed to work eight
+ * hours; the day has not finished asking. A number that is wrong all morning and right at
+ * closing time is worse than a dash, and the live clock in the next column already says what is
+ * happening. So the variance appears once there is an out-scan.
+ */
 function VarianceCell({ row }: { row: RosterRow }): React.JSX.Element {
-  if (row.varianceMinutes === null || !row.attended) {
+  const open = row.firstInAt !== null && row.lastOutAt === null;
+  if (row.varianceMinutes === null || open) {
     return <span className="text-muted-foreground">—</span>;
   }
   const v = row.varianceMinutes;
@@ -334,9 +408,11 @@ function GroupTally({ counts }: { counts: RosterCounts }): React.JSX.Element {
 
 function Group({
   group,
+  nowMs,
   onOpen,
 }: {
   group: RosterGroup;
+  nowMs: number;
   onOpen: (row: RosterRow) => void;
 }): React.JSX.Element | null {
   const rows = group.rows;
@@ -413,7 +489,7 @@ function Group({
                 <td className="px-3 py-2.5"><MethodCell method={row.method} /></td>
                 <td className="px-3 py-2.5"><LocationCell fix={row.fix} /></td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
-                  {row.attended ? fmtDurationHm(row.workedMinutes) : <span className="text-muted-foreground">—</span>}
+                  <WorkedCell row={row} nowMs={nowMs} />
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums"><VarianceCell row={row} /></td>
               </tr>
@@ -432,6 +508,16 @@ export function TodayRoster({
   onRetry,
 }: TodayRosterProps): React.JSX.Element {
   const navigate = useNavigate();
+
+  /*
+    One clock for the whole table, and only while somebody is actually still on site. Ticking
+    after the last person has scanned out would re-render eighty rows every second for no visible
+    change; ticking per row would put eighty intervals on the page.
+  */
+  const anyRunning = (roster?.groups ?? []).some((g) =>
+    g.rows.some((r) => r.firstInAt !== null && r.lastOutAt === null),
+  );
+  const nowMs = useTick(anyRunning);
 
   const open = useMemo(
     () => (row: RosterRow) => {
@@ -473,7 +559,7 @@ export function TodayRoster({
             a new department appears on its own and the seventeen empty ones never render.
           */}
           {roster.groups.map((group) => (
-            <Group key={group.key} group={group} onOpen={open} />
+            <Group key={group.key} group={group} nowMs={nowMs} onOpen={open} />
           ))}
         </div>
       )}

@@ -1601,6 +1601,13 @@ export const en = catalogue({
   "admin.roster.col.method": "Captured via",
   "admin.roster.col.location": "Location",
   /*
+    "On site", never "worked". Wall-clock time since the first scan with nothing deducted, so it
+    runs ahead of the engine's paid figure by exactly the shift's unpaid break. Two different
+    measurements, and one label for both would make the pair look like a contradiction.
+  */
+  "admin.roster.onSite": "{value} on site",
+  "admin.roster.onSiteTag": "on site, still in",
+  /*
     A gate punch gets no distance. The tablet is bolted to a known wall and its own fixes spread
     over ~17 m x 32 m, so a number there would be GPS noise presented as a measurement.
   */

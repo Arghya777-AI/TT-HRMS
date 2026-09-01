@@ -113,6 +113,77 @@ describe("the roster's counts", () => {
   });
 });
 
+describe("hours worked are shown when there are any", () => {
+  const cell = read("src", "features", "admin", "components", "TodayRoster.tsx");
+
+  it("does not hide real hours behind the `attended` flag", () => {
+    /*
+      THE BUG, WITH ITS REAL ROW. Deepesh (117) punched in 07:59 and out 09:28. The engine
+      recorded 88 minutes worked and — correctly, since 88 minutes does not earn a day — a status
+      of `absent`. `attended` is false for `absent`, so `row.attended ? worked : "—"` printed a
+      dash against 1h 28m of actual work, making the shortest day on the dashboard the one with
+      no number on it.
+    */
+    expect(cell).not.toContain("row.attended ? fmtDurationHm(row.workedMinutes)");
+    expect(cell).toContain("if (row.workedMinutes > 0)");
+  });
+
+  it("shows a live clock for somebody still in, instead of 0h 00m", () => {
+    /*
+      `total_worked_minutes` counts COMPLETED intervals, so it is genuinely 0 for the 54 people
+      who had scanned in and not out. Correct, and useless next to the word "Present": it reads
+      as a whole shift of nothing.
+    */
+    expect(cell).toContain("elapsedOnSite({");
+    expect(cell).toContain("if (elapsed.running)");
+  });
+
+  it("never labels the live clock as worked", () => {
+    /*
+      They are different measurements. The engine's figure is paid time with the shift's unpaid
+      break already subtracted; the clock is wall-clock since the first scan. One label for both
+      would make the pair look like a contradiction.
+    */
+    const en = read("src", "shared", "i18n", "en.ts");
+    expect(en).toContain('"admin.roster.onSite": "{value} on site"');
+    expect(en).not.toMatch(/"admin\.roster\.onSite[^"]*":\s*"[^"]*worked/i);
+  });
+
+  it("runs one clock for the table, and only while somebody is in", () => {
+    // Per-row intervals would put eighty timers on the page; an unconditional one would
+    // re-render eighty rows every second all night.
+    expect(cell).toContain("const nowMs = useTick(anyRunning)");
+    expect(cell).toContain("r.firstInAt !== null && r.lastOutAt === null");
+  });
+
+  it("keeps one ticker in the codebase, not two", () => {
+    const drill = read("src", "features", "admin", "components", "BucketDrillDown.tsx");
+    expect(drill).toContain('from "../hooks/useTick"');
+    // The local copy is gone — two answers to "what time is it" on one screen eventually differ.
+    expect(drill).not.toContain("function useTick(");
+  });
+});
+
+describe("over/under waits for the day to end", () => {
+  const cell = read("src", "features", "admin", "components", "TodayRoster.tsx");
+
+  it("shows nothing while somebody is still on site", () => {
+    /*
+      It read "−8h 00m" for everybody who had scanned in and not out, because worked was 0
+      against an expected 480. Somebody who arrived twenty minutes ago has not failed to work
+      eight hours — the day has not finished asking. A figure that is wrong all morning and right
+      at closing time is worse than a dash.
+    */
+    expect(cell).toContain("const open = row.firstInAt !== null && row.lastOutAt === null");
+    expect(cell).toContain("if (row.varianceMinutes === null || open)");
+  });
+
+  it("no longer gates on `attended`, so a short day still gets its figure", () => {
+    // Deepesh: 88 worked against a 480-minute shift is −6h 32m, and that is the row to look at.
+    expect(cell).not.toContain("row.varianceMinutes === null || !row.attended");
+  });
+});
+
 describe("where a punch was taken", () => {
   it("prefers a WEB fix over a gate fix for the same person", () => {
     /*

@@ -125,7 +125,9 @@ describe("hours worked are shown when there are any", () => {
       no number on it.
     */
     expect(cell).not.toContain("row.attended ? fmtDurationHm(row.workedMinutes)");
-    expect(cell).toContain("if (row.workedMinutes > 0)");
+    // The decision moved into `workedDisplay`, which is asserted on its OUTCOMES in
+    // workedDisplay.test.ts rather than on the shape of an `if` here.
+    expect(cell).toContain("workedDisplay({");
   });
 
   it("shows a live clock for somebody still in, instead of 0h 00m", () => {
@@ -134,8 +136,11 @@ describe("hours worked are shown when there are any", () => {
       who had scanned in and not out. Correct, and useless next to the word "Present": it reads
       as a whole shift of nothing.
     */
-    expect(cell).toContain("elapsedOnSite({");
-    expect(cell).toContain("if (elapsed.running)");
+    const decide = read("src", "features", "admin", "workedDisplay.ts");
+    expect(decide).toContain("elapsedOnSite({");
+    expect(decide).toContain("if (elapsed.running) return { kind: \"running\", elapsed }");
+    // And the case that survived the first fix: both scans, nothing credited.
+    expect(decide).toContain("if (elapsed.totalSeconds > 0) return { kind: \"span\", elapsed }");
   });
 
   it("never labels the live clock as worked", () => {

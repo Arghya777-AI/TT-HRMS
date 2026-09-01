@@ -1608,6 +1608,11 @@ export const en = catalogue({
   "admin.roster.onSite": "{value} on site",
   "admin.roster.onSiteTag": "on site, still in",
   /*
+    Both scans exist and the engine credits nothing. The span is real and must be shown; the
+    caption keeps it from being read as paid time, which is what the engine actually withheld.
+  */
+  "admin.roster.spanUncredited": "in to out · not credited",
+  /*
     A gate punch gets no distance. The tablet is bolted to a known wall and its own fixes spread
     over ~17 m x 32 m, so a number there would be GPS noise presented as a measurement.
   */

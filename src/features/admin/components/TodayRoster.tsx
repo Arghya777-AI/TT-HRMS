@@ -30,7 +30,8 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarOff, Globe, MapPin, ScanFace, UserCheck, UserX } from "lucide-react";
 import { formatDistance } from "@/lib/venueDistance";
-import { elapsedOnSite, formatElapsed } from "../liveWorked";
+import { formatElapsed } from "../liveWorked";
+import { workedDisplay } from "../workedDisplay";
 import { useTick } from "../hooks/useTick";
 import { openStreetMapUrl } from "@/lib/punchPlace";
 import { t } from "@/shared/i18n/en";
@@ -308,38 +309,43 @@ function StateCell({ row }: { row: RosterRow }): React.JSX.Element {
  * break — which is why it is captioned "on site" and never "worked".
  */
 function WorkedCell({ row, nowMs }: { row: RosterRow; nowMs: number }): React.JSX.Element {
-  const elapsed = elapsedOnSite({
+  const shown = workedDisplay({
+    workedMinutes: row.workedMinutes,
     firstInAt: row.firstInAt,
     lastOutAt: row.lastOutAt,
     nowMs,
-    // This table is today, by construction — `fetchTodayRoster` reads the today board.
-    isLive: true,
   });
 
-  if (row.workedMinutes > 0) {
-    return (
-      <span className="inline-flex flex-col items-end leading-tight">
-        <span>{fmtDurationHm(row.workedMinutes)}</span>
-        {/* Still here after an out-scan: the engine's figure is settled, the clock is not. */}
-        {elapsed.running ? (
-          <span className="text-[10px] text-muted-foreground">
-            {t("admin.roster.onSite", { value: formatElapsed(elapsed) })}
-          </span>
-        ) : null}
-      </span>
-    );
+  switch (shown.kind) {
+    case "credited":
+      return (
+        <span className="inline-flex flex-col items-end leading-tight">
+          <span>{fmtDurationHm(shown.minutes)}</span>
+          {/* Still here after an out-scan: the engine's figure is settled, the clock is not. */}
+          {shown.alsoOnSite !== null ? (
+            <span className="text-[10px] text-muted-foreground">
+              {t("admin.roster.onSite", { value: formatElapsed(shown.alsoOnSite) })}
+            </span>
+          ) : null}
+        </span>
+      );
+    case "running":
+      return (
+        <span className="inline-flex flex-col items-end leading-tight">
+          <span className="text-foreground">{formatElapsed(shown.elapsed)}</span>
+          <span className="text-[10px] text-muted-foreground">{t("admin.roster.onSiteTag")}</span>
+        </span>
+      );
+    case "span":
+      return (
+        <span className="inline-flex flex-col items-end leading-tight">
+          <span className="text-foreground">{formatElapsed(shown.elapsed)}</span>
+          <span className="text-[10px] text-warning">{t("admin.roster.spanUncredited")}</span>
+        </span>
+      );
+    case "none":
+      return <span className="text-muted-foreground">—</span>;
   }
-
-  if (elapsed.running) {
-    return (
-      <span className="inline-flex flex-col items-end leading-tight">
-        <span className="text-foreground">{formatElapsed(elapsed)}</span>
-        <span className="text-[10px] text-muted-foreground">{t("admin.roster.onSiteTag")}</span>
-      </span>
-    );
-  }
-
-  return <span className="text-muted-foreground">—</span>;
 }
 
 /**

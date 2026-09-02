@@ -76,6 +76,32 @@ describe("who may read it", () => {
   });
 });
 
+describe("the panels are on the screen people actually open", () => {
+  const home = readFileSync(join(process.cwd(), "src/features/home/pages/Home.page.tsx"), "utf8");
+
+  it.each(["WhoIsInPanel", "ColleaguesOnLeavePanel", "UpcomingHolidaysPanel"])(
+    "renders %s on the home page",
+    (panel) => {
+      /*
+        THE MISS THIS PINS. All three were built on `/me/leave/calendar` first, and reported as
+        "still can't see it" — correctly, because that is not the page anybody opens. A feature
+        nobody can find is indistinguishable from one that was never built.
+      */
+      expect(home).toContain(`<${panel} />`);
+    },
+  );
+
+  it("keeps them on the leave calendar too, off the same views", () => {
+    // Two places, one source. A second query would eventually disagree with the first.
+    const cal = readFileSync(
+      join(process.cwd(), "src/features/leave/pages/LeaveCalendar.page.tsx"),
+      "utf8",
+    );
+    expect(cal).toContain("<WhoIsInPanel />");
+    expect(cal).toContain("useLeaveRoster");
+  });
+});
+
 describe("the holiday calendar is resolved, not read off the row", () => {
   it("falls back to resolve_policy when the column is null", () => {
     /*

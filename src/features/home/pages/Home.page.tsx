@@ -54,6 +54,9 @@ import { AttentionCard } from "../components/AttentionCard";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
+import { WhoIsInPanel } from "@/features/leave/components/WhoIsInPanel";
+import { ColleaguesOnLeavePanel } from "@/features/leave/components/ColleaguesOnLeavePanel";
+import { UpcomingHolidaysPanel } from "@/features/leave/components/UpcomingHolidaysPanel";
 import { LeaveBalancesCard } from "../components/BalancesCards";
 import {
   AnnouncementsCard,
@@ -216,6 +219,20 @@ export default function HomePage() {
       <div className="mt-4">
         <MyMonthCalendar />
       </div>
+
+      {/*
+        ── WHO IS IN, AND WHO IS OFF ──────────────────────────────────────────
+        These were built on `/me/leave/calendar` first, which was the wrong place: this is the
+        screen everybody actually opens, and "is she at her desk" gets asked far more often than
+        anybody navigates to a leave calendar to find out. They live in both places now, off the
+        same two views, so neither can drift from the other.
+
+        Below `MyMonthCalendar` on purpose. My own month is why I opened my own home page; my
+        colleagues' whereabouts is the question I have while I am already here.
+      */}
+      <WhoIsInPanel />
+      <ColleaguesOnLeavePanel />
+      <UpcomingHolidaysPanel />
 
       <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
 

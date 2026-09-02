@@ -1317,6 +1317,18 @@ export const en = catalogue({
     Presence, on the employee's own calendar. Worded around the venue rather than "in/out",
     because "out" reads as "left for the day" and this is about where somebody is working.
   */
+  "leave.onLeaveSoon.title": "Colleagues on leave",
+  "leave.onLeaveSoon.subtitle": "Approved leave over the next four weeks. A request still awaiting approval does not appear.",
+  "leave.onLeaveSoon.empty": "Nobody has approved leave in the next four weeks.",
+  "leave.onLeaveSoon.today": "today",
+
+  "leave.holidays.title": "Holidays ahead",
+  "leave.holidays.subtitle": "On your holiday calendar, for the next four months.",
+  "leave.holidays.empty": "No holidays in the next four months.",
+  // Names the missing setting. "No holidays" would be a claim about the venue, not about config.
+  "leave.holidays.noCalendar": "No holiday calendar is set for you yet, so holidays cannot be listed. Ask HR to assign one.",
+  "leave.holidays.optional": "Optional",
+
   "leave.who.title": "Who is in today",
   "leave.who.subtitle": "Based on today's scans. A gate scan means the venue; anything else means they recorded attendance from somewhere else.",
   "leave.who.atVenue": "At the venue",

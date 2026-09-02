@@ -59,6 +59,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { fmtCivilDate, fmtDurationHm, fmtTime, istToday, nowEpochMs } from "@/lib/datetime";
 import { daySessions } from "../lib/sessions";
+
+/**
+ * The shortest off-hours note the server accepts.
+ *
+ * Mirrors `MIN_OFF_HOURS_REASON` in `attendance-self-punch` and `ck_ap__approval_reason` on the
+ * table. Three layers on purpose: the point of the reason is that somebody reads it months
+ * later and can tell what happened, and "wfh" cannot do that.
+ */
+const MIN_OFF_HOURS_REASON = 15;
 import { t } from "@/shared/i18n/en";
 import { newIdempotencyKey } from "@/shared/api/invoke";
 import {
@@ -396,6 +405,8 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
           geo: geoRef.current,
           deviceId: browserDeviceId(),
           clientEventId: eventIdRef.current,
+          // Sent whenever one was typed; the SERVER decides whether it was required.
+          ...(offHoursReason.trim() !== "" ? { offHoursReason: offHoursReason.trim() } : {}),
         });
       } catch {
         // `selfPunch` resolves refusals, so anything thrown here is unexpected —
@@ -596,12 +607,35 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
     setPhase({ name: "idle" });
   }, [stopCamera]);
 
+  /*
+    ── THE OFF-HOURS NOTE ────────────────────────────────────────────────────
+    A web punch outside the shift window needs a reason of at least 15 characters, and waits
+    for an administrator. The box appears BEFORE the camera opens, because discovering the
+    requirement after the engine has loaded and a face has been captured wastes all of it and
+    reports the wrong error.
+
+    `needsOffHoursReason` is the server's answer, not a client calculation — the boundary
+    depends on the resolved rota, the policy override, the night-shift cutover and a tolerance
+    setting, and re-deriving those here is exactly the duplication this codebase keeps removing.
+  */
+  const [offHoursReason, setOffHoursReason] = useState("");
+
   const busy =
     phase.name === "location" ||
     phase.name === "engine" ||
     phase.name === "camera" ||
     phase.name === "capturing" ||
     phase.name === "sending";
+  /*
+    Blocked while an off-hours note is too short — and ONLY when the box is being asked for.
+    An employee punching inside their shift never sees it and must never be stopped by it.
+
+    The server refuses a short note anyway; this only saves them opening the camera, capturing
+    their face, and then being told to go back and type more.
+  */
+  const reasonTooShort =
+    punchState.data?.needsOffHoursReason === true &&
+    offHoursReason.trim().length < MIN_OFF_HOURS_REASON;
   const cameraLive =
     phase.name === "camera" || phase.name === "capturing" || phase.name === "sending";
   const today = istToday();
@@ -625,6 +659,8 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
     A second only matters while a session is OPEN. Ticking after they have gone home would
     re-render this card every second for no visible change.
   */
+
+
   const [nowMs, setNowMs] = useState<number>(nowEpochMs);
   const openNow = (punchState.data?.punchCount ?? 0) % 2 === 1;
   useEffect(() => {
@@ -802,7 +838,7 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             // The label falls back to a neutral "Punch attendance" until the state
             // arrives, and the SERVER decides in-or-out regardless, so there is
             // nothing to wait for.
-            disabled={busy}
+            disabled={busy || reasonTooShort}
             onClick={() => void start()}
           >
             {busy ? (
@@ -842,6 +878,48 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             ) : next !== null ? (
               <p>{next === "out" ? t("me.punch.state.expectOut") : t("me.punch.state.expectIn")}</p>
             ) : null}
+            {/*
+              THE BOX, BEFORE THE CAMERA. Shown only when the server says a punch now would
+              fall outside this employee's shift window. The counter is live rather than a
+              validation message after the fact: the requirement is 15 characters, so the
+              honest thing is to show how far along they are while they type.
+            */}
+            {punchState.data?.needsOffHoursReason === true ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/5 p-2.5">
+                <label
+                  htmlFor="off-hours-reason"
+                  className="block text-xs font-medium text-warning"
+                >
+                  {t("me.punch.offHours.label")}
+                </label>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {t("me.punch.offHours.hint")}
+                </p>
+                <textarea
+                  id="off-hours-reason"
+                  value={offHoursReason}
+                  onChange={(e) => setOffHoursReason(e.target.value)}
+                  rows={2}
+                  maxLength={500}
+                  className="mt-1.5 w-full rounded-md border bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder={t("me.punch.offHours.placeholder")}
+                />
+                <p
+                  className={cn(
+                    "mt-1 text-[11px] tabular-nums",
+                    offHoursReason.trim().length >= MIN_OFF_HOURS_REASON
+                      ? "text-success"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {t("me.punch.offHours.counter", {
+                    n: String(offHoursReason.trim().length),
+                    min: String(MIN_OFF_HOURS_REASON),
+                  })}
+                </p>
+              </div>
+            ) : null}
+
             {/*
               THE STATE, IN ITS OWN WORDS AND FIRST. "You are logged in since 09:28" is what
               somebody opening this card wants to know; the scan count is trivia by comparison

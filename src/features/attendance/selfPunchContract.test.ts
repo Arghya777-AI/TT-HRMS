@@ -181,10 +181,73 @@ describe("attendance-self-punch request contract", () => {
     expect(afterObject(source, "SelfPunchBody")).toMatch(/^\s*\.strict\(\)/);
   });
 
-  it("posts exactly the keys the function accepts, and no others", () => {
+  it("posts only keys the function accepts, and every one it requires", () => {
+    /*
+      Two assertions, not one equality, because the body has OPTIONAL fields now.
+
+      It used to be `toEqual`, which was right while every field was mandatory. `reason` is
+      sent only for a punch outside the shift window, so a plain in-hours punch legitimately
+      omits it — and the equality then failed on a correct request. What actually matters is
+      unchanged: `.strict()` rejects a key the function does not know, and a missing REQUIRED
+      key is a 422 the employee cannot fix.
+    */
     const accepted = schemaKeys(source, "SelfPunchBody");
+    const optional = accepted.filter((k) => afterField(source, "SelfPunchBody", k).includes(".optional()"));
+    const required = accepted.filter((k) => !optional.includes(k));
     const posted = Object.keys(buildSelfPunchBody(REQUEST, "first")).sort();
-    expect(posted).toEqual(accepted);
+
+    // Nothing the function would reject.
+    for (const key of posted) expect(accepted).toContain(key);
+    // Everything it insists on.
+    for (const key of required) expect(posted).toContain(key);
+  });
+
+  it("posts the off-hours reason when there is one, and omits it otherwise", () => {
+    /*
+      Omitted rather than sent empty: the schema is `.strict()` and an empty string would be a
+      value the server then has to decide is not a reason.
+    */
+    expect(Object.keys(buildSelfPunchBody(REQUEST, "first"))).not.toContain("reason");
+    const withReason = buildSelfPunchBody(
+      { ...REQUEST, offHoursReason: "Stayed for the evening banquet setup" },
+      "first",
+    );
+    expect(withReason["reason"]).toBe("Stayed for the evening banquet setup");
+    // Whitespace is not a reason.
+    expect(Object.keys(buildSelfPunchBody({ ...REQUEST, offHoursReason: "   " }, "first")))
+      .not.toContain("reason");
+  });
+
+  it("requires a 15-character reason outside the shift, in all three layers", () => {
+    /*
+      The endpoint, the table constraint and the client each enforce it. Three layers because
+      the point of a reason is that somebody reads it months later and can tell what happened,
+      and "wfh" cannot do that.
+    */
+    expect(source).toContain("const MIN_OFF_HOURS_REASON = 15;");
+    expect(source).toContain("SELF_PUNCH_OFF_HOURS_REASON_REQUIRED");
+    // Decided by the SAME resolver the engine uses for lateness.
+    expect(source).toContain("public.punch_within_shift(");
+    /*
+      And checked before the idempotency key is CLAIMED, so a punch refused for a missing
+      reason does not consume the key and does not process a face.
+
+      Anchored on `await claim(` — the claim itself. An earlier version of this assertion used
+      `requireIdempotencyKey`, which merely READS the header much earlier in the handler, so it
+      reported a violation against correct code.
+    */
+    expect(source.indexOf("public.punch_within_shift("))
+      .toBeLessThan(source.indexOf("await claim("));
+  });
+
+  it("leaves the GATE alone", () => {
+    // A guard and a fixed camera at a known gate already establish the what, where and when.
+    const kiosk = readFileSync(
+      join(process.cwd(), "supabase/functions/kiosk-punch/index.ts"),
+      "utf8",
+    );
+    expect(kiosk).not.toContain("punch_within_shift");
+    expect(kiosk).not.toContain("requires_approval");
   });
 
   it("makes the location MANDATORY, and the kiosk exempt", () => {

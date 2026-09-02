@@ -245,6 +245,18 @@ export const keysMeEdit = {
     1 recorded today" — a fact about scans, not about work. These two lead now; the scan count
     stays underneath as detail.
   */
+  /*
+    ── THE OFF-HOURS NOTE ────────────────────────────────────────────────────
+    Shown only when a punch now would fall outside the employee's shift window. Worded to say
+    what happens next — the hours DO count immediately — because a box that only says "reason
+    required" reads as a refusal and people abandon it.
+  */
+  "me.punch.offHours.label": "This is outside your shift hours",
+  "me.punch.offHours.hint":
+    "Say briefly why, in at least 15 characters. Your hours are recorded straight away; an administrator is asked to approve them, and they count towards your month once approved.",
+  "me.punch.offHours.placeholder": "e.g. Stayed for the evening banquet setup",
+  "me.punch.offHours.counter": "{n} of {min} characters",
+
   "me.punch.state.loggedIn": "You are logged in — since {time}.",
   "me.punch.state.loggedOut": "You are logged out — last out at {time}.",
   /*

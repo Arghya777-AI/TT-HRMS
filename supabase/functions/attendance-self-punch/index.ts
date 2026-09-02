@@ -397,6 +397,14 @@ const ProbeMetrics = z
  */
 const MAX_ACCURACY_M = 2_000;
 
+/**
+ * The shortest reason the venue accepts for an off-hours punch.
+ *
+ * Also enforced by `ck_ap__approval_reason` on the table, so no other write path can create an
+ * unexplained one, and by the client so the box says so before anybody submits.
+ */
+const MIN_OFF_HOURS_REASON = 15;
+
 const Geo = z
   .object({
     latitude: z.number().min(-90).max(90),
@@ -424,6 +432,15 @@ const SelfPunchBody = z
       fixed camera at a known gate already establish the place.
     */
     geo: Geo,
+    /**
+     * Why this punch is being taken outside the shift window.
+     *
+     * REQUIRED when it is, and ignored when it is not. 15 characters is the venue's floor and
+     * is enforced here, in `ck_ap__approval_reason`, and in the client — three layers, because
+     * the point of the reason is that somebody reads it months later and can tell what
+     * happened. "wfh" cannot do that.
+     */
+    reason: z.string().trim().max(500).optional(),
     /** Stable per-browser id the app generates; provenance, not an identifier. */
     deviceId: z.string().trim().min(8).max(128).optional(),
     /** Minted when the button was pressed; the permanent per-punch dedup key. */
@@ -467,6 +484,12 @@ interface SelfPunchResult {
   message: string;
   punchId: string;
   needsReview: boolean;
+  /**
+   * True when this punch was outside the shift window, so it carries a reason and waits for an
+   * administrator. The hours show on the day regardless; they stay out of the monthly total
+   * until somebody accepts the reason.
+   */
+  requiresApproval: boolean;
   /** NULL only when a hard lock deferred the recompute. */
   day: DaySnapshot | null;
 }
@@ -1143,6 +1166,16 @@ interface WriteInput {
   needsReview: boolean;
   reviewNotes: string[];
   actorProfileId: string;
+  /**
+   * True when this punch fell outside the shift window and so waits for an administrator.
+   *
+   * Decided by the handler, not here: `punch_within_shift` has to be asked BEFORE the
+   * idempotency claim and before any biometric work, so a punch that is going to be refused
+   * for a missing reason does not burn a key or process somebody's face.
+   */
+  requiresApproval: boolean;
+  /** The off-hours note. Empty string when none was given and none was needed. */
+  offHoursReason: string;
   log: Logger;
 }
 
@@ -1187,6 +1220,8 @@ async function writePunch(input: WriteInput): Promise<WriteOutcome> {
     geofence,
     reviewNotes,
     actorProfileId,
+    requiresApproval,
+    offHoursReason,
     log,
   } = input;
 
@@ -1266,7 +1301,8 @@ async function writePunch(input: WriteInput): Promise<WriteOutcome> {
         lat, lng, location_accuracy_m, geofence_ok,
         ip, user_agent, device_id,
         needs_review, is_voided, voided_by, voided_at, void_reason,
-        duplicate_of_punch_id, recorded_by, request_id, idempotency_key
+        duplicate_of_punch_id, recorded_by, request_id, idempotency_key,
+        requires_approval, reason
       ) VALUES (
         ${punchId}::uuid,
         ${subject.employeeId}::uuid,
@@ -1291,7 +1327,9 @@ async function writePunch(input: WriteInput): Promise<WriteOutcome> {
         ${duplicateOf?.id ?? null}::uuid,
         ${actorProfileId}::uuid,
         ${ctx.requestId}::uuid,
-        ${body.clientEventId}::text
+        ${body.clientEventId}::text,
+        ${requiresApproval}::boolean,
+        ${requiresApproval ? offHoursReason : (offHoursReason === "" ? null : offHoursReason)}::text
       )
       RETURNING id, punched_at, effective_date::text AS effective_date
     `;
@@ -1443,6 +1481,7 @@ interface ReplayRow extends DayRow {
   geofence_ok: boolean | null;
   match_confidence: string | null;
   needs_review: boolean;
+  requires_approval: boolean;
   prior: number;
 }
 
@@ -1465,6 +1504,7 @@ async function replayedResult(
            p.geofence_ok                          AS geofence_ok,
            p.match_confidence                     AS match_confidence,
            p.needs_review                         AS needs_review,
+           p.requires_approval                    AS requires_approval,
            (SELECT count(*)::integer
               FROM public.attendance_punches q
              WHERE q.employee_id = p.employee_id
@@ -1508,6 +1548,13 @@ async function replayedResult(
     }),
     punchId: row.punch_id,
     needsReview: row.needs_review === true,
+    /*
+      Read off the ORIGINAL punch, not recomputed. A replay answers "what happened when this
+      was first stored", and asking `punch_within_shift` again could give a different answer —
+      the retry may arrive after the shift window has closed, which would report a punch as
+      needing approval when the stored row says it never did.
+    */
+    requiresApproval: row.requires_approval === true,
     day: toDaySnapshot(row),
   };
 }
@@ -1619,6 +1666,58 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Entitlement and employment BEFORE anything biometric: a person who may not
     // self-punch should not have their face processed to be told so.
     const subject = await loadSubject(client, auth);
+
+    /*
+      ── OUTSIDE THE SHIFT? THEN SAY WHY ─────────────────────────────────────────
+      Asked for by the venue: a web or phone punch taken outside somebody's working hours
+      carries a reason and waits for an administrator. Inside them nothing is asked, however
+      many times they punch — the 9-to-1-then-7-to-9 day this exists for is unusual because of
+      the HOURS, not the number of scans.
+
+      `punch_within_shift` is the same resolver the engine uses for lateness, so the endpoint
+      and the engine cannot disagree about whether 19:00 was inside a day. The tolerance is its
+      OWN setting and not the policy grace: `grace_out_minutes` is 10 on the Operations policy,
+      which would interrogate every 17:41 departure, and widening THAT would quietly forgive
+      real lateness because it is what late_minutes is measured against.
+
+      Checked BEFORE the idempotency claim and before any biometric work, so a punch that is
+      going to be refused for a missing reason does not burn a key or process a face.
+
+      The GATE is not affected. This is `attendance-self-punch`; `kiosk-punch` is a different
+      function and asks nobody anything.
+    */
+    const tolRows = await client<{ minutes: string | null }[]>`
+      SELECT app.setting('attendance.off_hours_reason_tolerance_minutes') AS minutes`;
+    const rawTolerance = firstRow(tolRows)?.minutes;
+    const toleranceMinutes = (() => {
+      const n = Number(String(rawTolerance ?? "").replace(/"/g, "").trim());
+      // Absent or unreadable falls back to the seeded 60 rather than to 0: a bad setting value
+      // must not start demanding reasons from everybody who leaves a minute late.
+      return Number.isFinite(n) && n >= 0 ? n : 60;
+    })();
+
+    const withinRows = await client<{ within: boolean | null }[]>`
+      SELECT public.punch_within_shift(
+               ${subject.employeeId}::uuid, now(), ${toleranceMinutes}::integer) AS within`;
+    // NULL cannot happen — the function returns true for a missing shift — but a null here
+    // must read as "inside", never as "justify yourself".
+    const withinShift = firstRow(withinRows)?.within !== false;
+
+    const offHoursReason = (body.reason ?? "").trim();
+    if (!withinShift && offHoursReason.length < MIN_OFF_HOURS_REASON) {
+      throw unprocessable(
+        [{
+          pointer: "/reason",
+          code: "too_short",
+          detail: `${offHoursReason.length} characters given, ${MIN_OFF_HOURS_REASON} needed.`,
+        }],
+        `This punch is outside your shift hours, so it needs a short note saying why — at least ${MIN_OFF_HOURS_REASON} characters. It will be recorded now and your hours will show straight away, with an administrator asked to approve them.`,
+        "SELF_PUNCH_OFF_HOURS_REASON_REQUIRED",
+      );
+    }
+    // Only an off-hours punch is held for approval. A reason typed on an in-hours punch is
+    // kept as a note and changes nothing, because there is nothing to approve.
+    const requiresApproval = !withinShift;
 
     // ── STEP 8 · Idempotency claim ────────────────────────────────────────────
     // After the cheap refusals (so an HR-configuration answer does not burn a
@@ -1870,9 +1969,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
         modelVersion: template.model_version,
         source,
         geofence,
-        needsReview: reviewNotes.length > 0,
+        /*
+          An off-hours punch is flagged for review as well as held for approval. The two are
+          different facts — review is "a human should look at this", approval is "these hours do
+          not count yet" — and the exception queue is where somebody looks.
+        */
+        needsReview: reviewNotes.length > 0 || requiresApproval,
         reviewNotes,
         actorProfileId: auth.userId,
+        requiresApproval,
+        offHoursReason,
         log: actorLog,
       });
     } catch (err) {
@@ -1927,6 +2033,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }),
       punchId: outcome.punchId,
       needsReview: outcome.needsReview,
+      /*
+        So the card can say what actually happened rather than a flat "recorded". The hours
+        show immediately either way; this is what turns the confirmation into "and an
+        administrator has been asked to approve them", and what puts the star on the day.
+      */
+      requiresApproval,
       day: outcome.day,
     };
 
@@ -1936,6 +2048,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       source,
       effective_date: outcome.effectiveDate,
       needs_review: outcome.needsReview,
+      requires_approval: requiresApproval,
+      within_shift: withinShift,
       debounced: outcome.debouncedOf !== null,
       geofence_ok: geofence.geofenceOk,
       geofence_distance_m: geofence.distanceM === null ? null : Math.round(geofence.distanceM),

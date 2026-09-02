@@ -53,7 +53,7 @@
 import { z } from "zod";
 import { invokeEdgeFn, TTApiError } from "@/shared/api/invoke";
 import { dbDate, dbUuid, rpcOne, selectOne } from "@/shared/api/query";
-import { addIstDays, istToday } from "@/lib/datetime";
+import { addIstDays, istToday, nowInstantIso } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { toPunchGeo, type SignInGeo } from "@/features/auth/lib/geolocation";
 import {
@@ -133,6 +133,19 @@ export interface SelfPunchState {
    * list is already in hand a few lines below — it was simply being thrown away.
    */
   punchInstants: readonly string[];
+  /**
+   * Would a punch made RIGHT NOW be outside the shift window, and so need a reason?
+   *
+   * Asked of `punch_within_shift`, the same function the endpoint calls, rather than derived
+   * here. The card only needs it to decide whether to show the box before capturing — the
+   * server still refuses a punch that actually needed one, so a stale answer costs a retry and
+   * never a wrong record.
+   *
+   * `false` when the check could not be made, so the box stays hidden: prompting somebody for
+   * a justification because a lookup failed is worse than the server asking for it a moment
+   * later, with the reason it was needed.
+   */
+  needsOffHoursReason: boolean;
   /** What the next scan will be recorded as, by parity — see `nextDirectionAfter`. */
   next: NextDirection;
 }
@@ -205,6 +218,32 @@ export function nextDirectionAfter(countedOnBusinessDate: number): NextDirection
  *      first scan into a second. The timeline strikes them through for the same
  *      reason.
  */
+/**
+ * Would a punch now fall outside the shift window?
+ *
+ * The tolerance comes from `attendance.off_hours_reason_tolerance_minutes` server-side, so the
+ * card cannot disagree with the endpoint about where the boundary is. A failure resolves to
+ * "no reason needed" — see the field's own note.
+ */
+async function needsOffHoursReason(
+  employeeId: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  try {
+    const within = await rpcOne(
+      "punch_within_shift",
+      { p_employee_id: employeeId, p_at: nowInstantIso(), p_tolerance_minutes: null },
+      z.boolean().nullable(),
+      { ...(signal ? { signal } : {}) },
+    );
+    // NULL cannot happen — the function returns true for a missing shift — and if it somehow
+    // does, it must read as "inside".
+    return within === false;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchSelfPunchState(
   employeeId: string,
   signal?: AbortSignal,
@@ -229,6 +268,7 @@ export async function fetchSelfPunchState(
       lastPunchAt: null,
       firstPunchAt: null,
       punchInstants: [],
+      needsOffHoursReason: await needsOffHoursReason(employeeId, signal),
       next: nextDirectionAfter(0),
     };
   }
@@ -257,6 +297,7 @@ export async function fetchSelfPunchState(
     punchInstants: counted
       .map((punch) => punch.punched_at)
       .filter((at): at is string => at !== null),
+    needsOffHoursReason: await needsOffHoursReason(employeeId, signal),
     next: nextDirectionAfter(counted.length),
   };
 }
@@ -309,6 +350,15 @@ export interface SelfPunchRequest {
   readonly metrics: SelfPunchMetrics;
   /** `null` when the employee refused, or the browser could not answer. */
   readonly geo: SignInGeo | null;
+  /**
+   * Why this punch is outside the shift window.
+   *
+   * Sent whenever the employee typed one. The SERVER decides whether it was needed —
+   * `punch_within_shift` resolves the rota, the policy override and the night-shift cutover, and
+   * re-deriving that here would be a second implementation of a resolved policy. So the card
+   * asks when it believes one is required and the server refuses if it actually was.
+   */
+  readonly offHoursReason?: string;
   /** Opaque per-browser label; `null` when localStorage is unavailable. */
   readonly deviceId: string | null;
   /**
@@ -341,6 +391,8 @@ const selfPunchResultSchema = z.object({
   istTime: z.string().nullable().optional(),
   employeeName: z.string().nullable().optional(),
   geofenceOk: z.boolean().nullable().optional(),
+  /** True when the punch is held for an administrator — the hours show, starred, until then. */
+  requiresApproval: z.boolean().optional(),
   matchConfidence: z.number().nullable().optional(),
   message: z.string().nullable().optional(),
   /**
@@ -540,6 +592,11 @@ export function buildSelfPunchBody(
     metrics: request.metrics,
     ...(geo !== null ? { geo: toWireGeo(geo) } : {}),
     ...(request.deviceId !== null ? { deviceId: request.deviceId } : {}),
+    // Omitted entirely when empty: the body schema is `.strict()` and an empty string would be
+    // a value the server then has to decide is not a reason.
+    ...((request.offHoursReason ?? "").trim() !== ""
+      ? { reason: (request.offHoursReason ?? "").trim() }
+      : {}),
     clientEventId: request.clientEventId,
   };
 }

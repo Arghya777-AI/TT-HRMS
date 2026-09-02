@@ -1307,8 +1307,23 @@ export const en = catalogue({
     "Approved and pending leave, your weekly offs and company holidays all appear here. Apply for leave to fill it in.",
   "leave.cal.offsPartial":
     "Weekly offs are shown for dates the attendance engine has already computed. Future offs appear as the roster is published.",
-  "leave.cal.density.unavailable":
-    "Team overlap counts are not switched on yet — no server view publishes them, and this screen will not guess.",
+  /*
+    The company-wide roster on the employee's own calendar. The leave TYPE is named here, which
+    means Sick Leave and Maternity Leave are visible to every colleague — the venue's decision,
+    taken knowingly. The subtitle says approved-only so nobody reads a missing name as "they
+    have not applied".
+  */
+  "leave.cal.who.title": "Who else is off",
+  "leave.cal.who.subtitle": "Approved leave across the venue this month. A request still awaiting approval does not appear here.",
+  "leave.cal.who.empty": "Nobody has approved leave this month.",
+  "leave.cal.who.today": "today",
+
+  /*
+    Was: "team overlap is not available". True while the page could only read my own rows, and
+    replaced by `leave.cal.who.*` now that `v_leave_roster` answers the question. Deleted rather
+    than left behind — an unused string is a sentence somebody eventually puts back on screen
+    beside the feature that superseded it.
+  */
 
   // E-05.7 Detail
   "leave.detail.subtitle": "Every date, every decision, and what it did to your balance.",

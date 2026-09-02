@@ -112,6 +112,8 @@ export const qk = {
     openRequests: (employeeId: string) => ["leave", "requests", employeeId, "open"] as const,
     request: (requestId: string) => ["leave", "request", requestId] as const,
     calendar: (month: string) => ["leave", "calendar", month] as const,
+    /** Everyone's approved leave in a window — the company-wide roster, not scoped to me. */
+    roster: (from: string, to: string) => ["leave", "roster", from, to] as const,
     /** My own leave days over an explicit window. */
     myCalendar: (employeeId: string, from: string, to: string) =>
       ["leave", "calendar", employeeId, from, to] as const,

@@ -768,3 +768,47 @@ export async function fetchCountableDates(
     signal ? { signal } : {},
   );
 }
+
+// -----------------------------------------------------------------------------
+// Who else is on leave — the company-wide roster
+// -----------------------------------------------------------------------------
+
+/**
+ * `v_leave_roster` — approved leave for everyone, readable by any signed-in employee.
+ *
+ * A DIFFERENT VIEW FROM `v_leave_calendar` ON PURPOSE. That one is `security_invoker`, so it
+ * returns only the rows RLS allows — your own, plus your reports if you manage anybody — and it
+ * carries the whole request. This one runs as its owner and exposes name, department, leave type
+ * and portion, and nothing else: never the reason, the address, the contact number, the handover
+ * notes or the supporting document that sit on `leave_requests`.
+ *
+ * Approved only. A pending request is not a fact, and rendering "Ravi is on leave" for a day
+ * nobody has granted would be wrong on a screen people plan around.
+ */
+export const leaveRosterRowSchema = z.object({
+  leave_request_day_id: z.string().uuid(),
+  employee_id: z.string().uuid(),
+  employee_code: z.string().nullable(),
+  display_name: z.string().nullable(),
+  department_name: z.string().nullable(),
+  leave_date: z.string(),
+  portion: z.string(),
+  leave_type_code: z.string(),
+  leave_type_name: z.string(),
+  colour_hex: z.string().nullable(),
+});
+export type LeaveRosterRow = z.infer<typeof leaveRosterRowSchema>;
+
+export function fetchLeaveRoster(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<LeaveRosterRow[]> {
+  return selectMany("v_leave_roster", leaveRosterRowSchema, {
+    filters: [gte("leave_date", from), lte("leave_date", to)],
+    order: [{ column: "leave_date", ascending: true }],
+    // A month across the whole venue. Bounded so a wide range cannot pull the table.
+    limit: 1000,
+    ...(signal ? { signal } : {}),
+  });
+}

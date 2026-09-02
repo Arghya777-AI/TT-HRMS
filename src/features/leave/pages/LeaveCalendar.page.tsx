@@ -25,6 +25,8 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
+import { isHalfDay, portionText } from "../leavePortion";
+import type { LeaveRosterRow } from "../api/leave-apply.api";
 import {
   addIstMonths,
   fmtCivilDayMonthWeekday,
@@ -40,7 +42,8 @@ import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
 import { useAttendanceDays } from "@/features/attendance/hooks/useAttendance";
 import { useMyLeaveCalendar } from "../hooks/useLeave";
-import { useHolidaysInWindow, useMyLeaveContext } from "../hooks/useLeaveApply";
+import {
+  useLeaveRoster, useHolidaysInWindow, useMyLeaveContext } from "../hooks/useLeaveApply";
 import type { CalendarHoliday } from "../api/leave-apply.api";
 import type { LeaveCalendarDay } from "../api/leave.api";
 
@@ -65,6 +68,26 @@ export default function LeaveCalendarPage() {
   const leave = useMyLeaveCalendar(range);
   const holidays = useHolidaysInWindow(context.data?.holiday_calendar_id ?? null, range.from, range.to);
   const days = useAttendanceDays(range);
+  /*
+    Everyone's approved leave, not just mine. Reads `v_leave_roster` — see its own comment for
+    what it deliberately does not expose. The venue chose to show colleagues the leave TYPE, with
+    the health disclosure that carries, and this is that decision.
+  */
+  const roster = useLeaveRoster(range.from, range.to);
+
+  /*
+    Grouped by date, in a Map so the month's own order survives — the query already returns
+    `leave_date` ascending, and an object would re-order the keys as numeric-looking strings.
+  */
+  const byDate = useMemo(() => {
+    const out = new Map<string, LeaveRosterRow[]>();
+    for (const row of roster.data ?? []) {
+      const bucket = out.get(row.leave_date);
+      if (bucket === undefined) out.set(row.leave_date, [row]);
+      else bucket.push(row);
+    }
+    return out;
+  }, [roster.data]);
 
   function goMonth(delta: number) {
     const next = new URLSearchParams(params);
@@ -244,8 +267,66 @@ export default function LeaveCalendarPage() {
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">{t("leave.cal.offsPartial")}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("leave.cal.density.unavailable")}</p>
       </StateBoundary>
+
+      {/*
+        ── WHO ELSE IS OFF ────────────────────────────────────────────────────
+        This replaced a note saying team overlap was unavailable. It was accurate: the page could
+        only ever read my own rows, because `leave_requests` is scoped to
+        `app.visible_employee_ids()`. `v_leave_roster` is a separate, deliberately narrow view
+        that answers the question without opening the request itself.
+
+        Its own boundary, so a failure here leaves MY calendar above it standing — my leave is
+        the reason I opened this page, and it must not disappear because a company-wide read
+        failed.
+      */}
+      <section className="mt-6">
+        <h2 className="font-display text-lg font-semibold">{t("leave.cal.who.title")}</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">{t("leave.cal.who.subtitle")}</p>
+
+        <StateBoundary
+          loading={roster.isLoading}
+          error={roster.error ?? undefined}
+          onRetry={() => void roster.refetch()}
+          skeletonRows={3}
+        >
+          {byDate.size === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">{t("leave.cal.who.empty")}</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {[...byDate.entries()].map(([date, rows]) => (
+                <li key={date} className="rounded-lg border bg-card px-3 py-2">
+                  <p className="text-xs font-medium">
+                    {fmtCivilDayMonthWeekday(date)}
+                    {date === today ? ` · ${t("leave.cal.who.today")}` : ""}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {rows.map((row) => (
+                      <span
+                        key={row.leave_request_day_id}
+                        className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+                      >
+                        <span
+                          aria-hidden
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
+                        />
+                        <span className="font-medium">{row.display_name}</span>
+                        <span className="text-muted-foreground">{row.leave_type_name}</span>
+                        {isHalfDay(row.portion) ? (
+                          <span className="rounded bg-warning/15 px-1 text-[10px] font-medium text-warning">
+                            {portionText(row.portion)}
+                          </span>
+                        ) : null}
+                      </span>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </StateBoundary>
+      </section>
     </div>
   );
 }

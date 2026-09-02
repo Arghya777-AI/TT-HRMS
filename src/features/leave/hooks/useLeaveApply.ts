@@ -13,6 +13,8 @@ import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import {
+  fetchLeaveRoster,
+  type LeaveRosterRow,
   fetchApprovalTrail,
   fetchHolidaysInWindow,
   fetchLeaveAllocation,
@@ -101,6 +103,25 @@ export function useHolidaysInWindow(
     queryFn: ({ signal }) => fetchHolidaysInWindow({ holidayCalendarId: calendarId, from, to }, signal),
     enabled: calendarId.length > 0,
     staleTime: 60 * 60 * 1000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Who else is on approved leave in this window — the whole venue, not just my reports.
+ *
+ * Reads `v_leave_roster`, which is deliberately narrow (name, department, leave type, portion)
+ * and runs as its owner so it is not limited to the rows RLS would return for me. See the view's
+ * own comment for what it does NOT expose.
+ *
+ * A month of company-wide leave changes when somebody's request is approved, not by the second,
+ * so it is cached for five minutes rather than refetched on every focus.
+ */
+export function useLeaveRoster(from: string, to: string): UseQueryResult<LeaveRosterRow[], Error> {
+  return useQuery({
+    queryKey: qk.leave.roster(from, to),
+    queryFn: ({ signal }) => fetchLeaveRoster(from, to, signal),
+    staleTime: 5 * 60 * 1000,
     retry: shouldRetryQuery,
   });
 }

@@ -13,7 +13,14 @@
  * (13:00−09:00) + (21:00−19:00) is also 360. So this is not a second opinion about paid time,
  * it is the same arithmetic arranged so a person can see where the hours went.
  *
- * The one case where they differ is an ODD count — somebody who forgot to punch out. The engine
+ * They can also differ by under the policy's `min_break_minutes_to_count` (15 minutes). The
+ * engine does not deduct a gap shorter than that, so a sub-15-minute gap between two work
+ * periods is paid; this function subtracts it. In practice that gap is somebody walking back
+ * through the gate twice, and the difference is single-digit minutes on a day with rapid
+ * re-taps. On a real fragmented day — the 09:00/13:00/19:00/21:00 shape this exists for — the
+ * two agree exactly, which is what the test asserts.
+ *
+ * The other case where they differ is an ODD count — somebody who forgot to punch out. The engine
  * has no interior gap to deduct and falls back to the shift's unpaid break; this function shows
  * the open session ticking and says so. Neither is wrong: the engine is computing a settled day,
  * the card is describing an unfinished one.

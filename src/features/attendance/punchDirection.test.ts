@@ -13,18 +13,36 @@
  *      LATEST punch in a two-day window. Just after midnight that is last night's
  *      punch, so the card adopted yesterday as the day in progress.
  *
- *   2. THE DIRECTION WAS PARITY. `count % 2 === 0 ? "in" : "out"` alternates, so a
- *      third scan in one day offered "Punch in" again — a day with three scans has
- *      one arrival, not two, and the attendance engine reads it that way (§3.1:
- *      first scan is the arrival, last is the departure).
+ *   2. THE DIRECTION WAS PARITY, AND WAS CHANGED AWAY FROM IT — THEN BACK.
+ *      `count % 2` was replaced by "first scan in, every later scan out", on the
+ *      grounds that a day with three scans has one arrival, not two.
+ *
+ *      THE VENUE HAS SINCE REVERSED THAT, and parity is correct again, because the
+ *      premise changed: a day here can be 09:00-13:00 and then 19:00-21:00, and the
+ *      third scan of such a day genuinely IS a second arrival. The old rule's
+ *      failure was visible on the card — somebody back for an evening shift, having
+ *      punched out at lunch, was offered "Punch out" of a day they had left.
+ *
+ *      The engine agrees: it deducts the INTERIOR gap between the second and third
+ *      scans as a break, so 09:00/13:00/19:00/21:00 is six hours whether you take
+ *      span-minus-break or pair the punches up. Parity is not a second opinion
+ *      about paid time; it is the same day, described so a person recognises it.
+ *
+ *      What has NOT changed is the stored column. Every punch is written
+ *      `direction = 'undetermined'` and the server decides the response's direction
+ *      itself, so this rule feeds the button's words and nothing else. Writing real
+ *      labels into that column is the change that would be dangerous: the engine
+ *      matches `undetermined` gaps specifically, so labelled punches would stop the
+ *      interior gap counting as a break and turn that six-hour day into twelve.
  *
  * WHAT IT GUARDS
  * --------------
- *   · `nextDirectionAfter` — the rule itself, including the counts where parity and
- *     the rule DISAGREE. Those cases are the whole point: at 0 and 1 the two agree,
- *     so a test that only checked those would have passed against the bug.
- *   · That the parity idiom has not returned to the source. Cheap, and it is the
- *     specific line that was wrong.
+ *   · `nextDirectionAfter` — the rule itself, at the counts that matter. 0 and 1
+ *     cannot distinguish the two rules, so the assertions below go past them.
+ *   · That the OTHER half of the original report has not regressed: the business
+ *     date still comes from the server, not from a punch row. That fix stands
+ *     regardless of which direction rule is in force, and it is what made the card
+ *     say "5 recorded against 28-Jul" at 00:37 on an empty day.
  *   · That the business date is asked of the server rather than derived from a
  *     punch row — the fix for (1) is a call to `my_punch_business_date`, and
  *     re-deriving it client-side is how this regresses.
@@ -56,46 +74,41 @@ function code(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-/** What the old implementation would have said, for the disagreement cases. */
-function parity(count: number): NextDirection {
-  return count % 2 === 0 ? "in" : "out";
+/** The superseded rule, kept so the assertions can name what changed. */
+function firstInEverythingElseOut(count: number): NextDirection {
+  return count === 0 ? "in" : "out";
 }
 
-describe("nextDirectionAfter — first scan in, every later scan out", () => {
+describe("nextDirectionAfter — parity, so a fragmented day reads correctly", () => {
   it("offers an arrival when the day in progress has nothing on it", () => {
     expect(nextDirectionAfter(0)).toBe("in");
   });
 
-  it("offers a departure once anything is recorded", () => {
-    for (const count of [1, 2, 3, 4, 5, 9, 40]) {
+  it("offers a departure while they are on the clock", () => {
+    for (const count of [1, 3, 5, 9, 41]) {
       expect(nextDirectionAfter(count)).toBe("out");
     }
   });
 
-  it("never offers a second arrival on the same day", () => {
-    const arrivals = Array.from({ length: 30 }, (_, i) => nextDirectionAfter(i)).filter(
-      (d) => d === "in",
-    );
-    expect(arrivals).toHaveLength(1);
+  it("offers a SECOND arrival after they have punched out", () => {
+    /*
+      THE VENUE'S OWN SCENARIO. Two punches recorded (in at 09:00, out at 13:00) and they come
+      back at 19:00. The superseded rule said "out" — of a day they had already left.
+    */
+    expect(nextDirectionAfter(2)).toBe("in");
+    expect(firstInEverythingElseOut(2)).toBe("out");
+    for (const count of [4, 6, 8]) {
+      expect(nextDirectionAfter(count)).toBe("in");
+    }
   });
 
-  it("disagrees with parity exactly where parity was wrong", () => {
-    // 0 and 1 agree — which is why the bug survived casual use. It shows up on the
-    // even counts from 2 up, where parity restarts the day.
-    expect(nextDirectionAfter(0)).toBe(parity(0));
-    expect(nextDirectionAfter(1)).toBe(parity(1));
-    for (const count of [2, 4, 6, 8]) {
-      expect(parity(count)).toBe("in");
-      expect(nextDirectionAfter(count)).toBe("out");
-    }
+  it("alternates, so the button always describes the next real event", () => {
+    const rule = Array.from({ length: 8 }, (_, i) => nextDirectionAfter(i));
+    expect(rule).toEqual(["in", "out", "in", "out", "in", "out", "in", "out"]);
   });
 });
 
-describe("the source no longer decides either question for itself", () => {
-  it("contains no parity test on the punch count", () => {
-    expect(code(SOURCE)).not.toMatch(/%\s*2/);
-  });
-
+describe("the business-date fix still stands", () => {
   it("asks the server which business date is in progress", () => {
     expect(SOURCE).toContain("my_punch_business_date");
   });

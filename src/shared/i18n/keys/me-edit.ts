@@ -219,8 +219,13 @@ export const keysMeEdit = {
   "me.punch.lead": "Record your attendance here with your face, without going to the gate.",
 
   // The button, and the direction it will record
-  "me.punch.action.in": "Punch in",
-  "me.punch.action.out": "Punch out",
+  /*
+    "Punch to log out", not "Punch out". Asked for in those words, and it is the clearer pair:
+    "Punch out" beside the sentence "You are logged in" reads as a label for a state, where
+    "Punch to log out" reads as the thing pressing it will do.
+  */
+  "me.punch.action.in": "Punch to log in",
+  "me.punch.action.out": "Punch to log out",
   "me.punch.action.checking": "Checking your last scan…",
   // Used only when the punch-log read failed: the button must not invent a
   // direction the server has not been asked for.
@@ -232,6 +237,23 @@ export const keysMeEdit = {
   "me.punch.action.again": "Try again",
   "me.punch.action.done": "Close",
   "me.punch.action.viewPunches": "See today's punches",
+
+  /*
+    ── THE STATE, SAID PLAINLY ────────────────────────────────────────────────
+    Asked for: the card should say the employee IS logged in, and offer the opposite action.
+    It used to lead with "Nothing recorded yet today" and, after a punch, "Last scan 09:28 ·
+    1 recorded today" — a fact about scans, not about work. These two lead now; the scan count
+    stays underneath as detail.
+  */
+  "me.punch.state.loggedIn": "You are logged in — since {time}.",
+  "me.punch.state.loggedOut": "You are logged out — last out at {time}.",
+  /*
+    The fragmented total. A 09:00-13:00 then 19:00-21:00 day is six hours in two sessions, and
+    the session count is what makes the number make sense. Singular form omits the count,
+    because "1 session" on an ordinary day is noise.
+  */
+  "me.punch.state.sessionsTotal": "{total} today, across {n} sessions.",
+  "me.punch.state.oneSessionTotal": "{total} today.",
 
   // What the punch log already says
   "me.punch.state.expectIn": "This will be recorded as an arrival.",

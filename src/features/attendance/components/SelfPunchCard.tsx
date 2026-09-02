@@ -57,7 +57,8 @@ import { CheckCircle2, Loader2, MapPin, ScanFace } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { fmtCivilDate, fmtTime, istToday } from "@/lib/datetime";
+import { fmtCivilDate, fmtDurationHm, fmtTime, istToday, nowEpochMs } from "@/lib/datetime";
+import { daySessions } from "../lib/sessions";
 import { t } from "@/shared/i18n/en";
 import { newIdempotencyKey } from "@/shared/api/invoke";
 import {
@@ -610,6 +611,32 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
   // does not invent a direction — it says "Punch attendance" and the server
   // decides, which is what the confirmation then reports.
   const next = punchState.data?.next ?? null;
+
+  /*
+    ── WHERE THE DAY'S HOURS WENT ────────────────────────────────────────────
+    Asked for: say plainly that they are logged in, offer the opposite action, and count the
+    fragmented hours. The card used to say "Nothing recorded yet today" and then, after a
+    punch, "Last scan 09:28 · 1 recorded today" — which is a fact about scans, not about work.
+
+    Paired here rather than on the server because the instants are already in `punchState`, and
+    the arithmetic matches the engine's for any completed day. See `lib/sessions.ts`.
+  */
+  /*
+    A second only matters while a session is OPEN. Ticking after they have gone home would
+    re-render this card every second for no visible change.
+  */
+  const [nowMs, setNowMs] = useState<number>(nowEpochMs);
+  const openNow = (punchState.data?.punchCount ?? 0) % 2 === 1;
+  useEffect(() => {
+    if (!openNow) return;
+    const id = window.setInterval(() => setNowMs(nowEpochMs()), 30_000);
+    return () => window.clearInterval(id);
+  }, [openNow]);
+
+  const sessions = useMemo(
+    () => daySessions(punchState.data?.punchInstants ?? [], nowMs),
+    [punchState.data?.punchInstants, nowMs],
+  );
   const buttonLabel = punchState.isPending
     ? t("me.punch.action.checking")
     : next === "out"
@@ -815,6 +842,42 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             ) : next !== null ? (
               <p>{next === "out" ? t("me.punch.state.expectOut") : t("me.punch.state.expectIn")}</p>
             ) : null}
+            {/*
+              THE STATE, IN ITS OWN WORDS AND FIRST. "You are logged in since 09:28" is what
+              somebody opening this card wants to know; the scan count is trivia by comparison
+              and now sits under it.
+            */}
+            {punchState.data !== undefined && sessions.sessions.length > 0 ? (
+              <p className="text-sm font-medium text-foreground">
+                {sessions.isIn
+                  ? t("me.punch.state.loggedIn", {
+                    time: fmtTime(sessions.openSince ?? ""),
+                  })
+                  : t("me.punch.state.loggedOut", {
+                    time: fmtTime(
+                      sessions.sessions[sessions.sessions.length - 1]?.outAt ?? "",
+                    ),
+                  })}
+              </p>
+            ) : null}
+
+            {/*
+              The fragmented total, and the session count that explains it. Only shown once a
+              day has more than one session, because "1 session" is noise on a normal day.
+            */}
+            {sessions.sessions.length > 0 ? (
+              <p className="num tabular-nums text-foreground">
+                {sessions.sessions.length > 1
+                  ? t("me.punch.state.sessionsTotal", {
+                    n: String(sessions.sessions.length),
+                    total: fmtDurationHm(sessions.workedMinutes),
+                  })
+                  : t("me.punch.state.oneSessionTotal", {
+                    total: fmtDurationHm(sessions.workedMinutes),
+                  })}
+              </p>
+            ) : null}
+
             {punchState.data !== undefined ? (
               <p className="num tabular-nums">{lastScanLine(punchState.data, today)}</p>
             ) : null}

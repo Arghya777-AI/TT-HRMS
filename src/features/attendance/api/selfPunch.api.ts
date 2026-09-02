@@ -125,21 +125,45 @@ export interface SelfPunchState {
    * a few lines below; it was simply not being returned.
    */
   firstPunchAt: string | null;
-  /** Nothing recorded yet on that date → arrival. Otherwise → departure. */
+  /**
+   * Every COUNTED punch instant on that date, ascending.
+   *
+   * The card pairs these into sessions, which is the only way to say "two sessions, six hours"
+   * for a 9-to-1-then-7-to-9 day. `firstPunchAt` and `lastPunchAt` cannot express it, and the
+   * list is already in hand a few lines below — it was simply being thrown away.
+   */
+  punchInstants: readonly string[];
+  /** What the next scan will be recorded as, by parity — see `nextDirectionAfter`. */
   next: NextDirection;
 }
 
 /**
- * THE RULE, in one place: the first scan of the business day is the arrival, and
- * every scan after it is a departure — right up to the end of the day.
+ * THE RULE, in one place: PARITY. An even number of counted scans means the next one is an
+ * arrival, an odd number means a departure.
  *
- * It matches how the engine reads a day (§3.1: first scan in, last scan out, the
- * ones between move neither), which is why the button and the recorded attendance
- * now agree. It is NOT parity: `count % 2` would offer "Punch in" again on the
- * third scan, and a day with three scans has one arrival, not two.
+ * ── THIS REVERSED A DELIBERATE DECISION, SO HERE IS WHY ──────────────────────
+ * It used to be "the first scan is the arrival and every scan after it is a departure", and the
+ * comment here argued against parity in exactly these words: "a day with three scans has one
+ * arrival, not two".
+ *
+ * That held while a day was one stretch of work. It does not hold for the venue's
+ * 9-to-1-then-7-to-9 day, and the old rule's failure on it was visible on the card: somebody
+ * back for an evening shift, having already punched out at lunch, was offered "Punch out" — of
+ * a day they had left four hours earlier.
+ *
+ * The engine agrees with parity here, which is the part that matters. It deducts the INTERIOR
+ * gap between the second and third scans as a break, so 09:00/13:00/19:00/21:00 is six hours
+ * both ways: 21:00−09:00 less the 13:00→19:00 gap, and (13:00−09:00)+(21:00−19:00).
+ *
+ * ── AND IT CHANGES ONLY THE LABEL ────────────────────────────────────────────
+ * Every punch in this system is stored `direction = 'undetermined'` — all 1,188 of them — and
+ * the server decides the response's direction itself. So this function feeds the button's words
+ * and nothing else. Writing real labels into that column would be the dangerous change: the
+ * engine's break detection matches `undetermined` gaps specifically, so labelling them in/out
+ * would stop the interior gap counting as a break and turn that six-hour day into twelve.
  */
 export function nextDirectionAfter(countedOnBusinessDate: number): NextDirection {
-  return countedOnBusinessDate === 0 ? "in" : "out";
+  return countedOnBusinessDate % 2 === 0 ? "in" : "out";
 }
 
 /**
@@ -204,6 +228,7 @@ export async function fetchSelfPunchState(
       punchCount: 0,
       lastPunchAt: null,
       firstPunchAt: null,
+      punchInstants: [],
       next: nextDirectionAfter(0),
     };
   }
@@ -225,6 +250,13 @@ export async function fetchSelfPunchState(
     // The arrival. Falls back to the uncounted first scan for the same reason `last` does: the
     // employee did scan, and a live clock measured from nothing would show nothing.
     firstPunchAt: (counted[0] ?? onDate[0])?.punched_at ?? null,
+    // Counted only. A suppressed double-scan is not a session boundary, and pairing it would
+    // split one session into two and halve the hours on screen.
+    // `punched_at` is nullable on the row type; a punch without an instant is not a session
+    // boundary and pairing around it would shift every later session by one.
+    punchInstants: counted
+      .map((punch) => punch.punched_at)
+      .filter((at): at is string => at !== null),
     next: nextDirectionAfter(counted.length),
   };
 }

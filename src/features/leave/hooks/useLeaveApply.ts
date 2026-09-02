@@ -14,8 +14,6 @@ import { shouldRetryQuery } from "@/shared/api/query";
 import { requireEmployeeId, useEmployeeId } from "@/shared/api/employee-scope";
 import {
   fetchLeaveRoster,
-  fetchPresenceRoster,
-  type PresenceRosterRow,
   type LeaveRosterRow,
   fetchApprovalTrail,
   fetchHolidaysInWindow,
@@ -124,23 +122,6 @@ export function useLeaveRoster(from: string, to: string): UseQueryResult<LeaveRo
     queryKey: qk.leave.roster(from, to),
     queryFn: ({ signal }) => fetchLeaveRoster(from, to, signal),
     staleTime: 5 * 60 * 1000,
-    retry: shouldRetryQuery,
-  });
-}
-
-/**
- * Who is at the venue right now — everybody, not just my reports.
- *
- * A minute of staleness, because this is the panel somebody glances at to decide whether to walk
- * over to a colleague's desk. It is not refetched per second: presence changes on a scan, and a
- * scan is a person walking through a door.
- */
-export function usePresenceRoster(): UseQueryResult<PresenceRosterRow[], Error> {
-  return useQuery({
-    queryKey: qk.leave.presence(),
-    queryFn: ({ signal }) => fetchPresenceRoster(signal),
-    staleTime: 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
     retry: shouldRetryQuery,
   });
 }

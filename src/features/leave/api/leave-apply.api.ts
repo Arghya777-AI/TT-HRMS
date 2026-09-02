@@ -846,39 +846,3 @@ export function fetchLeaveRoster(
     ...(signal ? { signal } : {}),
   });
 }
-
-// -----------------------------------------------------------------------------
-// Who is at the venue — the presence roster
-// -----------------------------------------------------------------------------
-
-/**
- * `v_presence_roster` — who is on site today, readable by any signed-in employee.
- *
- * `presence` is decided by HOW the punch was taken, not by comparing coordinates:
- * `on_campus` means a gate scan exists today (the tablet is bolted to a known wall, so a gate
- * scan IS the venue), `remote` means punches exist but none from the gate, `not_in` means no
- * punch. Deliberately not `geofence_ok` — a web punch from the car park is inside the fence and
- * still not somebody at their desk.
- *
- * Carries no lateness, no worked minutes and no paid fraction. "Is Ravi at the venue" is a
- * different question from Ravi's punctuality record.
- */
-export const presenceRosterRowSchema = z.object({
-  employee_id: z.string().uuid(),
-  employee_code: z.string().nullable(),
-  display_name: z.string().nullable(),
-  department_name: z.string().nullable(),
-  presence: z.enum(["on_campus", "remote", "not_in"]),
-  first_in_hm: z.string().nullable(),
-  last_out_hm: z.string().nullable(),
-  day_status: z.string(),
-});
-export type PresenceRosterRow = z.infer<typeof presenceRosterRowSchema>;
-
-export function fetchPresenceRoster(signal?: AbortSignal): Promise<PresenceRosterRow[]> {
-  return selectMany("v_presence_roster", presenceRosterRowSchema, {
-    order: [{ column: "display_name", ascending: true }],
-    limit: 500,
-    ...(signal ? { signal } : {}),
-  });
-}

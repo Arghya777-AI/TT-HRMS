@@ -1318,7 +1318,8 @@ export const en = catalogue({
     because "out" reads as "left for the day" and this is about where somebody is working.
   */
   "leave.onLeaveSoon.title": "Colleagues on leave",
-  "leave.onLeaveSoon.subtitle": "Approved leave over the next four weeks. A request still awaiting approval does not appear.",
+  "leave.onLeaveSoon.subtitle": "Approved leave over the next four weeks, by department. A request still awaiting approval does not appear.",
+  "leave.onLeaveSoon.noDept": "No department",
   "leave.onLeaveSoon.empty": "Nobody has approved leave in the next four weeks.",
   "leave.onLeaveSoon.today": "today",
 
@@ -1329,12 +1330,12 @@ export const en = catalogue({
   "leave.holidays.noCalendar": "No holiday calendar is set for you yet, so holidays cannot be listed. Ask HR to assign one.",
   "leave.holidays.optional": "Optional",
 
-  "leave.who.title": "Who is in today",
-  "leave.who.subtitle": "Based on today's scans. A gate scan means the venue; anything else means they recorded attendance from somewhere else.",
-  "leave.who.atVenue": "At the venue",
-  "leave.who.away": "Working away",
-  "leave.who.notIn": "Not in yet",
-  "leave.who.none": "Nobody",
+  /*
+    `leave.who.*` lived here — "Who is in today", at the venue / working away / not in yet.
+    Removed with its panel at the venue's instruction: colleagues are not to see each other's
+    arrival times. Deleted rather than left unused, because an orphaned string is a sentence
+    somebody eventually puts back on a screen it was taken off on purpose.
+  */
 
   "leave.cal.who.title": "Who else is off",
   "leave.cal.who.subtitle": "Approved leave across the venue this month. A request still awaiting approval does not appear here.",

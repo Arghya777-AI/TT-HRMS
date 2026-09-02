@@ -26,7 +26,6 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { isHalfDay, portionText } from "../leavePortion";
-import { WhoIsInPanel } from "../components/WhoIsInPanel";
 import type { LeaveRosterRow } from "../api/leave-apply.api";
 import {
   addIstMonths,
@@ -271,7 +270,6 @@ export default function LeaveCalendarPage() {
       </StateBoundary>
 
       {/* Presence first: "is she at her desk" is asked far more often than "who is off". */}
-      <WhoIsInPanel />
 
       {/*
         ── WHO ELSE IS OFF ────────────────────────────────────────────────────

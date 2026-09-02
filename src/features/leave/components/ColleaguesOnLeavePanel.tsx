@@ -1,14 +1,21 @@
 /**
- * ColleaguesOnLeavePanel — who is on approved leave, from today onwards.
+ * ColleaguesOnLeavePanel — who is away, grouped by department.
  *
- * ── WHY IT IS FORWARD-LOOKING AND THE CALENDAR VERSION IS NOT ────────────────
- * The leave calendar shows the month you are browsing, because you went there to browse. On the
- * home page nobody is browsing: the question is "who is off, now and soon", so this starts
- * today and runs four weeks out. Leave that ended yesterday is not news.
+ * ── WHAT THIS DELIBERATELY DOES NOT SHOW ─────────────────────────────────────
+ * Arrival times, departure times, who is on site. A "who is in today" panel sat beside this one
+ * briefly and was removed at the venue's instruction: colleagues are not to see each other's
+ * hours. That belongs to the person and their manager, and it lives on the admin dashboard.
  *
- * The leave TYPE is named, which the venue decided knowing it discloses Sick Leave and
- * Maternity Leave to colleagues. Reads `v_leave_roster` — see that view for what it deliberately
- * does not expose.
+ * So this answers exactly one question — who is off — and carries only the leave type and
+ * whether it is a half day.
+ *
+ * ── WHY DEPARTMENT AND NOT DATE ──────────────────────────────────────────────
+ * The first version grouped by date, which is how a calendar thinks. Asked for instead: sections
+ * by department, Management first. That is how a venue thinks — "is anyone from Restaurant off
+ * today" is answerable at a glance, where a flat list of forty names is not.
+ *
+ * Management leads because it was asked for; the rest follow by headcount so the biggest team is
+ * next, and by name after that so the order never wobbles between renders.
  */
 import { useMemo } from "react";
 import { CalendarOff } from "lucide-react";
@@ -22,18 +29,34 @@ import type { LeaveRosterRow } from "../api/leave-apply.api";
 /** Four weeks. Far enough to plan a handover, short enough to stay a glance. */
 const WINDOW_DAYS = 28;
 
+/** Pinned first, by name — the section the venue reads first. */
+const LEAD_DEPARTMENT = "Management";
+
+interface DeptSection {
+  readonly key: string;
+  readonly name: string;
+  readonly rows: readonly LeaveRosterRow[];
+}
+
 export function ColleaguesOnLeavePanel(): React.JSX.Element {
   const from = istToday();
   const to = addIstDays(from, WINDOW_DAYS);
   const roster = useLeaveRoster(from, to);
 
-  const byDate = useMemo(() => {
-    const out = new Map<string, LeaveRosterRow[]>();
+  const sections = useMemo<DeptSection[]>(() => {
+    const buckets = new Map<string, LeaveRosterRow[]>();
     for (const row of roster.data ?? []) {
-      const bucket = out.get(row.leave_date);
-      if (bucket === undefined) out.set(row.leave_date, [row]);
+      // Keyed on the name, because that is what the heading shows and what the venue calls it.
+      const key = row.department_name ?? t("leave.onLeaveSoon.noDept");
+      const bucket = buckets.get(key);
+      if (bucket === undefined) buckets.set(key, [row]);
       else bucket.push(row);
     }
+    const out = [...buckets.entries()].map(([name, rows]) => ({ key: name, name, rows }));
+    out.sort((a, b) => {
+      const lead = (s: DeptSection) => (s.name === LEAD_DEPARTMENT ? 0 : 1);
+      return lead(a) - lead(b) || b.rows.length - a.rows.length || a.name.localeCompare(b.name);
+    });
     return out;
   }, [roster.data]);
 
@@ -51,41 +74,48 @@ export function ColleaguesOnLeavePanel(): React.JSX.Element {
         onRetry={() => void roster.refetch()}
         skeletonRows={2}
       >
-        {byDate.size === 0 ? (
+        {sections.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">{t("leave.onLeaveSoon.empty")}</p>
         ) : (
           /* Its own scroll box: four weeks of a venue's leave must not push the page down. */
-          <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-            {[...byDate.entries()].map(([date, rows]) => (
-              <li key={date}>
-                <p className="text-[11px] font-medium text-muted-foreground">
-                  {fmtCivilDayMonthWeekday(date)}
-                  {date === from ? ` · ${t("leave.onLeaveSoon.today")}` : ""}
+          <div className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+            {sections.map((section) => (
+              <div key={section.key}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.name}
+                  <span className="ml-1.5 font-normal">{section.rows.length}</span>
                 </p>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {rows.map((row) => (
-                    <span
-                      key={row.leave_request_day_id}
-                      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
-                    >
+                <ul className="mt-1 space-y-1">
+                  {section.rows.map((row) => (
+                    <li key={row.leave_request_day_id} className="flex items-baseline gap-2 text-sm">
                       <span
                         aria-hidden
-                        className="size-2 shrink-0 rounded-full"
+                        className="mt-1.5 size-2 shrink-0 rounded-full"
                         style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
                       />
-                      <span className="font-medium">{row.display_name}</span>
-                      <span className="text-muted-foreground">{row.leave_type_name}</span>
-                      {isHalfDay(row.portion) ? (
-                        <span className="rounded bg-warning/15 px-1 text-[10px] font-medium text-warning">
-                          {portionShort(row.portion)}
+                      <span className="min-w-0 flex-1">
+                        <span className="font-medium">{row.display_name}</span>
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {row.leave_type_name}
                         </span>
-                      ) : null}
-                    </span>
+                        {isHalfDay(row.portion) ? (
+                          <span className="ml-1.5 rounded bg-warning/15 px-1 text-[10px] font-medium text-warning">
+                            {portionShort(row.portion)}
+                          </span>
+                        ) : null}
+                      </span>
+                      {/* The date, because four weeks of leave is not all today. */}
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {row.leave_date === from
+                          ? t("leave.onLeaveSoon.today")
+                          : fmtCivilDayMonthWeekday(row.leave_date)}
+                      </span>
+                    </li>
                   ))}
-                </div>
-              </li>
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </StateBoundary>
     </section>

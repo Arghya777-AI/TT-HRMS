@@ -54,7 +54,6 @@ import { AttentionCard } from "../components/AttentionCard";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
-import { WhoIsInPanel } from "@/features/leave/components/WhoIsInPanel";
 import { ColleaguesOnLeavePanel } from "@/features/leave/components/ColleaguesOnLeavePanel";
 import { UpcomingHolidaysPanel } from "@/features/leave/components/UpcomingHolidaysPanel";
 import { LeaveBalancesCard } from "../components/BalancesCards";
@@ -221,16 +220,14 @@ export default function HomePage() {
       </div>
 
       {/*
-        ── WHO IS IN, AND WHO IS OFF ──────────────────────────────────────────
-        These were built on `/me/leave/calendar` first, which was the wrong place: this is the
-        screen everybody actually opens, and "is she at her desk" gets asked far more often than
-        anybody navigates to a leave calendar to find out. They live in both places now, off the
-        same two views, so neither can drift from the other.
+        ── WHO IS OFF, AND THE HOLIDAYS AHEAD ─────────────────────────────────
+        A "who is in, and since when" panel briefly sat here too and was REMOVED at the venue's
+        instruction: colleagues are not to see each other's arrival times. That information now
+        lives only where an admin looks at it, which is the dashboard roster.
 
-        Below `MyMonthCalendar` on purpose. My own month is why I opened my own home page; my
-        colleagues' whereabouts is the question I have while I am already here.
+        What remains answers the question employees actually need of each other — who is away —
+        without publishing anybody's punctuality.
       */}
-      <WhoIsInPanel />
       <ColleaguesOnLeavePanel />
       <UpcomingHolidaysPanel />
 

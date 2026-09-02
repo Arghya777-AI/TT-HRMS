@@ -12,14 +12,26 @@ import { shouldRetryQuery } from "@/shared/api/query";
 import { istToday } from "@/lib/datetime";
 import { fetchTodayRoster, type TodayRoster } from "../api/todayRoster.api";
 
-export function useTodayRoster(enabled = true): UseQueryResult<TodayRoster, Error> {
+export function useTodayRoster(
+  enabled = true,
+  /** The IST date to show. Defaults to today, which is the live board. */
+  date?: string,
+): UseQueryResult<TodayRoster, Error> {
+  const day = date ?? istToday();
+  const isToday = day === istToday();
   return useQuery({
-    // Keyed on the IST date so the roster rolls over at midnight rather than at UTC.
-    queryKey: qk.attendance.detail(`today-roster:${istToday()}`),
-    queryFn: ({ signal }) => fetchTodayRoster({ signal }),
+    // Keyed on the date so the roster rolls over at midnight rather than at UTC, and so
+    // stepping to yesterday and back does not re-fetch what is already cached.
+    queryKey: qk.attendance.detail(`roster:${day}`),
+    queryFn: ({ signal }) => fetchTodayRoster({ signal, date: day }),
     enabled,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    /*
+      Only today polls. A past day cannot change while somebody looks at it, so refetching it
+      every minute would be a query a minute for a settled answer — and on a dashboard left
+      open on a wall, all night.
+    */
+    ...(isToday ? { refetchInterval: 60_000 } : {}),
     retry: shouldRetryQuery,
   });
 }

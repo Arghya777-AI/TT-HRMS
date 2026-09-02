@@ -48,7 +48,7 @@ import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { DonutChart } from "@/shared/ui/DonutChart";
-import { fmtDuration } from "@/lib/datetime";
+import { fmtCivilDate, fmtDuration, istToday } from "@/lib/datetime";
 import { dash, formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { withFilters, type AnalyticsFilters } from "@/lib/analyticsFilters";
@@ -130,7 +130,18 @@ export function AnalyticsOverview() {
   const [panel, setPanel] = useDashboardPanel();
 
   const options = useAnalyticsFilterOptions();
-  const roster = useTodayRoster(panel === "overview");
+  /*
+    ── THE ROSTER FOLLOWS A SELECTED DAY, AND ONLY A DAY ─────────────────────
+    When the filter bar is set to "Day", the roster shows that date — which is the capability
+    that was missing: an admin could pick yesterday and the board carried on showing today.
+
+    For week, month, year and range it stays on TODAY, deliberately. A roster is one row per
+    person for one date; over a month the useful thing is days present and hours worked per
+    person, and that already exists as its own screen at /admin/analytics/employees on this
+    same filter model. Rendering thirty days of names here would be a worse version of it.
+  */
+  const rosterDate = filters.period.granularity === "day" ? filters.period.from : istToday();
+  const roster = useTodayRoster(panel === "overview", rosterDate);
   const summary = useAttendanceSummary(filters);
   const trend = useDailyTrend(filters);
   const departments = useDepartmentBreakdown(filters);
@@ -252,7 +263,13 @@ export function AnalyticsOverview() {
         filter above and labelled so, because it is about right now.
       */}
       <h2 className="mb-2 mt-5 font-display text-lg font-semibold">
-        {t("admin.analytics.overview.todayTitle")}
+        {/*
+          Named, not assumed. "On site today" over yesterday's attendance is the kind of label
+          somebody acts on and is wrong about.
+        */}
+        {rosterDate === istToday()
+          ? t("admin.analytics.overview.todayTitle")
+          : t("admin.analytics.overview.dayTitle", { date: fmtCivilDate(rosterDate) })}
       </h2>
       <TodayRoster
         roster={roster.data}

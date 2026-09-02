@@ -36,11 +36,11 @@
 import { z } from "zod";
 import { eq, selectMany } from "@/shared/api/query";
 import { fmtTime, istToday } from "@/lib/datetime";
+import { attendedOn, offOn } from "../rosterDayStatus";
 import { distanceFromVenue, type VenueDistance, type VenuePoint } from "@/lib/venueDistance";
 import { t } from "@/shared/i18n/en";
 import { fetchTodayBoard } from "./analytics.api";
-import { V_PUNCH_DETAIL } from "./attendance.api";
-import type { TodayBoardRow } from "./attendance.api";
+import { V_DAY_ENRICHED, V_PUNCH_DETAIL } from "./attendance.api";
 
 /** How the day's attendance reached the system. */
 export type CaptureMethod = "gate" | "web" | "mixed" | "none";
@@ -159,6 +159,16 @@ export interface TodayRoster {
  */
 const employeeDesignationSchema = z.object({
   id: z.string().uuid(),
+  /*
+    Needed because `v_attendance_day_enriched` publishes `department_name` but not
+    `department_id`, and the roster groups on the ID — two departments can share a display name
+    after a rename, and a group keyed on the name would silently merge them.
+
+    It is the employee's CURRENT department, so somebody who transferred appears under where
+    they are now rather than where they were on the day. That is the reading an admin scanning
+    "who was in on Tuesday" expects, and it keeps the key and the heading from disagreeing.
+  */
+  department_id: z.string().uuid().nullable(),
   designations: z.object({ name: z.string().nullable() }).nullable(),
 });
 
@@ -178,6 +188,31 @@ const punchFixSchema = z.object({
   lat: z.union([z.number(), z.string()]).nullable(),
   lng: z.union([z.number(), z.string()]).nullable(),
   location_accuracy_m: z.union([z.number(), z.string()]).nullable(),
+});
+
+/**
+ * The same roster fields, for ANY date, out of `v_attendance_day_enriched`.
+ *
+ * `v_attendance_today_board` only knows today — it is literally scoped to `util.ist_today()` —
+ * so looking at yesterday means a different view. This one has every field the roster needs
+ * except two: `attended` and `off_today` are SQL columns on the board and are derived here by
+ * `rosterDayStatus`, whose test pins the status lists against the board's own definition so the
+ * two cannot drift; and `department_id`, which comes off the employee read instead.
+ */
+const dayRosterRowSchema = z.object({
+  employee_id: z.string().uuid(),
+  employee_code: z.string(),
+  display_name: z.string(),
+  department_name: z.string().nullable(),
+  status: z.string().nullable(),
+  punch_count: z.number().int(),
+  first_in_hm: z.string().nullable(),
+  last_out_hm: z.string().nullable(),
+  first_in_at: z.string().nullable(),
+  last_out_at: z.string().nullable(),
+  total_worked_minutes: z.number().int(),
+  late_minutes: z.number().int(),
+  shift_id: z.string().uuid().nullable(),
 });
 
 /** The venue. One row — the primary location. */
@@ -218,7 +253,13 @@ function num(value: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function methodFor(row: TodayBoardRow): CaptureMethod {
+/*
+  Narrowed to the two fields it reads. It took a whole `TodayBoardRow`, which shut out the
+  per-day path — that view publishes neither `web_punch_count` nor two dozen other board
+  columns, and demanding them for a function that looks at two is the same over-specification
+  that kept `dayVariance` from being reused on the admin side.
+*/
+function methodFor(row: { punch_count: number; web_punch_count: number }): CaptureMethod {
   if (row.punch_count === 0) return "none";
   if (row.web_punch_count === 0) return "gate";
   return row.web_punch_count >= row.punch_count ? "web" : "mixed";
@@ -238,20 +279,64 @@ function countRows(rows: readonly RosterRow[]): RosterCounts {
   };
 }
 
+/** The subset of a board row the roster actually uses, so both sources can produce it. */
+interface NormalisedRow {
+  readonly employee_id: string;
+  readonly employee_code: string;
+  readonly display_name: string;
+  readonly department_name: string | null;
+  readonly status: string | null;
+  readonly attended: boolean;
+  readonly off_today: boolean;
+  readonly punch_count: number;
+  readonly web_punch_count: number;
+  readonly first_in_hm: string | null;
+  readonly last_out_hm: string | null;
+  readonly first_in_at: string | null;
+  readonly last_out_at: string | null;
+  readonly worked_minutes: number;
+  readonly late_minutes: number;
+  readonly shift_id: string | null;
+}
+
 export async function fetchTodayRoster(
-  opts: { readonly signal?: AbortSignal } = {},
+  opts: { readonly signal?: AbortSignal; readonly date?: string } = {},
 ): Promise<TodayRoster> {
   const signal = opts.signal;
 
   /*
-    Three reads in parallel. The board is the one that matters; the other two are small
-    reference sets that would otherwise serialise behind it for no reason.
+    ── TODAY IS A DIFFERENT READ FROM ANY OTHER DAY ──────────────────────────
+    `v_attendance_today_board` is scoped to `util.ist_today()` inside the view, so it cannot
+    answer for yesterday. It is still the right source for today: it publishes `attended` and
+    `off_today` as SQL, and it carries the live flags — `yet_to_reach`, `overdue` — that only
+    mean anything about a day in progress.
+
+    Any other date reads `v_attendance_day_enriched` and derives those two booleans through
+    `rosterDayStatus`, whose test pins its status lists against the board's own SQL so today's
+    roster and yesterday's cannot disagree about the same person.
   */
   const today = istToday();
+  const date = opts.date ?? today;
+  const isToday = date === today;
+
   const [board, designations, shifts, fixes, venues] = await Promise.all([
-    fetchTodayBoard(signal ? { signal } : {}),
+    isToday
+      ? fetchTodayBoard(signal ? { signal } : {})
+      : selectMany(V_DAY_ENRICHED, dayRosterRowSchema, {
+        columns:
+          "employee_id, employee_code, display_name, department_name, status, punch_count, " +
+          "first_in_hm, last_out_hm, first_in_at, last_out_at, total_worked_minutes, " +
+          "late_minutes, shift_id",
+        filters: [eq("ist_date", date)],
+        // The venue is under a hundred people; a cap above that is a guard, not a page.
+        limit: 500,
+        ...(signal ? { signal } : {}),
+      }).then((rows) => ({
+        rows,
+        provenance: { truncated: rows.length >= 500 },
+      })),
     selectMany("employees", employeeDesignationSchema, {
-      columns: "id, designations(name)",
+      columns: "id, department_id, designations(name)",
       ...(signal ? { signal } : {}),
     }),
     selectMany("shifts", shiftDurationSchema, {
@@ -260,8 +345,8 @@ export async function fetchTodayRoster(
     }),
     selectMany(V_PUNCH_DETAIL, punchFixSchema, {
       columns: "employee_id, punched_at, source, lat, lng, location_accuracy_m",
-      filters: [eq("ist_date", today)],
-      // Oldest first, so the reduce below can prefer a later punch by simply overwriting.
+      filters: [eq("ist_date", date)],
+      // Oldest first, so the timeline below renders in the order the punches happened.
       order: [{ column: "punched_at", ascending: true }],
       ...(signal ? { signal } : {}),
     }),
@@ -306,6 +391,7 @@ export async function fetchTodayRoster(
   const designationByEmployee = new Map(
     designations.map((d) => [d.id, d.designations?.name ?? null]),
   );
+  const departmentByEmployee = new Map(designations.map((d) => [d.id, d.department_id]));
   const durationByShift = new Map(shifts.map((sh) => [sh.id, sh.duration_minutes ?? 0]));
 
   const punchesByEmployee = new Map<string, PunchOnRoster[]>();
@@ -329,7 +415,49 @@ export async function fetchTodayRoster(
     else bucket.push(punch);
   }
 
-  const rows: RosterRow[] = board.rows.map((row) => {
+  /*
+    ── ONE SHAPE, WHICHEVER VIEW ANSWERED ────────────────────────────────────
+    The board publishes `attended`, `off_today` and `web_punch_count`; the per-day view
+    publishes none of them. Rather than branch through the mapping below — which would mean two
+    copies of the variance arithmetic and the department grouping — both are normalised here.
+
+    `attendedOn` / `offOn` are the shared definitions, pinned by test against the board's own
+    SQL. `web_punch_count` is recovered from the punch timeline that has already been fetched,
+    so the "Captured via" reading is the same fact on either path.
+  */
+  const webPunchesByEmployee = new Map<string, number>();
+  for (const f of fixes) {
+    if (f.source !== "web" && f.source !== "mobile") continue;
+    webPunchesByEmployee.set(f.employee_id, (webPunchesByEmployee.get(f.employee_id) ?? 0) + 1);
+  }
+
+  const normalised: NormalisedRow[] = board.rows.map((row) =>
+    "attended" in row
+      ? {
+        ...row,
+        worked_minutes: row.worked_minutes,
+      }
+      : {
+        employee_id: row.employee_id,
+        employee_code: row.employee_code,
+        display_name: row.display_name,
+        department_name: row.department_name,
+        status: row.status,
+        attended: attendedOn({ status: row.status, punchCount: row.punch_count }),
+        off_today: offOn({ status: row.status, punchCount: row.punch_count }),
+        punch_count: row.punch_count,
+        web_punch_count: webPunchesByEmployee.get(row.employee_id) ?? 0,
+        first_in_hm: row.first_in_hm,
+        last_out_hm: row.last_out_hm,
+        first_in_at: row.first_in_at,
+        last_out_at: row.last_out_at,
+        worked_minutes: row.total_worked_minutes,
+        late_minutes: row.late_minutes,
+        shift_id: row.shift_id,
+      },
+  );
+
+  const rows: RosterRow[] = normalised.map((row) => {
     /*
       An off day expects nothing. Using the shift's duration there would report somebody on
       approved leave as eight hours short, which is the single most misleading thing this table
@@ -341,7 +469,11 @@ export async function fetchTodayRoster(
       employeeId: row.employee_id,
       employeeCode: row.employee_code,
       displayName: row.display_name,
-      departmentId: row.department_id,
+      /*
+        From the employee read, not the row: the per-day view publishes `department_name` and
+        not the id, and the roster groups on the id so a rename cannot merge two departments.
+      */
+      departmentId: departmentByEmployee.get(row.employee_id) ?? null,
       departmentName: row.department_name,
       designationName: designationByEmployee.get(row.employee_id) ?? null,
       status: row.status,

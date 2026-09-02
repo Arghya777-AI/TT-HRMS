@@ -30,6 +30,11 @@ export const keysAnalyticsOverview = {
     beside the thing that superseded it.
   */
   "admin.analytics.overview.todayTitle": "On site today",
+  /*
+    Used when the filter bar is set to a day other than today. The date is named because "On
+    site today" over yesterday's attendance is a label somebody acts on and is wrong about.
+  */
+  "admin.analytics.overview.dayTitle": "On site — {date}",
 
   // ── Selected period ───────────────────────────────────────────────────────
   "admin.analytics.overview.periodTitle": "Selected period",

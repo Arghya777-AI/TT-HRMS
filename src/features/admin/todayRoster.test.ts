@@ -251,6 +251,58 @@ describe("where a punch was taken", () => {
   });
 });
 
+describe("the roster follows a selected day", () => {
+  const api = read("src", "features", "admin", "api", "todayRoster.api.ts");
+  const hook = read("src", "features", "admin", "hooks", "useTodayRoster.ts");
+  const page = read("src", "features", "admin", "components", "AnalyticsOverview.tsx");
+
+  it("reads a DIFFERENT view for any date but today", () => {
+    /*
+      `v_attendance_today_board` is scoped to `util.ist_today()` INSIDE the view, so it cannot
+      answer for yesterday. It stays the source for today because it publishes `attended` and
+      `off_today` as SQL and carries the live flags that only mean something about a day in
+      progress.
+    */
+    expect(api).toContain("V_DAY_ENRICHED");
+    expect(api).toContain("const isToday = date === today");
+    expect(api).toContain("? fetchTodayBoard(");
+  });
+
+  it("derives attended/off through the SHARED definition, not a second copy", () => {
+    // rosterDayStatus.test.ts pins those status lists against the board's own SQL.
+    expect(api).toContain("attendedOn({ status: row.status, punchCount: row.punch_count })");
+    expect(api).toContain("offOn({ status: row.status, punchCount: row.punch_count })");
+  });
+
+  it("groups on the department ID even though the day view has only the name", () => {
+    // Two departments can share a display name after a rename; a name key would merge them.
+    expect(api).toContain("departmentByEmployee.get(row.employee_id)");
+    expect(api).toContain("department_id: z.string().uuid().nullable()");
+  });
+
+  it("only polls when it is showing today", () => {
+    /*
+      A past day cannot change while somebody looks at it. Polling it would be a query a minute
+      for a settled answer, all night, on a dashboard left open on a wall.
+    */
+    expect(hook).toContain("...(isToday ? { refetchInterval: 60_000 } : {})");
+  });
+
+  it("follows the DAY granularity and no other", () => {
+    /*
+      A roster is one row per person for one date. Over a month the useful thing is days present
+      and hours per person, which already exists at /admin/analytics/employees on this same
+      filter model — thirty days of names here would be a worse version of it.
+    */
+    expect(page).toContain('filters.period.granularity === "day"');
+  });
+
+  it("names the date when it is not today", () => {
+    // "On site today" over yesterday's attendance is a label somebody acts on and is wrong about.
+    expect(page).toContain("admin.analytics.overview.dayTitle");
+  });
+});
+
 describe("the dashboard no longer opens on the six tiles", () => {
   it("shows the roster where the overlapping counts were", () => {
     const overview = read("src", "features", "admin", "components", "AnalyticsOverview.tsx");

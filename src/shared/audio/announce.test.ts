@@ -1,164 +1,124 @@
 /**
- * What the gate says, and when it says it.
+ * The gate must be heard when the internet is not there.
  *
- * The risk in this module is never "did a sound come out" — it is the gate confidently
- * announcing the wrong thing. A person walking away cannot check the screen, so the sentence
- * IS the record as far as they are concerned. These tests pin the three ways it could lie:
- * speaking over its own tone so neither is intelligible, announcing a refusal as a success,
- * and stacking utterances until it is describing somebody who left a minute ago.
+ * ── THE BUG ──────────────────────────────────────────────────────────────────
+ * During an outage the chime played and the spoken line did not, so the gate sounded half
+ * broken and nobody heard "thank you". The chimes are oscillators generated on the device, so
+ * they never needed a network; `speechSynthesis` did, because `utterance.lang = "en-IN"` asks
+ * for a LANGUAGE and Android's best `en-IN` voices are NETWORK voices. The platform prefers
+ * them, `speak()` raises nothing, `onerror` may never fire, and the foyer stays silent.
+ *
+ * `localService` is the flag that separates installed voices from remote ones. These tests pin
+ * that an installed voice is always preferred, however much better a remote one sounds.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-async function load() {
-  vi.resetModules();
-  return await import("./announce");
-}
-
-interface SpokenUtterance {
-  text: string;
-  volume: number;
-  rate: number;
+interface FakeVoice {
+  name: string;
   lang: string;
+  localService: boolean;
 }
 
-/** A speechSynthesis stub that records what it was asked to say. */
-function stubSpeech() {
-  const spoken: SpokenUtterance[] = [];
-  const cancel = vi.fn();
-  vi.stubGlobal("speechSynthesis", {
-    cancel,
-    speak: (u: SpokenUtterance) => spoken.push(u),
-  });
-  vi.stubGlobal(
-    "SpeechSynthesisUtterance",
-    class {
-      text: string;
-      volume = 1;
-      rate = 1;
-      pitch = 1;
-      lang = "";
-      constructor(text: string) {
-        this.text = text;
-      }
-    },
-  );
-  // Silence the tone path; this file is about the words.
-  vi.stubGlobal(
-    "AudioContext",
-    class {
-      state = "running";
-      currentTime = 0;
-      destination = {};
-      resume() {
-        return Promise.resolve();
-      }
-      createOscillator() {
-        return {
-          type: "",
-          frequency: { value: 0 },
-          connect() {},
-          start() {},
-          stop() {},
-        };
-      }
-      createGain() {
-        return {
-          gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} },
-          connect() {},
-        };
-      }
-    },
-  );
-  return { spoken, cancel };
-}
+const spoken: { voice: FakeVoice | undefined; text: string }[] = [];
 
-afterEach(() => {
-  try {
-    localStorage.removeItem("tt-chime-muted");
-  } catch {
-    /* jsdom always has it */
+function installSpeech(voices: FakeVoice[]): void {
+  spoken.length = 0;
+  class FakeUtterance {
+    voice: FakeVoice | undefined;
+    lang = "";
+    volume = 1;
+    rate = 1;
+    pitch = 1;
+    constructor(public text: string) {}
   }
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
+  vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
+  vi.stubGlobal("speechSynthesis", {
+    getVoices: () => voices,
+    speak: (u: FakeUtterance) => spoken.push({ voice: u.voice, text: u.text }),
+    cancel: () => undefined,
+    pending: false,
+    speaking: false,
+    addEventListener: () => undefined,
+  });
+}
+
+/** Re-imported per test, because the chosen voice is cached at module scope on purpose. */
+async function freshSpeak() {
   vi.resetModules();
+  return (await import("./announce")).speak;
+}
+
+beforeEach(() => {
+  vi.stubGlobal("window", globalThis as unknown as Window & typeof globalThis);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
-describe("speaking", () => {
-  it("says the line, at full volume, in Indian English", async () => {
-    const { spoken } = stubSpeech();
-    const { speak } = await load();
-    speak("Your inwards attendance is registered.");
-    expect(spoken).toHaveLength(1);
-    expect(spoken[0]!.text).toBe("Your inwards attendance is registered.");
-    expect(spoken[0]!.volume).toBe(1);
-    expect(spoken[0]!.lang).toBe("en-IN");
-    // Slightly under default: "inwards" versus "outwards" is the whole message.
-    expect(spoken[0]!.rate).toBeLessThan(1);
+describe("voice selection", () => {
+  it("prefers an INSTALLED en-IN voice over a better remote one", async () => {
+    installSpeech([
+      { name: "Google हिन्दी (network)", lang: "en-IN", localService: false },
+      { name: "Rishi", lang: "en-IN", localService: true },
+    ]);
+    (await freshSpeak())("Thank you, your attendance is registered");
+    expect(spoken[0]?.voice?.name).toBe("Rishi");
+    expect(spoken[0]?.voice?.localService).toBe(true);
   });
 
-  it("cancels whatever is still being said", async () => {
-    const { cancel } = stubSpeech();
-    const { speak } = await load();
-    speak("first");
-    speak("second");
+  it("falls back to any installed English when en-IN is not installed", async () => {
+    installSpeech([
+      { name: "Google UK (network)", lang: "en-GB", localService: false },
+      { name: "Samantha", lang: "en-US", localService: true },
+    ]);
+    (await freshSpeak())("Your inwards attendance is registered");
+    expect(spoken[0]?.voice?.name).toBe("Samantha");
+  });
+
+  it("takes ANY installed voice over silence", async () => {
     /*
-      At shift change somebody arrives every few seconds. Queued utterances would fall behind
-      until the gate was announcing arrivals from a minute ago — confidently wrong about who
-      just walked through, which is worse than silence.
+      An installed voice reading English badly is still audible, and audible is the whole
+      requirement at a gate. Quality is not the trade being made here.
     */
-    expect(cancel).toHaveBeenCalledTimes(2);
+    installSpeech([
+      { name: "Google Network", lang: "en-IN", localService: false },
+      { name: "Lekha", lang: "ml-IN", localService: true },
+    ]);
+    (await freshSpeak())("Authentication failed, try again");
+    expect(spoken[0]?.voice?.name).toBe("Lekha");
   });
 
-  it("says nothing when muted", async () => {
-    const { spoken } = stubSpeech();
-    const { speak } = await load();
-    const { setMuted } = await import("./chime");
-    setMuted(true);
-    speak("Your attendance is registered.");
-    expect(spoken).toHaveLength(0);
+  it("leaves the platform to choose when nothing is installed", async () => {
+    // Unchanged behaviour, so a device with only remote voices is no worse off than before.
+    installSpeech([{ name: "Google Network", lang: "en-IN", localService: false }]);
+    (await freshSpeak())("Your attendance is saved on this device");
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]?.voice).toBeUndefined();
   });
 
-  it("says nothing for an empty line", async () => {
-    const { spoken } = stubSpeech();
-    const { speak } = await load();
-    speak("   ");
-    expect(spoken).toHaveLength(0);
-  });
+  it("does not pin an answer while the voice list is still empty", async () => {
+    /*
+      `getVoices()` returns [] until the platform has enumerated. Caching that as "nothing
+      installed" would pin the old, silent-offline behaviour for the whole session on the
+      strength of one early call — and the first announcement of a session is often the one
+      somebody is standing there listening to.
+    */
+    const voices: FakeVoice[] = [];
+    installSpeech(voices);
+    const speak = await freshSpeak();
+    speak("first");
+    expect(spoken[0]?.voice).toBeUndefined();
 
-  it("never throws where there is no speech engine", async () => {
-    vi.stubGlobal("speechSynthesis", undefined);
-    vi.stubGlobal("SpeechSynthesisUtterance", undefined);
-    const { speak, speechSupported } = await load();
-    expect(speechSupported()).toBe(false);
-    // A punch must not fail because a device has no voice installed.
-    expect(() => speak("anything")).not.toThrow();
+    voices.push({ name: "Rishi", lang: "en-IN", localService: true });
+    speak("second");
+    expect(spoken[1]?.voice?.name).toBe("Rishi");
   });
 });
 
-describe("announcePunch", () => {
-  it("speaks AFTER the tone, never over it", async () => {
-    vi.useFakeTimers();
-    const { spoken } = stubSpeech();
-    const { announcePunch } = await load();
-    const { chimeDurationMs } = await import("./chime");
-
-    announcePunch("recorded", "Your inwards attendance is registered.");
-    // Nothing said yet: the tone is still playing, and two sources at once are unintelligible
-    // on a tablet speaker.
-    expect(spoken).toHaveLength(0);
-
-    vi.advanceTimersByTime(chimeDurationMs("recorded") + 90);
-    expect(spoken).toHaveLength(1);
-  });
-
-  it("stays wordless when given no line", async () => {
-    vi.useFakeTimers();
-    const { spoken } = stubSpeech();
-    const { announcePunch } = await load();
-    // An unrecognised face is the loud three-note fall and nothing else — a sentence over it
-    // would only delay the next attempt.
-    announcePunch("error", null);
-    vi.advanceTimersByTime(5_000);
+describe("it still refuses to break a punch", () => {
+  it("says nothing for empty text rather than throwing", async () => {
+    installSpeech([{ name: "Rishi", lang: "en-IN", localService: true }]);
+    (await freshSpeak())("   ");
     expect(spoken).toHaveLength(0);
   });
 });

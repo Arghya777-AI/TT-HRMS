@@ -262,7 +262,18 @@ export function initChime(): void {
   if (typeof window === "undefined") return;
   // No context needed in the shell — audio is native there, and creating one would attach
   // listeners for something that never plays.
-  if (window.TTGateNative !== undefined) return;
+  if (window.TTGateNative !== undefined) {
+    /*
+      PRE-WARM THE BRIDGE, because both sound paths reach it through a DYNAMIC import and the
+      kiosk service worker caches hashed assets `cacheFirst` — on first fetch. A gate that
+      booted, went offline, and only then had somebody scan would fail that import and play
+      nothing, with the failure swallowed as every audio failure is. Resolving it here, at
+      startup while the tablet is still online, means the chunk is in the cache before anybody
+      needs a noise out of it.
+    */
+    void import("@/features/kiosk/lib/nativeBridge").catch(() => undefined);
+    return;
+  }
   ensureContext();
 }
 

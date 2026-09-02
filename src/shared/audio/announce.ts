@@ -53,6 +53,79 @@ export function speechSupported(): boolean {
  *
  * Delegates to the native shell when there is one; otherwise uses the browser's own voice.
  */
+/**
+ * The voice this device will use, chosen once and remembered.
+ *
+ * ── WHY CHOOSING MATTERS, AND WHY IT WAS SILENT AT THE GATE ──────────────────
+ * `utterance.lang = "en-IN"` asks for a language; it does NOT ask for an offline voice. Android
+ * ships Google's `en-IN` voices as NETWORK voices — synthesised server-side — and the platform
+ * prefers them because they sound better. With no internet, `speak()` is called, no error is
+ * raised, `onerror` may never fire, and nothing is heard.
+ *
+ * Which is exactly what the gate did during an outage: the chime played, because those are
+ * oscillators generated on the device, and then the spoken line — the "thank you" people listen
+ * for — did not arrive. The tone alone is indistinguishable from a gate that half works.
+ *
+ * `localService` is the flag that separates the two. A local voice is installed on the device
+ * and speaks with no network at all, so it is preferred over any remote voice however much
+ * better the remote one sounds. A gate is not a place for audio quality; it is a place for
+ * being heard.
+ *
+ * ── ORDER OF PREFERENCE ──────────────────────────────────────────────────────
+ *   1. local + en-IN    the venue's own English, installed
+ *   2. local + any en   any installed English
+ *   3. local + anything an installed voice reading English badly is still audible
+ *   4. undefined        let the platform decide, which is the old behaviour
+ *
+ * Nothing here forces a download and nothing fails loudly: a device with only remote voices
+ * ends up at (4) and behaves exactly as before.
+ */
+let chosenVoice: SpeechSynthesisVoice | null | undefined;
+
+function pickVoice(): SpeechSynthesisVoice | undefined {
+  // `undefined` = not looked yet; `null` = looked and found nothing worth pinning.
+  if (chosenVoice !== undefined) return chosenVoice ?? undefined;
+
+  let voices: SpeechSynthesisVoice[] = [];
+  try {
+    voices = window.speechSynthesis.getVoices();
+  } catch {
+    return undefined;
+  }
+  /*
+    `getVoices()` is empty until the platform has enumerated them, which on Chrome happens
+    after a `voiceschanged` event. Returning undefined leaves `chosenVoice` unset so the NEXT
+    announcement looks again — the alternative, caching the empty answer, would pin the old
+    behaviour forever on the strength of one early call.
+  */
+  if (voices.length === 0) return undefined;
+
+  const local = voices.filter((v) => v.localService);
+  const found =
+    local.find((v) => v.lang.replace("_", "-").toLowerCase() === "en-in") ??
+    local.find((v) => v.lang.toLowerCase().startsWith("en")) ??
+    local[0];
+
+  chosenVoice = found ?? null;
+  return found;
+}
+
+/*
+  Re-pick when the platform finishes enumerating. Without this the first announcement of a
+  session — often the one somebody is standing there listening to — falls back to the platform
+  default because the list was not ready yet.
+*/
+if (typeof window !== "undefined" && typeof window.speechSynthesis !== "undefined") {
+  try {
+    window.speechSynthesis.addEventListener("voiceschanged", () => {
+      chosenVoice = undefined;
+      pickVoice();
+    });
+  } catch {
+    // Safari has no such event; its list is ready synchronously.
+  }
+}
+
 export function speak(text: string): void {
   if (isMuted() || text.trim() === "") return;
   if (typeof window === "undefined") return;
@@ -72,6 +145,12 @@ export function speak(text: string): void {
     const utterance = new SpeechSynthesisUtterance(text);
     // en-IN so a device with Indian English installed uses it; harmlessly ignored otherwise.
     utterance.lang = "en-IN";
+    /*
+      An INSTALLED voice, when there is one. This is the line that makes the gate audible during
+      an outage: without it the platform may pick a network voice and say nothing at all.
+    */
+    const voice = pickVoice();
+    if (voice !== undefined) utterance.voice = voice;
     utterance.volume = 1;
     /*
       Slightly slower than default. This is heard once, in a foyer, by somebody already

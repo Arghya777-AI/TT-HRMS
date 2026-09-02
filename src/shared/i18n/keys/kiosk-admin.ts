@@ -513,9 +513,26 @@ export const keysKioskAdmin = {
   // Recognised, but inside the debounce window — nothing new was written, and saying
   // "registered" again would tell somebody their second scan counted when it did not.
   "kiosk.gate.say.duplicate": "Your attendance is already registered.",
-  // Recorded on the device during an outage. Said plainly, because the person is entitled to
-  // know their punch has not reached the server yet.
-  "kiosk.gate.say.queued": "Your attendance is saved on this device and will be sent shortly.",
+  /*
+    Recorded on the device during an outage — the TT Gate app and its link only; the web punch
+    has no offline path to reach this line.
+
+    IT OPENS WITH THE THANK YOU, LIKE EVERY OTHER SUCCESS. It used not to, and that was the
+    complaint: during an outage the terminal spoke, but the two words people actually listen
+    for were missing, so a held scan sounded like a machine reporting a problem rather than a
+    gate thanking somebody for arriving. For the person at the gate a held scan IS a success —
+    they are recorded and can walk on — and the line now says so in the same words the online
+    ones use.
+
+    The four-word tail stays. They are still entitled to know it has not reached the server,
+    and the sentence is a word SHORTER than the one it replaces, so nothing is lost in a foyer.
+    The outage itself is signalled three other ways regardless: its own chime, the "queued"
+    phase on screen, and the offline count in the header.
+
+    No direction. `punchKind` is the SERVER's ordinal for the day and there is no server to ask
+    — guessing "inwards" here is the one thing this file refuses to do everywhere else.
+  */
+  "kiosk.gate.say.queued": "Thank you. Your attendance is registered and will be sent shortly.",
   /*
     Spoken on a failed scan, over the alarm's tail.
 

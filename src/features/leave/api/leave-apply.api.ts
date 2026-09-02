@@ -53,7 +53,7 @@ import {
   type Filter,
 } from "@/shared/api/query";
 import { insertOne, updateOne } from "@/shared/api/write";
-import { nowInstantIso } from "@/lib/datetime";
+import { istToday, nowInstantIso } from "@/lib/datetime";
 import {
   fetchLeaveRequest,
   leaveDayPortionSchema,
@@ -206,12 +206,46 @@ const MY_LEAVE_CONTEXT_COLUMNS =
   "date_of_join, confirmation_due_date, confirmed_on, holiday_calendar_id, " +
   "weekly_off_rule_id, department_id, mobile";
 
-/** `null` = no employee record (kiosk-only account) → no-permission state. */
+/**
+ * `null` = no employee record (kiosk-only account) → no-permission state.
+ *
+ * ── WHY `holiday_calendar_id` IS RESOLVED AND NOT JUST READ ──────────────────
+ * The column on `employees` is NULL for 80 of the venue's 83 people; only three rows ever had
+ * one set. Every consumer that read it straight off the row therefore got NULL, and the leave
+ * calendar's `useHolidaysInWindow` is `enabled: calendarId.length > 0` — so for almost everybody
+ * the holiday query never ran at all and the calendar showed no holidays. There are nineteen
+ * defined, seven of them still ahead.
+ *
+ * `resolve_policy` is the system's own answer and it resolves for all 83, because a calendar
+ * assigned at COMPANY scope covers everyone without being copied onto each row. Migration
+ * 20260801040000 wrote this rule down after the same mistake — "THE ROTA IS RESOLVED, NOT READ
+ * OFF THE EMPLOYEE" — and this path had not been brought in line with it.
+ *
+ * The row's own value still wins when it is set, so a per-employee override keeps working.
+ */
 export async function fetchMyLeaveContext(signal?: AbortSignal): Promise<MyLeaveContext | null> {
-  return selectOne(MY_EMPLOYEE_VIEW, myLeaveContextSchema, [], {
+  const row = await selectOne(MY_EMPLOYEE_VIEW, myLeaveContextSchema, [], {
     columns: MY_LEAVE_CONTEXT_COLUMNS,
     ...(signal ? { signal } : {}),
   });
+  if (row === null || row.holiday_calendar_id !== null) return row;
+
+  /*
+    A resolver failure must not take the whole leave screen down: without a calendar the page
+    renders every other thing it knows and simply shows no holidays, which is the behaviour that
+    existed before this call. So the fallback is the unresolved row, not an exception.
+  */
+  try {
+    const resolved = await rpcOne(
+      "resolve_policy",
+      { p_kind: "holiday_calendar", p_employee_id: row.id, p_date: istToday() },
+      z.string().uuid().nullable(),
+      { ...(signal ? { signal } : {}) },
+    );
+    return resolved === null ? row : { ...row, holiday_calendar_id: resolved };
+  } catch {
+    return row;
+  }
 }
 
 /**
@@ -809,6 +843,42 @@ export function fetchLeaveRoster(
     order: [{ column: "leave_date", ascending: true }],
     // A month across the whole venue. Bounded so a wide range cannot pull the table.
     limit: 1000,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Who is at the venue — the presence roster
+// -----------------------------------------------------------------------------
+
+/**
+ * `v_presence_roster` — who is on site today, readable by any signed-in employee.
+ *
+ * `presence` is decided by HOW the punch was taken, not by comparing coordinates:
+ * `on_campus` means a gate scan exists today (the tablet is bolted to a known wall, so a gate
+ * scan IS the venue), `remote` means punches exist but none from the gate, `not_in` means no
+ * punch. Deliberately not `geofence_ok` — a web punch from the car park is inside the fence and
+ * still not somebody at their desk.
+ *
+ * Carries no lateness, no worked minutes and no paid fraction. "Is Ravi at the venue" is a
+ * different question from Ravi's punctuality record.
+ */
+export const presenceRosterRowSchema = z.object({
+  employee_id: z.string().uuid(),
+  employee_code: z.string().nullable(),
+  display_name: z.string().nullable(),
+  department_name: z.string().nullable(),
+  presence: z.enum(["on_campus", "remote", "not_in"]),
+  first_in_hm: z.string().nullable(),
+  last_out_hm: z.string().nullable(),
+  day_status: z.string(),
+});
+export type PresenceRosterRow = z.infer<typeof presenceRosterRowSchema>;
+
+export function fetchPresenceRoster(signal?: AbortSignal): Promise<PresenceRosterRow[]> {
+  return selectMany("v_presence_roster", presenceRosterRowSchema, {
+    order: [{ column: "display_name", ascending: true }],
+    limit: 500,
     ...(signal ? { signal } : {}),
   });
 }

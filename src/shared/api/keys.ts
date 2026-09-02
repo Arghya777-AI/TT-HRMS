@@ -114,6 +114,8 @@ export const qk = {
     calendar: (month: string) => ["leave", "calendar", month] as const,
     /** Everyone's approved leave in a window — the company-wide roster, not scoped to me. */
     roster: (from: string, to: string) => ["leave", "roster", from, to] as const,
+    /** Who is at the venue today. No date key — the view is always "today" in IST. */
+    presence: () => ["leave", "presence"] as const,
     /** My own leave days over an explicit window. */
     myCalendar: (employeeId: string, from: string, to: string) =>
       ["leave", "calendar", employeeId, from, to] as const,

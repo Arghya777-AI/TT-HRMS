@@ -1313,6 +1313,17 @@ export const en = catalogue({
     taken knowingly. The subtitle says approved-only so nobody reads a missing name as "they
     have not applied".
   */
+  /*
+    Presence, on the employee's own calendar. Worded around the venue rather than "in/out",
+    because "out" reads as "left for the day" and this is about where somebody is working.
+  */
+  "leave.who.title": "Who is in today",
+  "leave.who.subtitle": "Based on today's scans. A gate scan means the venue; anything else means they recorded attendance from somewhere else.",
+  "leave.who.atVenue": "At the venue",
+  "leave.who.away": "Working away",
+  "leave.who.notIn": "Not in yet",
+  "leave.who.none": "Nobody",
+
   "leave.cal.who.title": "Who else is off",
   "leave.cal.who.subtitle": "Approved leave across the venue this month. A request still awaiting approval does not appear here.",
   "leave.cal.who.empty": "Nobody has approved leave this month.",

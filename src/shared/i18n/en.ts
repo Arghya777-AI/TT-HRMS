@@ -1317,11 +1317,17 @@ export const en = catalogue({
     Presence, on the employee's own calendar. Worded around the venue rather than "in/out",
     because "out" reads as "left for the day" and this is about where somebody is working.
   */
-  "leave.onLeaveSoon.title": "Colleagues on leave",
-  "leave.onLeaveSoon.subtitle": "Approved leave over the next four weeks, by department. A request still awaiting approval does not appear.",
-  "leave.onLeaveSoon.noDept": "No department",
-  "leave.onLeaveSoon.empty": "Nobody has approved leave in the next four weeks.",
-  "leave.onLeaveSoon.today": "today",
+  // Inside the day cell and at the top of the day panel — the venue asked for it in the
+  // calendar, not in a list beside it.
+  "home.cal.colleaguesOff": "{n} on leave",
+  "leave.cal.colleaguesOff": "{n} on leave",
+  "leave.cal.colleaguesMore": "+{n} more",
+
+  /*
+    `leave.onLeaveSoon.*` labelled a panel that listed colleagues' leave BESIDE the calendar.
+    Removed with it: the venue asked four times for this inside the calendar's day cells, and a
+    list next to a grid is the thing that kept not being what was wanted.
+  */
 
   "leave.holidays.title": "Holidays ahead",
   "leave.holidays.subtitle": "On your holiday calendar, for the next four months.",

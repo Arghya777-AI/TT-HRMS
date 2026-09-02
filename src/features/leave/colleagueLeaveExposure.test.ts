@@ -42,24 +42,59 @@ describe("employees do not see each other's hours", () => {
   });
 });
 
-describe("who is on leave, by department", () => {
-  const panel = read("src", "features", "leave", "components", "ColleaguesOnLeavePanel.tsx");
+describe("colleague leave lives INSIDE the calendar", () => {
+  const home = read("src", "features", "home", "components", "MyMonthCalendar.tsx");
+  const cal = read("src", "features", "leave", "pages", "LeaveCalendar.page.tsx");
 
-  it("sections by department with Management first", () => {
+  it("puts the count in the home calendar's day cells", () => {
     /*
-      Asked for directly. The first version grouped by DATE, which is how a calendar thinks; a
-      venue thinks in teams — "is anybody from Restaurant off today" is answerable at a glance
-      where a flat list of forty names is not.
+      THE MISTAKE THIS PINS, MADE FOUR TIMES. Every earlier attempt rendered a LIST beside the
+      calendar — on the leave page, then on the home page, then grouped by department. The
+      instruction each time was "inside the calendar", meaning the day boxes of the month grid,
+      the way the admin's org calendar shows it. A list next to a grid is not the same thing.
     */
-    expect(panel).toContain('const LEAD_DEPARTMENT = "Management"');
-    expect(panel).toContain("row.department_name");
-    // Deterministic after that, so the order does not shuffle between renders.
-    expect(panel).toContain("a.name.localeCompare(b.name)");
+    /*
+      The badge's own render, not just a mention of `cell.onLeave.length` — the first version of
+      this assertion matched the `disabled={cell.isFuture && cell.onLeave.length === 0}` line and
+      passed with the badge deleted. Confirmed by deleting it and watching the test stay green.
+    */
+    expect(home).toContain("{cell.onLeave.length === 0 ? null : (");
+    expect(home).toContain("home.cal.colleaguesOff");
+  });
+
+  it("names them when a home day cell is opened", () => {
+    expect(home).toContain("openCell.onLeave.map");
+  });
+
+  it("lets a FUTURE day open when a colleague is off then", () => {
+    /*
+      Future cells were disabled outright, because my own attendance has not happened yet. A
+      colleague's approved leave next Friday HAS happened as a fact and is the most useful thing
+      on the grid, so the cell has to be reachable.
+    */
+    expect(home).toContain("cell.isFuture && cell.onLeave.length === 0");
+  });
+
+  it("puts it in the leave calendar's cells too, capped", () => {
+    expect(cal).toContain("cell.colleagues.length");
+    // Three names fit a 5.5rem cell; thirty would make the month ragged.
+    expect(cal).toContain("cell.colleagues.slice(0, 3)");
+    expect(cal).toContain("leave.cal.colleaguesMore");
+  });
+
+  it("has no list panel beside either calendar any more", () => {
+    for (const src of [
+      read("src", "features", "home", "pages", "Home.page.tsx"),
+      cal,
+    ]) {
+      expect(src).not.toContain("ColleaguesOnLeavePanel");
+      expect(src).not.toContain("WhoIsInPanel");
+    }
   });
 
   it("still says half day or full day", () => {
-    expect(panel).toContain("isHalfDay(row.portion)");
-    expect(panel).toContain("portionShort(row.portion)");
+    expect(home).toContain("isHalfDay(row.portion)");
+    expect(cal).toContain("isHalfDay(c.portion)");
   });
 });
 
@@ -100,20 +135,16 @@ describe("v_leave_roster stays narrow", () => {
   });
 });
 
-describe("the panels are on the screen people actually open", () => {
-  const home = read("src", "features", "home", "pages", "Home.page.tsx");
-
-  it.each(["ColleaguesOnLeavePanel", "UpcomingHolidaysPanel"])(
-    "renders %s on the home page",
-    (p) => {
-      /*
-        Reported three times as "still can't see it". The panels were on `/me/leave/calendar`,
-        which is not the page anybody opens. A feature nobody can find is indistinguishable from
-        one never built.
-      */
-      expect(home).toContain(`<${p} />`);
-    },
-  );
+describe("holidays stay a list, on the home page", () => {
+  it("renders UpcomingHolidaysPanel there", () => {
+    /*
+      Deliberately NOT moved into the grid. "What is the next holiday" is a question about dates
+      further out than the month on screen, and reading it off a grid one month at a time answers
+      it badly.
+    */
+    expect(read("src", "features", "home", "pages", "Home.page.tsx"))
+      .toContain("<UpcomingHolidaysPanel />");
+  });
 });
 
 describe("the holiday calendar is resolved, not read off the row", () => {

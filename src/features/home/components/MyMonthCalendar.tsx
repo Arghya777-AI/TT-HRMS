@@ -34,6 +34,9 @@
  * worked nothing — which for a day that has not happened yet is a claim, not a fact.
  */
 import { useMemo, useState } from "react";
+import { useLeaveRoster } from "@/features/leave/hooks/useLeaveApply";
+import { isHalfDay, portionShort } from "@/features/leave/leavePortion";
+import type { LeaveRosterRow } from "@/features/leave/api/leave-apply.api";
 import { Link } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -150,6 +153,8 @@ interface Cell {
   readonly recordedBy: RecordedBy;
   readonly isToday: boolean;
   readonly isFuture: boolean;
+  /** Colleagues on approved leave that day. Empty is the common case. */
+  readonly onLeave: readonly LeaveRosterRow[];
 }
 
 export function MyMonthCalendar() {
@@ -161,6 +166,25 @@ export function MyMonthCalendar() {
   const range = istMonthRange(month);
   const days = useAttendanceDays(range);
   const rows = asArray(days.data);
+
+  /*
+    ── COLLEAGUES ON LEAVE, IN THE CELLS ─────────────────────────────────────
+    Asked for repeatedly, and I kept building it as a LIST underneath. The venue was clear that
+    it belongs where the admin's leave calendar puts it: inside the day boxes, as a count, with
+    the names one tap away.
+
+    Same window as my own month, so one month selector drives both.
+  */
+  const colleagues = useLeaveRoster(range.from, range.to);
+  const leaveByDate = useMemo(() => {
+    const out = new Map<string, LeaveRosterRow[]>();
+    for (const row of colleagues.data ?? []) {
+      const bucket = out.get(row.leave_date);
+      if (bucket === undefined) out.set(row.leave_date, [row]);
+      else bucket.push(row);
+    }
+    return out;
+  }, [colleagues.data]);
 
   const cells = useMemo<Cell[]>(() => {
     const byDate = new Map<string, AttendanceDay>();
@@ -174,9 +198,10 @@ export function MyMonthCalendar() {
         recordedBy: dayRecordedBy(day),
         isToday: date === today,
         isFuture: date > today,
+        onLeave: leaveByDate.get(date) ?? [],
       };
     });
-  }, [rows, month, today]);
+  }, [rows, month, today, leaveByDate]);
 
   /*
     ── THE GRID HAD NO KEY, SO THE COLOURS MEANT NOTHING ───────────────────────────
@@ -336,7 +361,12 @@ export function MyMonthCalendar() {
                 key={cell.date}
                 type="button"
                 role="gridcell"
-                disabled={cell.isFuture}
+                /*
+                  A future day is normally closed — my own attendance has not happened yet. But a
+                  colleague's approved leave next Friday HAS happened as a fact, and it is the
+                  most useful thing on this grid, so a future cell opens when it carries one.
+                */
+                disabled={cell.isFuture && cell.onLeave.length === 0}
                 aria-pressed={selected}
                 aria-label={words.join(" — ")}
                 onClick={() => setOpenDate(selected ? null : cell.date)}
@@ -390,6 +420,24 @@ export function MyMonthCalendar() {
                       RECORDED_STYLE[cell.recordedBy].shape,
                     )}
                   />
+                )}
+
+                {/*
+                  Colleagues off that day. Bottom-left, because the number is centred, the
+                  recorded-by pip is top-right and the status letter sits under the number —
+                  this is the only corner left. A count, not names: forty names do not fit in a
+                  44px box, which is what the tap is for.
+                */}
+                {cell.onLeave.length === 0 ? null : (
+                  <span
+                    className="absolute bottom-0.5 left-1 flex items-center gap-0.5"
+                    title={t("home.cal.colleaguesOff", { n: String(cell.onLeave.length) })}
+                  >
+                    <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+                    <span className="num text-[0.55rem] leading-none tabular-nums text-muted-foreground">
+                      {cell.onLeave.length}
+                    </span>
+                  </span>
                 )}
 
                 {/* The letter carries the state; the dot only reinforces it. */}
@@ -475,6 +523,41 @@ export function MyMonthCalendar() {
             </Button>
           }
         >
+          {/*
+            WHO IS OFF, at the top of the panel. It is the reason a future cell can be opened at
+            all, and on a day with no record of my own it is the only thing there is to say.
+          */}
+          {openCell !== null && openCell.onLeave.length > 0 ? (
+            <div className="mb-3 rounded-lg border bg-muted/30 p-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("home.cal.colleaguesOff", { n: String(openCell.onLeave.length) })}
+              </p>
+              <ul className="mt-1.5 space-y-1">
+                {openCell.onLeave.map((row) => (
+                  <li key={row.leave_request_day_id} className="flex items-baseline gap-1.5 text-sm">
+                    <span
+                      aria-hidden
+                      className="mt-1.5 size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium">{row.display_name}</span>
+                      {row.department_name === null ? null : (
+                        <span className="ml-1.5 text-[11px] text-muted-foreground">
+                          {row.department_name}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {row.leave_type_name}
+                      {isHalfDay(row.portion) ? ` · ${portionShort(row.portion)}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {openCell === null || openCell.day === null ? (
             <p className="text-sm text-muted-foreground">{t("home.cal.noRecord")}</p>
           ) : (

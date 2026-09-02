@@ -54,7 +54,6 @@ import { AttentionCard } from "../components/AttentionCard";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
-import { ColleaguesOnLeavePanel } from "@/features/leave/components/ColleaguesOnLeavePanel";
 import { UpcomingHolidaysPanel } from "@/features/leave/components/UpcomingHolidaysPanel";
 import { LeaveBalancesCard } from "../components/BalancesCards";
 import {
@@ -220,15 +219,12 @@ export default function HomePage() {
       </div>
 
       {/*
-        ── WHO IS OFF, AND THE HOLIDAYS AHEAD ─────────────────────────────────
-        A "who is in, and since when" panel briefly sat here too and was REMOVED at the venue's
-        instruction: colleagues are not to see each other's arrival times. That information now
-        lives only where an admin looks at it, which is the dashboard roster.
-
-        What remains answers the question employees actually need of each other — who is away —
-        without publishing anybody's punctuality.
+        ── HOLIDAYS ──────────────────────────────────────────────────────────
+        A "colleagues on leave" LIST sat here and is gone: that information now lives inside the
+        month grid above, in the day cells, which is where the venue asked for it. Holidays stay
+        as a list, because "what is the next holiday" is a question about dates I have not
+        reached yet and reading it off a grid one month at a time answers it badly.
       */}
-      <ColleaguesOnLeavePanel />
       <UpcomingHolidaysPanel />
 
       <div className="mt-4 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">

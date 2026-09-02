@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
-import { isHalfDay, portionText } from "../leavePortion";
+import { isHalfDay, portionShort } from "../leavePortion";
 import type { LeaveRosterRow } from "../api/leave-apply.api";
 import {
   addIstMonths,
@@ -55,6 +55,8 @@ interface DayCell {
   readonly holiday: CalendarHoliday | null;
   readonly isWeeklyOff: boolean;
   readonly isToday: boolean;
+  /** Colleagues on approved leave that day — shown IN the cell, not in a list beside it. */
+  readonly colleagues: readonly LeaveRosterRow[];
 }
 
 export default function LeaveCalendarPage() {
@@ -75,20 +77,6 @@ export default function LeaveCalendarPage() {
   */
   const roster = useLeaveRoster(range.from, range.to);
 
-  /*
-    Grouped by date, in a Map so the month's own order survives — the query already returns
-    `leave_date` ascending, and an object would re-order the keys as numeric-looking strings.
-  */
-  const byDate = useMemo(() => {
-    const out = new Map<string, LeaveRosterRow[]>();
-    for (const row of roster.data ?? []) {
-      const bucket = out.get(row.leave_date);
-      if (bucket === undefined) out.set(row.leave_date, [row]);
-      else bucket.push(row);
-    }
-    return out;
-  }, [roster.data]);
-
   function goMonth(delta: number) {
     const next = new URLSearchParams(params);
     next.set("m", addIstMonths(month, delta));
@@ -107,14 +95,27 @@ export default function LeaveCalendarPage() {
     const offByDate = new Map<string, boolean>();
     for (const d of days.data ?? []) offByDate.set(d.ist_date, d.is_weekly_off);
 
+    /*
+      Colleagues on leave, per date. Built here rather than in its own memo because the day cell
+      is its only consumer — the list that used to sit beside this calendar is gone, which is
+      what the venue asked for.
+    */
+    const colleaguesByDate = new Map<string, LeaveRosterRow[]>();
+    for (const row of roster.data ?? []) {
+      const bucket = colleaguesByDate.get(row.leave_date);
+      if (bucket === undefined) colleaguesByDate.set(row.leave_date, [row]);
+      else bucket.push(row);
+    }
+
     return istMonthDates(month).map((date) => ({
       date,
       leave: leaveByDate.get(date) ?? [],
       holiday: holidayByDate.get(date) ?? null,
       isWeeklyOff: offByDate.get(date) === true,
       isToday: date === today,
+      colleagues: colleaguesByDate.get(date) ?? [],
     }));
-  }, [leave.data, holidays.data, days.data, month, today]);
+  }, [leave.data, holidays.data, days.data, roster.data, month, today]);
 
   const leadingBlanks = useMemo(() => {
     const first = cells[0];
@@ -236,6 +237,39 @@ export default function LeaveCalendarPage() {
                     {l.leave_type_name}
                   </Link>
                 ))}
+
+                {/*
+                  Colleagues off that day, INSIDE the cell. Named where the box has room and
+                  counted where it does not: three names fit in a 5.5rem cell, thirty do not, and
+                  a cell that grows with the day's leave breaks the month into ragged rows.
+                */}
+                {cell.colleagues.length === 0 ? null : (
+                  <div className="mt-1.5 border-t pt-1">
+                    <p className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+                      {t("leave.cal.colleaguesOff", { n: String(cell.colleagues.length) })}
+                    </p>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {cell.colleagues.slice(0, 3).map((c) => (
+                        <li
+                          key={c.leave_request_day_id}
+                          className="truncate text-[10px] text-muted-foreground"
+                          title={`${c.display_name ?? ""} · ${c.leave_type_name}${
+                            isHalfDay(c.portion) ? ` · ${portionShort(c.portion)}` : ""
+                          }`}
+                        >
+                          {c.display_name}
+                          {isHalfDay(c.portion) ? ` (${portionShort(c.portion)})` : ""}
+                        </li>
+                      ))}
+                      {cell.colleagues.length > 3 ? (
+                        <li className="text-[10px] text-muted-foreground">
+                          {t("leave.cal.colleaguesMore", { n: String(cell.colleagues.length - 3) })}
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -269,66 +303,11 @@ export default function LeaveCalendarPage() {
         <p className="mt-4 text-xs text-muted-foreground">{t("leave.cal.offsPartial")}</p>
       </StateBoundary>
 
-      {/* Presence first: "is she at her desk" is asked far more often than "who is off". */}
-
       {/*
-        ── WHO ELSE IS OFF ────────────────────────────────────────────────────
-        This replaced a note saying team overlap was unavailable. It was accurate: the page could
-        only ever read my own rows, because `leave_requests` is scoped to
-        `app.visible_employee_ids()`. `v_leave_roster` is a separate, deliberately narrow view
-        that answers the question without opening the request itself.
-
-        Its own boundary, so a failure here leaves MY calendar above it standing — my leave is
-        the reason I opened this page, and it must not disappear because a company-wide read
-        failed.
+        The "who else is off" LIST that sat here is gone. That information is now in the day
+        cells above, which is where it was asked for — repeatedly, and I built a list beside the
+        calendar three times before understanding which "calendar" was meant.
       */}
-      <section className="mt-6">
-        <h2 className="font-display text-lg font-semibold">{t("leave.cal.who.title")}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t("leave.cal.who.subtitle")}</p>
-
-        <StateBoundary
-          loading={roster.isLoading}
-          error={roster.error ?? undefined}
-          onRetry={() => void roster.refetch()}
-          skeletonRows={3}
-        >
-          {byDate.size === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">{t("leave.cal.who.empty")}</p>
-          ) : (
-            <ul className="mt-3 space-y-2">
-              {[...byDate.entries()].map(([date, rows]) => (
-                <li key={date} className="rounded-lg border bg-card px-3 py-2">
-                  <p className="text-xs font-medium">
-                    {fmtCivilDayMonthWeekday(date)}
-                    {date === today ? ` · ${t("leave.cal.who.today")}` : ""}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {rows.map((row) => (
-                      <span
-                        key={row.leave_request_day_id}
-                        className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
-                      >
-                        <span
-                          aria-hidden
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
-                        />
-                        <span className="font-medium">{row.display_name}</span>
-                        <span className="text-muted-foreground">{row.leave_type_name}</span>
-                        {isHalfDay(row.portion) ? (
-                          <span className="rounded bg-warning/15 px-1 text-[10px] font-medium text-warning">
-                            {portionText(row.portion)}
-                          </span>
-                        ) : null}
-                      </span>
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </StateBoundary>
-      </section>
     </div>
   );
 }

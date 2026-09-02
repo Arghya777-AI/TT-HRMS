@@ -225,6 +225,7 @@ function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.
           punch.accuracyMetres === null
             ? null
             : t("admin.roster.loc.accuracy", { m: String(Math.round(punch.accuracyMetres)) }),
+          punch.awaitingApproval ? t("admin.roster.loc.awaiting") : null,
         ]
           .filter((part): part is string => part !== null)
           .join(" · ");
@@ -241,6 +242,8 @@ function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.
             {punch.via === "web" && punch.distance !== null ? (
               <span className="opacity-80">{formatDistance(punch.distance.metres)}</span>
             ) : null}
+            {/* Which punch is waiting, not just that the day has one. */}
+            {punch.awaitingApproval ? <span className="text-warning">*</span> : null}
           </>
         );
 
@@ -323,7 +326,24 @@ function WorkedCell({ row, nowMs }: { row: RosterRow; nowMs: number }): React.JS
     case "credited":
       return (
         <span className="inline-flex flex-col items-end leading-tight">
-          <span>{fmtDurationHm(shown.minutes)}</span>
+          <span>
+            {fmtDurationHm(shown.minutes)}
+            {/*
+              THE STAR. The hours above ARE in this day's figure; they are held OUT of the
+              monthly total until an administrator accepts the reason. Without the mark the two
+              numbers simply disagree and a reader has no way to know why.
+            */}
+            {row.awaitingApproval > 0 ? (
+              <span
+                className="ml-0.5 text-warning"
+                title={t("admin.roster.awaitingApproval", {
+                  n: String(row.awaitingApproval),
+                })}
+              >
+                *
+              </span>
+            ) : null}
+          </span>
           {/* Still here after an out-scan: the engine's figure is settled, the clock is not. */}
           {shown.alsoOnSite !== null ? (
             <span className="text-[10px] text-muted-foreground">

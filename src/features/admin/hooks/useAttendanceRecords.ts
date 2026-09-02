@@ -35,6 +35,9 @@ import {
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery, type Cursor, type Page } from "@/shared/api/query";
 import {
+  type PendingApprovalPunch,
+  decideOffHoursPunch,
+  fetchPendingApprovalPunches,
   SINGLE_PUNCH_FLAG,
   countDayRecords,
   countExceptionQueue,
@@ -371,5 +374,43 @@ export function usePublishRoster(): AuditedMutationResult<
        what the employee-facing screens read, so a tile that still says draft
        after a successful publish would be the screen disagreeing with itself. */
     invalidate: [qk.admin.all, qk.team.all],
+  });
+}
+
+/**
+ * Off-hours punches waiting on an administrator.
+ *
+ * A short `staleTime`, because two administrators may be working the same queue and the second
+ * one should not be offered a punch the first has just decided. The decision itself refuses a
+ * repeat, so the worst case is a clear refusal rather than a double decision — but being told
+ * "already approved" is a worse experience than the row simply being gone.
+ */
+export function usePendingApprovalPunches(
+  enabled = true,
+): UseQueryResult<PendingApprovalPunch[], Error> {
+  return useQuery({
+    queryKey: qk.admin.pendingApprovalPunches(),
+    queryFn: ({ signal }) => fetchPendingApprovalPunches(signal),
+    enabled,
+    staleTime: 15_000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * Approve or reject one, with the reason the function insists on.
+ *
+ * Invalidates everything under `admin`: a decision moves the day's worked figure, the pending
+ * minutes, the monthly total and the roster's star, and enumerating those keys here would be a
+ * list that goes stale the next time one is added.
+ */
+export function useDecideOffHoursPunch(): AuditedMutationResult<
+  unknown,
+  { readonly punchId: string; readonly approve: boolean }
+> {
+  return useAuditedMutation<unknown, { readonly punchId: string; readonly approve: boolean }>({
+    mutationFn: (input, reason) => decideOffHoursPunch(input, reason),
+    invalidate: [qk.admin.all],
+    minReasonLength: 10,
   });
 }

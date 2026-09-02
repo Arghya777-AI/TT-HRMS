@@ -291,6 +291,8 @@ export const qk = {
       ["admin", "attendance", "regularizations", filters] as const,
     attendanceDays: (filters: Record<string, unknown>) =>
       ["admin", "attendance", "days", filters] as const,
+    /** Off-hours punches awaiting an administrator's decision. */
+    pendingApprovalPunches: () => ["admin", "attendance", "pending-approval"] as const,
     /** The ONE summary row behind both the 14-KPI strip and the Command Centre. */
     attendanceSummary: (from: string, to: string, employeeId: string | null) =>
       ["admin", "attendance", "summary", from, to, employeeId] as const,

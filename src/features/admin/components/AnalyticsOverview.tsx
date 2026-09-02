@@ -69,6 +69,7 @@ import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { useAnalyticsLive } from "../hooks/useAnalyticsLive";
 import { DashboardPanelTabs, useDashboardPanel } from "./DashboardPanelTabs";
 import { TodayRoster } from "./TodayRoster";
+import { OffHoursApprovals } from "./OffHoursApprovals";
 import { useTodayRoster } from "../hooks/useTodayRoster";
 import { liveStatusCopy, type AnalyticsLiveStatus } from "../analyticsLive";
 import type { DayClass, DepartmentBreakdownRow } from "../analyticsAggregate";
@@ -271,6 +272,16 @@ export function AnalyticsOverview() {
           ? t("admin.analytics.overview.todayTitle")
           : t("admin.analytics.overview.dayTitle", { date: fmtCivilDate(rosterDate) })}
       </h2>
+      {/*
+        ── WHAT IS WAITING ON YOU ────────────────────────────────────────────
+        Above the roster, because it is the only thing on this page that needs an ACTION rather
+        than a read — and because the star on a roster row points here. It renders nothing but
+        an empty state when the queue is clear, which is the normal case.
+
+        Given the roster's venue point so both screens measure distance from the same place.
+      */}
+      <OffHoursApprovals venue={roster.data?.venue ?? null} />
+
       <TodayRoster
         roster={roster.data}
         loading={roster.isLoading}

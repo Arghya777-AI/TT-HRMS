@@ -1664,6 +1664,35 @@ export const en = catalogue({
   "admin.roster.loc.viaGate": "At the gate camera",
   "admin.roster.loc.viaWeb": "From the web or a phone",
   "admin.roster.loc.accuracy": "accurate to about {m} m",
+  "admin.roster.loc.awaiting": "awaiting your approval",
+
+  /*
+    The approvals queue. Both decisions change somebody's pay, so both say what they do rather
+    than just naming themselves.
+  */
+  "admin.offHours.title": "Punches outside shift hours",
+  "admin.offHours.subtitle":
+    "Recorded from the web or a phone outside the employee's working hours. The hours show on their day already; they are not counted in the monthly total until you approve them.",
+  "admin.offHours.empty.title": "Nothing waiting",
+  "admin.offHours.empty.hint": "Off-hours web punches appear here for a decision. Gate scans never do.",
+  "admin.offHours.viaWeb": "Web or phone",
+  "admin.offHours.noLocation": "no location recorded",
+  "admin.offHours.venueUnset": "venue location not set",
+  "admin.offHours.noReason": "No reason was recorded.",
+  "admin.offHours.approve": "Approve",
+  "admin.offHours.reject": "Reject",
+  "admin.offHours.approve.title": "Approve {name}'s off-hours punch",
+  "admin.offHours.approve.description":
+    "The hours will be counted in their monthly total from now on. Say why you are satisfied — the employee sees this, and an auditor reads it months from now.",
+  "admin.offHours.reject.title": "Reject {name}'s off-hours punch",
+  "admin.offHours.reject.description":
+    "The punch will be voided, so these hours leave the day as well as the month. It is not deleted — your name and this reason stay on the record. Say why.",
+  /*
+    The star beside a day's hours. Says both halves: the hours are real and in the day, and
+    they are not in the month yet. Either half alone is misleading.
+  */
+  "admin.roster.awaitingApproval":
+    "{n} punch(es) outside shift hours awaiting approval — these hours show here but are not counted in the monthly total until approved.",
   /*
     "On site", never "worked". Wall-clock time since the first scan with nothing deducted, so it
     runs ahead of the engine's paid figure by exactly the shift's unpaid break. Two different

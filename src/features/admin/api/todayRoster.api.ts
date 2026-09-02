@@ -99,6 +99,14 @@ export interface RosterRow {
    * punch timeline, so the list is kept whole and the column renders it.
    */
   readonly punches: readonly PunchOnRoster[];
+  /**
+   * How many of the day's punches are still waiting on an administrator.
+   *
+   * Not minutes: the day's pending MINUTES are the engine's figure and cannot be attributed to
+   * a single punch, so the roster reports the count and the star, and the person's own
+   * attendance page carries the number.
+   */
+  readonly awaitingApproval: number;
 }
 
 /** One punch's position, plus what it means relative to the venue. */
@@ -114,6 +122,14 @@ export interface PunchOnRoster {
   readonly accuracyMetres: number | null;
   /** Null with no coordinates, or when nobody has told this system where the venue is. */
   readonly distance: VenueDistance | null;
+  /**
+   * True when this punch is outside the shift window and no administrator has decided it yet.
+   *
+   * The hours ARE in the day's worked figure — that is the venue's rule — and they are held
+   * out of the monthly total until somebody accepts the reason. The star on the row is what
+   * tells a reader the two figures differ on purpose.
+   */
+  readonly awaitingApproval: boolean;
 }
 
 /** The same four figures, whether for one department or the whole venue. */
@@ -188,6 +204,14 @@ const punchFixSchema = z.object({
   lat: z.union([z.number(), z.string()]).nullable(),
   lng: z.union([z.number(), z.string()]).nullable(),
   location_accuracy_m: z.union([z.number(), z.string()]).nullable(),
+  /*
+    Whether an administrator still has to accept this punch. Read from the punch log rather
+    than from the day, because the roster already loads every punch for the timeline — a
+    second read of `attendance_days.pending_approval_minutes` would be a second source for
+    the same fact.
+  */
+  requires_approval: z.boolean().nullable(),
+  approved_at: z.string().nullable(),
 });
 
 /**
@@ -344,7 +368,9 @@ export async function fetchTodayRoster(
       ...(signal ? { signal } : {}),
     }),
     selectMany(V_PUNCH_DETAIL, punchFixSchema, {
-      columns: "employee_id, punched_at, source, lat, lng, location_accuracy_m",
+      columns:
+        "employee_id, punched_at, source, lat, lng, location_accuracy_m, " +
+        "requires_approval, approved_at",
       filters: [eq("ist_date", date)],
       // Oldest first, so the timeline below renders in the order the punches happened.
       order: [{ column: "punched_at", ascending: true }],
@@ -409,6 +435,7 @@ export async function fetchTodayRoster(
         lat === null || lng === null
           ? null
           : distanceFromVenue({ latitude: lat, longitude: lng, accuracyMetres }, venue),
+      awaitingApproval: row.requires_approval === true && row.approved_at === null,
     };
     const bucket = punchesByEmployee.get(row.employee_id);
     if (bucket === undefined) punchesByEmployee.set(row.employee_id, [punch]);
@@ -491,6 +518,8 @@ export async function fetchTodayRoster(
       lateMinutes: row.late_minutes,
       punchCount: row.punch_count,
       punches: punchesByEmployee.get(row.employee_id) ?? [],
+      awaitingApproval: (punchesByEmployee.get(row.employee_id) ?? [])
+        .filter((punch) => punch.awaitingApproval).length,
     };
   });
 

@@ -859,3 +859,70 @@ export async function recordManualPunch(
   if (row === undefined) throw new Error("The punch was not returned after saving.");
   return row;
 }
+
+// -----------------------------------------------------------------------------
+// Off-hours punches awaiting an administrator's decision
+// -----------------------------------------------------------------------------
+
+/**
+ * A web punch taken outside the shift window, still undecided.
+ *
+ * Read from `v_attendance_punch_detail`, which scopes itself with
+ * `app.visible_employee_ids()` — so an administrator sees their own scope and an employee
+ * sees only themselves. That is deliberately not widened: an employee SHOULD be able to see
+ * that their own punch is waiting, and nobody else's.
+ */
+export const pendingApprovalPunchSchema = z.object({
+  id: dbUuid,
+  employee_id: dbUuid,
+  employee_code: z.string().nullable(),
+  display_name: z.string().nullable(),
+  punched_at: dbTimestamp,
+  ist_date: dbDate,
+  ist_time: z.string().nullable(),
+  source: z.string(),
+  reason: z.string().nullable(),
+  lat: dbNumericNullable,
+  lng: dbNumericNullable,
+  location_accuracy_m: dbNumericNullable,
+});
+export type PendingApprovalPunch = z.infer<typeof pendingApprovalPunchSchema>;
+
+export function fetchPendingApprovalPunches(
+  signal?: AbortSignal,
+): Promise<PendingApprovalPunch[]> {
+  return selectMany(V_PUNCH_DETAIL, pendingApprovalPunchSchema, {
+    columns:
+      "id, employee_id, employee_code, display_name, punched_at, ist_date, ist_time, " +
+      "source, reason, lat, lng, location_accuracy_m",
+    filters: [
+      { op: "is", column: "requires_approval", value: true },
+      { op: "is", column: "approved_at", value: null },
+      { op: "is", column: "is_voided", value: false },
+    ],
+    // Oldest first: the person who has been waiting longest is decided first.
+    order: [{ column: "punched_at", ascending: true }],
+    limit: 200,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/**
+ * Approve or reject one. Approving releases the hours into the monthly total; rejecting voids
+ * the punch, so they leave the day as well.
+ *
+ * The reason is required by the function itself (ten characters), because the employee sees it
+ * and an auditor reads it months later.
+ */
+export function decideOffHoursPunch(
+  input: { readonly punchId: string; readonly approve: boolean },
+  reason: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return rpcAudited(
+    "decide_off_hours_punch",
+    { p_punch_id: input.punchId, p_approve: input.approve, p_reason: reason },
+    z.unknown(),
+    { reason, minReasonLength: 10, ...(signal ? { signal } : {}) },
+  );
+}

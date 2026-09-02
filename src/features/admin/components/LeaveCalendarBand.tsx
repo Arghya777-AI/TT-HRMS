@@ -34,6 +34,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { isHalfDay, portionText } from "@/features/leave/leavePortion";
 import { formatNumber } from "@/lib/format";
 import {
   fmtCivilDayMonthWeekday,
@@ -359,6 +360,22 @@ export function LeaveCalendarBand() {
                       <span className="block truncate text-xs text-muted-foreground">
                         {row.leave_type_name}
                         {row.department_name === null ? "" : ` · ${row.department_name}`}
+                      </span>
+                      {/*
+                        Half or full, on its own line rather than appended to the type. Whether
+                        somebody is in this afternoon is a different question from what kind of
+                        leave they took, and a reader scanning five names should not have to
+                        parse to the end of a sentence to answer it.
+                      */}
+                      <span
+                        className={cn(
+                          "mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          isHalfDay(row.portion)
+                            ? "bg-warning/15 text-warning"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {portionText(row.portion)}
                       </span>
                     </span>
                   </li>

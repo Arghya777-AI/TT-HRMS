@@ -1246,6 +1246,17 @@ export const en = catalogue({
   "leave.alloc.skipped.weekly_off": "Weekly off — not deducted",
   "leave.alloc.skipped.holiday": "Holiday — not deducted",
   "leave.alloc.skipped.already_leave": "Already leave — not deducted",
+  /*
+    Shown wherever somebody reads WHO is on leave, as opposed to allocating it. Separate from
+    `leave.alloc.portion.*` because those label a form control and these label a fact on a
+    calendar — "First half" beside a name reads as a fragment, "Half day (first half)" does not.
+  */
+  "leave.portion.fullDay": "Full day",
+  "leave.portion.firstHalf": "Half day (first half)",
+  "leave.portion.secondHalf": "Half day (second half)",
+  "leave.portion.halfShort": "Half day",
+  "leave.portion.fullShort": "Full day",
+
   "leave.alloc.portion.full_day": "Full day",
   "leave.alloc.portion.first_half": "First half",
   "leave.alloc.portion.second_half": "Second half",

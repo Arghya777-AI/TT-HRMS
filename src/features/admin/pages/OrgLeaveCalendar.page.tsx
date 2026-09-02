@@ -54,6 +54,7 @@ import {
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
+import { isHalfDay, portionShort, portionText } from "@/features/leave/leavePortion";
 import { ACTIVE_EMPLOYMENT_STATUSES } from "../api/employees.api";
 import {
   CALENDAR_APPROVED_STATUSES,
@@ -355,7 +356,7 @@ export default function AdminOrgLeaveCalendarPage() {
                         <Link
                           to={`/admin/leave/requests?emp=${row.employee_id}`}
                           className="block truncate rounded text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          title={`${row.display_name ?? ""} · ${row.leave_type_name}`}
+                          title={`${row.display_name ?? ""} · ${row.leave_type_name} · ${portionText(row.portion)}`}
                         >
                           <span
                             className="mr-1 inline-block h-2 w-2 rounded-full align-middle"
@@ -367,6 +368,17 @@ export default function AdminOrgLeaveCalendarPage() {
                             aria-hidden
                           />
                           {row.display_name ?? t("admin.common.unknownPerson")}
+                          {/*
+                            A month grid has room for a mark, not a sentence. The half-day
+                            badge is what distinguishes somebody who is in this afternoon from
+                            somebody who is gone; a full day needs no mark, because it is what
+                            a name on a leave calendar already means.
+                          */}
+                          {isHalfDay(row.portion) ? (
+                            <span className="ml-1 rounded bg-warning/15 px-1 text-[10px] font-medium text-warning">
+                              {t("leave.portion.halfShort")}
+                            </span>
+                          ) : null}
                         </Link>
                       </li>
                     ))}
@@ -413,7 +425,7 @@ export default function AdminOrgLeaveCalendarPage() {
                     >
                       <Badge variant="info">
                         {row.display_name ?? t("admin.common.unknownPerson")} ·{" "}
-                        {row.leave_type_code}
+                        {row.leave_type_code} · {portionShort(row.portion)}
                       </Badge>
                     </Link>
                   ))}

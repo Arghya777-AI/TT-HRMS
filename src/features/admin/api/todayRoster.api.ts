@@ -35,7 +35,7 @@
  */
 import { z } from "zod";
 import { eq, selectMany } from "@/shared/api/query";
-import { istToday } from "@/lib/datetime";
+import { fmtTime, istToday } from "@/lib/datetime";
 import { distanceFromVenue, type VenueDistance, type VenuePoint } from "@/lib/venueDistance";
 import { t } from "@/shared/i18n/en";
 import { fetchTodayBoard } from "./analytics.api";
@@ -90,17 +90,29 @@ export interface RosterRow {
    * punches out of 908 whose tablet withheld a fix, and for every punch recorded before a
    * location became mandatory on the web route.
    */
-  readonly fix: PunchFixOnRoster | null;
+  /**
+   * Every punch today, in order, each with where it was taken.
+   *
+   * Was ONE fix per person, web preferred over gate. That answered "was this person away" and
+   * could not answer "away WHEN" — a day of 09:00 at the gate then 19:00 from home showed only
+   * the 19:00, so the gate arrival vanished. The industry convention for an attendance row is a
+   * punch timeline, so the list is kept whole and the column renders it.
+   */
+  readonly punches: readonly PunchOnRoster[];
 }
 
 /** One punch's position, plus what it means relative to the venue. */
-export interface PunchFixOnRoster {
-  readonly latitude: number;
-  readonly longitude: number;
-  readonly accuracyMetres: number | null;
+/** One punch: when, how, where, and how far from the venue. */
+export interface PunchOnRoster {
+  /** IST wall clock, `HH:MM`, pre-formatted so the cell does no timezone arithmetic. */
+  readonly at: string;
   /** `gate` or `web`, so a distance can be read in the light of who was watching. */
   readonly via: "gate" | "web";
-  /** Null when nobody has told this system where the venue is. */
+  /** Null when the punch carried no coordinates — every gate punch before the tablet shared one. */
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  readonly accuracyMetres: number | null;
+  /** Null with no coordinates, or when nobody has told this system where the venue is. */
   readonly distance: VenueDistance | null;
 }
 
@@ -281,33 +293,41 @@ export async function fetchTodayRoster(
       };
 
   /*
-    One fix per employee, and WEB WINS over the gate.
+    EVERY punch, per employee, in the order they were taken.
 
-    Not "the latest punch": a person who punches from home in the morning and at the gate in the
-    afternoon would show 0 m, and the 4 km reading — the one an admin actually needs to see — is
-    the one that disappears. A gate punch's position is barely information, since the tablet is
-    bolted to a known wall; a web punch's position is the entire reason this column exists.
+    This used to keep one — web preferred over the gate — which answered "was this person away
+    today" and could not answer "away when". A day of 09:00 at the gate and 19:00 from home
+    showed only the 19:00 and lost the arrival entirely. A punch timeline is what an attendance
+    row shows everywhere else in this industry, and it is what was asked for: the location of
+    the in AND the out, in one column.
+
+    The query already returns `punched_at` ascending, so pushing preserves that order.
   */
-  const fixByEmployee = new Map<string, PunchFixOnRoster>();
+  const designationByEmployee = new Map(
+    designations.map((d) => [d.id, d.designations?.name ?? null]),
+  );
+  const durationByShift = new Map(shifts.map((sh) => [sh.id, sh.duration_minutes ?? 0]));
+
+  const punchesByEmployee = new Map<string, PunchOnRoster[]>();
   for (const row of fixes) {
     const lat = num(row.lat);
     const lng = num(row.lng);
-    if (lat === null || lng === null) continue;
-    const via = row.source === "web" || row.source === "mobile" ? "web" : "gate";
-    const existing = fixByEmployee.get(row.employee_id);
-    if (existing !== undefined && existing.via === "web" && via === "gate") continue;
     const accuracyMetres = num(row.location_accuracy_m);
-    fixByEmployee.set(row.employee_id, {
+    const punch: PunchOnRoster = {
+      at: fmtTime(row.punched_at),
+      via: row.source === "web" || row.source === "mobile" ? "web" : "gate",
       latitude: lat,
       longitude: lng,
       accuracyMetres,
-      via,
-      distance: distanceFromVenue({ latitude: lat, longitude: lng, accuracyMetres }, venue),
-    });
+      distance:
+        lat === null || lng === null
+          ? null
+          : distanceFromVenue({ latitude: lat, longitude: lng, accuracyMetres }, venue),
+    };
+    const bucket = punchesByEmployee.get(row.employee_id);
+    if (bucket === undefined) punchesByEmployee.set(row.employee_id, [punch]);
+    else bucket.push(punch);
   }
-
-  const designationByEmployee = new Map(designations.map((d) => [d.id, d.designations?.name ?? null]));
-  const durationByShift = new Map(shifts.map((s) => [s.id, s.duration_minutes ?? 0]));
 
   const rows: RosterRow[] = board.rows.map((row) => {
     /*
@@ -338,7 +358,7 @@ export async function fetchTodayRoster(
       varianceMinutes: expected > 0 ? row.worked_minutes - expected : null,
       lateMinutes: row.late_minutes,
       punchCount: row.punch_count,
-      fix: fixByEmployee.get(row.employee_id) ?? null,
+      punches: punchesByEmployee.get(row.employee_id) ?? [],
     };
   });
 

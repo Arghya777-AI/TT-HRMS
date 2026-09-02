@@ -190,14 +190,40 @@ describe("over/under waits for the day to end", () => {
 });
 
 describe("where a punch was taken", () => {
-  it("prefers a WEB fix over a gate fix for the same person", () => {
+  it("keeps EVERY punch, not one per person", () => {
     /*
-      Not "the latest punch". Somebody who punches from home in the morning and at the gate in
-      the afternoon would show 0 m, and the 4 km reading — the one an admin actually needs — is
-      the one that vanishes. A gate fix is barely information anyway: the tablet is bolted to a
-      known wall.
+      THE REGRESSION THIS REPLACED. It used to keep a single fix, web preferred over the gate —
+      which answered "was this person away today" and could not answer "away WHEN". A day of
+      09:00 at the gate then 19:00 from home rendered only the 19:00 and lost the arrival.
+
+      A punch timeline is the industry-standard shape for an attendance row, and it is what was
+      asked for: the location of the in AND the out, in one column.
     */
-    expect(api).toContain('existing.via === "web" && via === "gate"');
+    expect(api).toContain("punchesByEmployee");
+    expect(api).toContain("readonly punches: readonly PunchOnRoster[]");
+    // The old single-fix preference must not come back.
+    expect(api).not.toContain('existing.via === "web" && via === "gate"');
+  });
+
+  it("preserves punch order, because a timeline that is out of order is a lie", () => {
+    // The query orders by `punched_at` ascending and the loop pushes, so order survives.
+    expect(api).toContain('order: [{ column: "punched_at", ascending: true }]');
+  });
+
+  it("gives a gate punch no distance, and a web punch one", () => {
+    /*
+      The tablet is bolted to a known wall and its own fixes cluster inside ~17 m x 32 m, so a
+      number on a gate chip is GPS noise dressed as a measurement.
+    */
+    const cell = read("src", "features", "admin", "components", "TodayRoster.tsx");
+    expect(cell).toContain('punch.via === "web" && punch.distance !== null');
+  });
+
+  it("has one column, not the two it replaced", () => {
+    const cell = read("src", "features", "admin", "components", "TodayRoster.tsx");
+    expect(cell).toContain("admin.roster.col.punches");
+    expect(cell).not.toContain("admin.roster.col.method");
+    expect(cell).not.toContain("admin.roster.col.location");
   });
 
   it("coerces Postgres numerics, because null is a real coordinate", () => {

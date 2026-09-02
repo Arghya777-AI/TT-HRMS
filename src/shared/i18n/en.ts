@@ -1655,7 +1655,15 @@ export const en = catalogue({
   "admin.roster.col.in": "In",
   "admin.roster.col.out": "Out",
   "admin.roster.col.method": "Captured via",
-  "admin.roster.col.location": "Location",
+  /*
+    ONE column for the whole timeline. "Captured via" and "Location" were separate and between
+    them still could not say where the OUT punch happened — they described one fix per person.
+    Each chip now carries its own time, method and distance.
+  */
+  "admin.roster.col.punches": "Punches · where",
+  "admin.roster.loc.viaGate": "At the gate camera",
+  "admin.roster.loc.viaWeb": "From the web or a phone",
+  "admin.roster.loc.accuracy": "accurate to about {m} m",
   /*
     "On site", never "worked". Wall-clock time since the first scan with nothing deducted, so it
     runs ahead of the engine's paid figure by exactly the shift's unpaid break. Two different

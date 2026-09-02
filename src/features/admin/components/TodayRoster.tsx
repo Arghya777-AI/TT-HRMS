@@ -28,7 +28,7 @@
  */
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarOff, Globe, MapPin, ScanFace, UserCheck, UserX } from "lucide-react";
+import { CalendarOff, Globe, ScanFace, UserCheck, UserX } from "lucide-react";
 import { formatDistance } from "@/lib/venueDistance";
 import { formatElapsed } from "../liveWorked";
 import { workedDisplay } from "../workedDisplay";
@@ -39,8 +39,7 @@ import { fmtDurationHm } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import type {
-  CaptureMethod,
-  PunchFixOnRoster,
+  PunchOnRoster,
   RosterCounts,
   RosterGroup,
   RosterRow,
@@ -176,95 +175,99 @@ function Blocks({
   );
 }
 
-/*
-  Typed to `t`'s own key union rather than `string`, so a mistyped key is a compile error here
-  instead of a raw key name rendered on screen.
-*/
-const METHOD_LABEL: Record<CaptureMethod, Parameters<typeof t>[0]> = {
-  gate: "admin.roster.method.gate",
-  web: "admin.roster.method.web",
-  mixed: "admin.roster.method.mixed",
-  none: "admin.roster.method.none",
-};
-
-function MethodCell({ method }: { method: CaptureMethod }): React.JSX.Element {
-  if (method === "none") return <span className="text-muted-foreground">—</span>;
-  // The icon carries the same fact as the word, for a table read at a glance across a room.
-  const Icon = method === "web" ? Globe : ScanFace;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      {t(METHOD_LABEL[method])}
-    </span>
-  );
-}
-
 /**
- * Where the punch was taken, and how far that is from the venue.
+ * The day's punches, in order, each with where it was taken.
  *
- * ── WHY THE GATE READS DIFFERENTLY FROM THE WEB ──────────────────────────────
- * A gate punch's coordinates are barely information: the tablet is bolted to a known wall, and
- * its 844 recorded fixes sit inside about 17 m × 32 m. So a gate row says "at the gate" and
- * offers the map link without a number, because "12 m from the venue" is GPS noise dressed up
- * as a fact.
+ * ── WHY A TIMELINE AND NOT ONE LOCATION ──────────────────────────────────────
+ * This replaced two columns — "Captured via" and "Location" — which between them showed a
+ * SINGLE fix per person, web preferred over the gate. That answered "was this person away
+ * today" and could not answer "away WHEN": a day of 09:00 at the gate and 19:00 from home
+ * rendered only the 19:00, and the arrival disappeared.
  *
- * A WEB punch is the whole reason this column exists. Nobody watched the person arrive, so the
- * distance IS the evidence — and it is stated plainly, in metres under a kilometre and
- * kilometres above, with the map link beside it. That is the "see location" an admin asked for.
+ * A punch timeline is what an attendance row shows across this industry, and it is what was
+ * asked for — the location of the in AND the out, together in one column.
  *
- * ── WHAT IT REFUSES TO SAY ───────────────────────────────────────────────────
- * With no venue point configured there is no distance, and this renders the coordinates alone
- * rather than inventing a centre to measure from. And a fix too coarse to resolve the venue's
- * own radius is marked as approximate instead of being presented as a clean inside/outside — a
- * ±800 m reading against a 300 m fence has an error bar wider than the thing measured.
+ * ── WHAT EACH CHIP SAYS, AND WHAT IT LEAVES OUT ──────────────────────────────
+ * Time, then how. A GATE punch carries no distance: the tablet is bolted to a known wall and
+ * its own fixes cluster inside about 17 m by 32 m, so a number there is GPS noise dressed as a
+ * measurement. A WEB punch is the whole reason this column exists, so it carries the distance
+ * and turns amber past the venue's own radius.
+ *
+ * The chips wrap rather than scroll. A day with eight punches is unusual and worth seeing
+ * whole; a horizontal scrollbar inside a table cell is where information goes to hide.
  */
-function LocationCell({ fix }: { fix: PunchFixOnRoster | null }): React.JSX.Element {
-  if (fix === null) return <span className="text-muted-foreground">—</span>;
-
-  const href = openStreetMapUrl({
-    latitude: fix.latitude,
-    longitude: fix.longitude,
-    accuracyMetres: fix.accuracyMetres,
-  });
-
-  const distance = fix.distance;
-  const label = fix.via === "gate"
-    ? t("admin.roster.loc.atGate")
-    : distance === null
-      ? t("admin.roster.loc.noVenue")
-      : t("admin.roster.loc.away", { d: formatDistance(distance.metres) });
+function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.JSX.Element {
+  if (punches.length === 0) return <span className="text-muted-foreground">—</span>;
 
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        // The row itself opens the person, so the map link must not also trigger that.
-        onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:decoration-solid",
-          fix.via === "web" && distance !== null && !distance.withinFence
-            ? "text-warning"
-            : "text-muted-foreground",
-        )}
-        title={t("admin.roster.loc.mapTitle", {
-          lat: fix.latitude.toFixed(6),
-          lng: fix.longitude.toFixed(6),
-          acc: fix.accuracyMetres === null ? "?" : String(Math.round(fix.accuracyMetres)),
-        })}
-      >
-        <MapPin className="size-3.5 shrink-0" aria-hidden />
-        {label}
-      </a>
-      {distance?.coarse === true ? (
-        <span className="text-[10px] uppercase text-muted-foreground">
-          {t("admin.roster.loc.approx")}
-        </span>
-      ) : null}
+    <span className="flex flex-wrap gap-1">
+      {punches.map((punch, i) => {
+        const away = punch.via === "web" && punch.distance !== null && !punch.distance.withinFence;
+        const href =
+          punch.latitude === null || punch.longitude === null
+            ? null
+            : openStreetMapUrl({
+              latitude: punch.latitude,
+              longitude: punch.longitude,
+              accuracyMetres: punch.accuracyMetres,
+            });
+
+        const chip = cn(
+          "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px]",
+          away ? "border-warning/50 bg-warning/10 text-warning" : "text-muted-foreground",
+        );
+
+        const title = [
+          punch.via === "web" ? t("admin.roster.loc.viaWeb") : t("admin.roster.loc.viaGate"),
+          punch.distance === null
+            ? t("admin.roster.loc.noVenue")
+            : t("admin.roster.loc.away", { d: formatDistance(punch.distance.metres) }),
+          punch.accuracyMetres === null
+            ? null
+            : t("admin.roster.loc.accuracy", { m: String(Math.round(punch.accuracyMetres)) }),
+        ]
+          .filter((part): part is string => part !== null)
+          .join(" · ");
+
+        const body = (
+          <>
+            {punch.via === "web" ? (
+              <Globe className="size-3 shrink-0" aria-hidden />
+            ) : (
+              <ScanFace className="size-3 shrink-0" aria-hidden />
+            )}
+            <span className="tabular-nums">{punch.at}</span>
+            {/* Only a web punch gets a number — see the note above. */}
+            {punch.via === "web" && punch.distance !== null ? (
+              <span className="opacity-80">{formatDistance(punch.distance.metres)}</span>
+            ) : null}
+          </>
+        );
+
+        // Keyed on time AND index: two punches can share a minute, and the index alone would
+        // reshuffle chips if the list ever arrived unsorted.
+        const key = `${punch.at}-${i}`;
+        return href === null ? (
+          <span key={key} className={chip} title={title}>{body}</span>
+        ) : (
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            // The row itself opens the person, so a map link must not also trigger that.
+            onClick={(e) => e.stopPropagation()}
+            className={cn(chip, "underline decoration-dotted underline-offset-2 hover:decoration-solid")}
+            title={title}
+          >
+            {body}
+          </a>
+        );
+      })}
     </span>
   );
 }
+
 
 function StateCell({ row }: { row: RosterRow }): React.JSX.Element {
   if (row.attended) {
@@ -446,8 +449,7 @@ function Group({
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.state")}</th>
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.in")}</th>
               <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.out")}</th>
-              <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.method")}</th>
-              <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.location")}</th>
+              <th scope="col" className="px-3 py-2 font-medium">{t("admin.roster.col.punches")}</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">{t("admin.roster.col.worked")}</th>
               <th scope="col" className="px-3 py-2 text-right font-medium">{t("admin.roster.col.variance")}</th>
             </tr>
@@ -492,8 +494,7 @@ function Group({
                 <td className="px-3 py-2.5 tabular-nums">
                   {row.lastOutHm ?? <span className="text-muted-foreground">—</span>}
                 </td>
-                <td className="px-3 py-2.5"><MethodCell method={row.method} /></td>
-                <td className="px-3 py-2.5"><LocationCell fix={row.fix} /></td>
+                <td className="px-3 py-2.5"><PunchesCell punches={row.punches} /></td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
                   <WorkedCell row={row} nowMs={nowMs} />
                 </td>

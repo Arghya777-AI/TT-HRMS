@@ -214,10 +214,14 @@ export default function LeaveApplicationPage() {
     THE CEILING PER TYPE.
 
     "employee can take maximum leave that are available only, leave balance can't
-    be negative" — so a paid balance is a hard limit on its row, and the monthly
-    ceiling (`max_days_per_month`, migration 041600) binds alongside it.
+    be negative" — so a paid balance is a hard limit on its row, and a monthly
+    ceiling (`max_days_per_month`) binds alongside it where one is set.
     `singleTypeCap` picks the tighter of the two and says which, so the message
     quotes the number the employee can act on.
+
+    Since 20260902210000 no type sets that column, so the balance is what shows —
+    but an admin can set it again from the Leave Types screen, which is why this
+    still asks for the tighter of the two rather than assuming the balance wins.
 
     `allocationProblems` already refuses an over-balance allocation; this adds the
     monthly half, which it has no way to know about.

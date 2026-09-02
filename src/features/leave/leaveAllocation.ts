@@ -74,10 +74,16 @@ export interface SingleTypeCap {
  * The most of ONE type an employee may ask for.
  *
  * "employee can take maximum leave that are available only, leave balance can't
- * be negative" — so a paid balance is a hard ceiling, not a warning. The monthly
- * ceiling (`leave_types.max_days_per_month`, migration 041600) binds as well, and
+ * be negative" — so a paid balance is a hard ceiling, not a warning. A monthly
+ * ceiling (`leave_types.max_days_per_month`) binds as well WHERE ONE IS SET, and
  * whichever is smaller is the one to quote: telling somebody they have 8 days
  * left when the month allows 3 is a true sentence that does not help.
+ *
+ * No type carries one today. Migration 041600 seeded three days a month on every
+ * type; 20260902210000 cleared that and every other cap on how much leave a person
+ * may take, leaving the accrued balance as the only ceiling. The branch below is
+ * NOT dead — the Leave Types screen writes this column, so a cap set there must
+ * still bind — it is simply unused at present.
  *
  * `null` means genuinely uncapped — unpaid leave with no monthly ceiling. Not
  * "unknown": every caller treats null as "ask for what you like".

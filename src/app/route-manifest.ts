@@ -35,6 +35,7 @@ import {
   Package,
   ScanFace,
   ScrollText,
+  Receipt,
   ShieldCheck,
   Sparkles,
   UserCog,
@@ -226,6 +227,16 @@ const ADMIN_ROWS: readonly AdminRow[] = [
   ["/admin/payroll/payslips", "Payslips", "A/S", "admin-payroll", FileText, "Published payslips and their delivery state."],
   ["/admin/payroll/overtime", "Overtime & Incentives", "A", "admin-payroll", Clock, "Approve OT and event premiums for payment."],
   ["/admin/payroll/reimbursements", "Reimbursements", "A", "admin-payroll", Banknote, "Claims cleared for payment with payroll."],
+  /*
+    Its OWN domain, `admin-reimbursements`, not `admin-payroll`.
+
+    Two reasons. It answers a different question — what a month of claims cost and what is
+    still owed, rather than which approved claims a payroll RUN will pay. And `admin-payroll`
+    sits in railCoverage's EXPECTED_UNCOVERED because its rail entrance was deliberately
+    withdrawn; filing this under it would inherit that withdrawal and leave the page exactly
+    as undiscoverable as the one it replaces, which is the reported problem.
+  */
+  ["/admin/reimbursements", "Reimbursements", "A", "admin-reimbursements", Receipt, "Every claim for a month or a year: claimed, approved, paid and still owed."],
   ["/admin/payroll/statutory", "Statutory", "A/S", "admin-payroll", ShieldCheck, "PF, ESI, PT and TDS registers and returns."],
   ["/admin/payroll/form16", "Form 16 Distribution", "A", "admin-payroll", FileText, "Generate and issue Form 16 in bulk."],
   ["/admin/payroll/bank-advice", "Bank Advice", "A/S", "admin-payroll", Banknote, "Payment files for the bank, checksummed."],

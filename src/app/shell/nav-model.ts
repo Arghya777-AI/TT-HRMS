@@ -19,6 +19,7 @@ import {
   Clock,
   Clock3,
   FileText,
+  Receipt,
   Fingerprint,
   Gauge,
   Home,
@@ -245,6 +246,18 @@ const ADMIN_ITEMS: readonly NavItem[] = [
     then delete "admin-payroll" from `EXPECTED_UNCOVERED` in railCoverage.test.ts.
   */
   { labelKey: "shell.nav.admin.documents", to: "/admin/documents/repository", icon: FileText, cap: "admin.access" },
+  /*
+    Reimbursements. Asked for by name — "there should be a reimbursement page to understand
+    everything ... in the left-hand side admin section" — and the reason it was asked for is
+    visible right above: the payroll rail entrance was withdrawn, so
+    /admin/payroll/reimbursements has had no entrance at all. An admin looking for claims had
+    nowhere to click.
+
+    Its own row rather than a restored payroll group, because this page answers the money
+    question (what did the month cost, what is still owed) while the payroll one answers the
+    run question. Both still exist; only this one is discoverable.
+  */
+  { labelKey: "shell.nav.admin.reimbursements", to: "/admin/reimbursements", icon: Receipt, cap: "admin.access" },
   // Time & policy. SEVEN screens live under /admin/time/* — shifts, weekly offs,
   // holidays, attendance policies, pay periods, policy assignments, the resolver — and
   // NONE of them had a nav entry, so the whole section was reachable only by typing a

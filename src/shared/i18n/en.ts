@@ -65,6 +65,7 @@ import {
   keysOffHoursProof,
   keysOvertimeClaim,
   keysLocationTrail,
+  keysReimbursementAdmin,
 } from "./keys/claim-evidence";
 import { keysEvents } from "./keys/events";
 import { keysScheduledReports } from "./keys/scheduled-reports";
@@ -135,6 +136,7 @@ export const en = catalogue({
   ...keysOffHoursProof,
   ...keysOvertimeClaim,
   ...keysLocationTrail,
+  ...keysReimbursementAdmin,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,
@@ -231,6 +233,7 @@ export const en = catalogue({
   "shell.nav.admin.leave": "Leave",
   "shell.nav.admin.payroll": "Payroll",
   "shell.nav.admin.documents": "Documents",
+  "shell.nav.admin.reimbursements": "Reimbursements",
   // "Dashboard", not "Analytics". The client asked for "a dashboard tab under
   // Admin" and then could not find it: the dashboard was built, mounted and
   // deployed at /admin/analytics, but every label on the way to it said

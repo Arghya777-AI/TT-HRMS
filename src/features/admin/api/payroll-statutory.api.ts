@@ -39,6 +39,8 @@ import {
   dbUuidNullable,
   eq,
   gt,
+  gte,
+  lte,
   inList,
   isNotNull,
   isNull,
@@ -65,7 +67,7 @@ import {
   type ApprovalInboxRow,
 } from "@/features/approvals/api/approvals.api";
 import { V_ADMIN_EMPLOYEE } from "./employees.api";
-import { nowInstantIso } from "@/lib/datetime";
+import { istDayUtcBounds, nowInstantIso } from "@/lib/datetime";
 
 export const V_ATTENDANCE_MONTHLY_SUMMARY = "v_attendance_monthly_summary";
 export const REIMBURSEMENT_CLAIMS_TABLE = "reimbursement_claims";
@@ -307,17 +309,103 @@ export function isClaimSlice(value: string | null): value is ClaimSlice {
   return value === "awaiting" || value === "routed" || value === "unrouted" || value === "paid";
 }
 
+/**
+ * Which of a claim's three dates places it in a month.
+ *
+ * "This month" is three different numbers and the venue's own claims prove it:
+ * CLM-2026-000003 covers 26-30 AUGUST and was filed on 2 SEPTEMBER. So for September the
+ * total is 6,148 by expense period, 12,118 by filing date and 0 by payment date — all three
+ * correct answers to different questions. The basis is therefore chosen, never assumed.
+ *
+ * Mirrors `public.claim_period_basis`, so the table's filter and the summary's total cannot
+ * disagree about which rows are in the period.
+ */
+export const CLAIM_PERIOD_BASES = ["period", "filed", "paid"] as const;
+export type ClaimPeriodBasis = (typeof CLAIM_PERIOD_BASES)[number];
+
+export function isClaimPeriodBasis(value: string | null): value is ClaimPeriodBasis {
+  return value === "period" || value === "filed" || value === "paid";
+}
+
 export interface ClaimFilters {
   readonly slice?: ClaimSlice | null;
   readonly claimType?: ClaimType | null;
   readonly runId?: string | null;
+  /** Inclusive period. Omit both to read every claim ever filed. */
+  readonly from?: string | null;
+  readonly to?: string | null;
+  readonly basis?: ClaimPeriodBasis | null;
+  readonly employeeId?: string | null;
 }
 
+/**
+ * ONE predicate builder feeds the rows AND the count (DR-29), and now the summary reads the
+ * same period on the same basis — so a tile can never describe a different row set from the
+ * table beneath it.
+ *
+ * `period_to` is nullable on older claims, which is why the `period` basis cannot simply
+ * filter that column: a row with no period would vanish from the table while still counting
+ * in the summary, and a total that disagrees with its own list is worse than no total. The
+ * summary falls back to the filing date for exactly the same rows; PostgREST cannot express
+ * that COALESCE, so the table falls back by asking for either.
+ */
 export function claimFilters(f: ClaimFilters): Filter[] {
   const filters: Filter[] = [];
   if (f.slice != null) filters.push(...CLAIM_SLICE_FILTERS[f.slice]);
   if (f.claimType != null) filters.push(eq("claim_type", f.claimType));
   if (f.runId != null && f.runId !== "") filters.push(eq("paid_via_payroll_run_id", f.runId));
+  if (f.employeeId != null && f.employeeId !== "") filters.push(eq("employee_id", f.employeeId));
+
+  const basis: ClaimPeriodBasis = f.basis ?? "period";
+  const from = f.from ?? null;
+  const to = f.to ?? null;
+  if (from !== null && to !== null) {
+    if (basis === "filed") {
+      /*
+        ── AN IST CIVIL DATE AGAINST A TIMESTAMPTZ NEEDS IST BOUNDS ───────────
+        `created_at` is a timestamptz. Comparing it to the bare string '2026-09-01' makes
+        Postgres read UTC midnight — so a claim filed at 02:00 IST on 1 September, which is
+        20:30 UTC on 31 August, would fall OUTSIDE the month. Five and a half hours of every
+        boundary day would be attributed to the wrong month, silently.
+
+        `istDayUtcBounds` converts the civil date to the real instants: 00:00 IST to 00:00 IST
+        the next day. The upper bound is exclusive, which is why `lt` and not `lte`.
+
+        The ESLint rule that forbids deriving dates from `toISOString()` is what found this —
+        the first version built the bound with UTC date arithmetic and was wrong by those hours.
+      */
+      /*
+        `nowInstantIso` rather than `.toISOString()`: the repo bans the latter because it is
+        how a BUSINESS date gets derived from a UTC instant. These are genuine instants — the
+        two ends of an IST day — and the helper is the sanctioned way to render one, so an
+        exception here would only become the next person's precedent for a real bug.
+      */
+      filters.push(
+        gte("created_at", nowInstantIso(istDayUtcBounds(from).startUtc)),
+        lt("created_at", nowInstantIso(istDayUtcBounds(to).endUtc)),
+      );
+    } else if (basis === "paid") {
+      // An unpaid claim has no payment date and belongs in no month on this basis.
+      filters.push(isNotNull("paid_on"), gte("paid_on", from), lte("paid_on", to));
+    } else {
+      /*
+        The expense period, filtered STRICTLY on `period_to`.
+
+        A first version tried a PostgREST `or` so a claim with no `period_to` could fall back
+        to its filing date. `Filter` has no `or` — the union is eq/neq/gt/gte/lt/lte, like,
+        is, not_is, in, contains — so that took a `as unknown as Filter` cast and would have
+        shipped a filter the query builder silently ignored. Casting past the type to reach an
+        operator that does not exist is how a screen ends up showing every claim ever filed
+        while claiming to show one month.
+
+        So both sides are strict instead, and the summary counts what strictness excludes:
+        `undated_count` is claims with no expense period, surfaced on the page rather than
+        quietly missing from the total. Zero of the live claims are undated; the count exists
+        so that if one ever is, it says so.
+      */
+      filters.push(gte("period_to", from), lte("period_to", to));
+    }
+  }
   return filters;
 }
 

@@ -355,3 +355,112 @@ export const keysLocationTrail = {
   "admin.trail.offShift": "off-shift",
   "admin.trail.noFix": "No coordinates recorded",
 } as const;
+
+/**
+ * The Reimbursement Admin page.
+ *
+ * ── THE THREE STATES, IN THE VENUE'S OWN WORDS ───────────────────────────────
+ * "Which reimbursements have been processed, which are done, and which are pending?"
+ *   pending   → somebody still has to decide it
+ *   processed → approved, and not yet paid: what the venue OWES
+ *   done      → paid out, with a date and a reference
+ *
+ * "Processed" is deliberately NOT a synonym for finished. Approved money that nothing is
+ * scheduled to pay is the state worth seeing, and the outstanding tile is the figure to read
+ * first.
+ */
+export const keysReimbursementAdmin = {
+  "admin.radm.title": "Reimbursements",
+  "admin.radm.subtitle":
+    "Every claim for a month or a financial year: what was claimed, what is approved, what is paid, and what is still owed.",
+
+  "admin.radm.scope": "Range",
+  "admin.radm.scope.month": "One month",
+  "admin.radm.scope.fy": "Financial year",
+  "admin.radm.month": "Month",
+  "admin.radm.inYearOf": "Year containing",
+  "admin.radm.type": "Claim type",
+  "admin.radm.allTypes": "All types",
+  "admin.radm.download": "Download CSV",
+
+  /*
+    A claim carries three dates and they disagree — CLM-2026-000003 covers 26-30 August and
+    was filed on 2 September. So the basis is chosen, and each hint says which question that
+    choice answers.
+  */
+  "admin.radm.basis": "Count a claim in",
+  "admin.radm.basis.period": "the month it was spent",
+  "admin.radm.basis.filed": "the month it was filed",
+  "admin.radm.basis.paid": "the month it was paid",
+  "admin.radm.basis.hint.period":
+    "By expense period — what the month cost. The budget question. A claim filed later still counts in the month the money was spent.",
+  "admin.radm.basis.hint.filed":
+    "By filing date — what landed on HR's desk this month, whenever the spending happened.",
+  "admin.radm.basis.hint.paid":
+    "By payment date — what actually left the bank. This is what reconciles against a bank statement, and it excludes everything not yet paid.",
+
+  "admin.radm.tile.claimed": "Claimed",
+  "admin.radm.tile.claimedCaption": "{n} claim(s) from {people} people",
+  "admin.radm.tile.approved": "Approved",
+  "admin.radm.tile.approvedCaption": "{n} claim(s) approved",
+  "admin.radm.tile.paid": "Paid out",
+  "admin.radm.tile.paidCaption": "{n} claim(s) settled",
+  "admin.radm.tile.outstanding": "Still owed",
+  "admin.radm.tile.outstandingCaption": "{n} approved with no run to pay them",
+
+  "admin.radm.count.pending": "Pending a decision",
+  "admin.radm.count.processed": "Processed (approved)",
+  "admin.radm.count.done": "Done (paid)",
+  "admin.radm.count.rejected": "Rejected or withdrawn",
+
+  /* Only shown when non-zero: `period_to` is nullable and nothing forces it. */
+  "admin.radm.undated":
+    "{n} claim(s) carry no expense period, so they are not in this total. Switch the basis to “the month it was filed” to include them.",
+  "admin.radm.byType": "By claim type",
+
+  "admin.radm.tableTitle": "Every claim in this range",
+  "admin.radm.clearSlice": "Show all states",
+  /* The server's count over the same filters — so a capped page cannot look like the whole. */
+  "admin.radm.rowCount": "Showing {shown} of {total} claim(s) in this range.",
+  "admin.radm.partial": "some names, approver rights or expense lines",
+  "admin.radm.empty.title": "No claims in this range",
+  "admin.radm.empty.hint":
+    "Try a different month, or count claims by the month they were filed instead of the month they were spent.",
+
+  "admin.radm.col.who": "Who claimed",
+  "admin.radm.col.claim": "Claim",
+  "admin.radm.col.type": "Type",
+  "admin.radm.col.purpose": "What for",
+  "admin.radm.col.period": "Expense period",
+  "admin.radm.col.claimed": "Claimed",
+  "admin.radm.col.approved": "Approved",
+  "admin.radm.col.state": "State",
+  "admin.radm.col.paid": "Paid",
+  "admin.radm.col.act": "",
+  "admin.radm.inRun": "In a payroll run",
+  /* Approved and unpaid. Not an error, and not "done" either. */
+  "admin.radm.owed": "Owed — no run",
+
+  "admin.radm.view": "Bills & trail",
+  "admin.radm.approve": "Approve",
+  "admin.radm.reject": "Reject",
+  "admin.radm.dialog.approve": "Approve {number}",
+  "admin.radm.dialog.reject": "Reject {number}",
+
+  "admin.radm.csv.code": "Employee code",
+  "admin.radm.csv.periodFrom": "Period from",
+  "admin.radm.csv.periodTo": "Period to",
+  "admin.radm.csv.filed": "Filed on",
+  "admin.radm.csv.paidOn": "Paid on",
+  "admin.radm.csv.reference": "Payment reference",
+
+  "admin.radm.type.local_conveyance": "Local conveyance",
+  "admin.radm.type.travel": "Travel",
+  "admin.radm.type.food": "Food",
+  "admin.radm.type.medical": "Medical",
+  "admin.radm.type.telephone": "Telephone",
+  "admin.radm.type.uniform": "Uniform",
+  "admin.radm.type.fuel": "Fuel",
+  "admin.radm.type.guest_hospitality": "Guest hospitality",
+  "admin.radm.type.misc": "Miscellaneous",
+} as const;

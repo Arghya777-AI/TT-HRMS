@@ -95,6 +95,15 @@ const SUPPRESSED_CODES: ReadonlySet<string> = new Set([
   "IT_DECLARATION",
   "PAYSLIP_REQUEST",
   "BANK_CHANGE",
+  /*
+    RESIGNATION, withdrawn on the venue's instruction: "they shouldn't think like
+    that, right? So let's not give the option." An employee who does resign says so
+    to HR, who records the exit on /admin/people — that path is untouched.
+
+    The screen at /me/apply/resignation still exists and still works; it simply has
+    no tile. Deleting the line above restores it.
+  */
+  "RESIGNATION",
 ]);
 
 const ROUTE_BY_PATH: Readonly<Record<string, RouteMeta>> = Object.fromEntries(

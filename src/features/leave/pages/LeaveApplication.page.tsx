@@ -493,8 +493,22 @@ export default function LeaveApplicationPage() {
                   step="0.5"
                   value={totalDays}
                   onChange={(event) => {
-                    setTotalDays(event.target.value);
-                    setAllocations([]);
+                    /*
+                      A CHANGED TOTAL INVALIDATES THE SPLIT, so clearing is right — but only
+                      when the NUMBER changed. Clearing on every keystroke punished the one
+                      edit people actually make here: going from 1 to 0.5 means passing through
+                      "" and "0.", and each of those wiped the 0.5 they had already put against
+                      a leave type. They then re-typed it, and if the box was still empty the
+                      badge called it "too many".
+
+                      Comparing the parsed values keeps the split honest and leaves the
+                      allocation alone while somebody is still typing the number.
+                    */
+                    const next = event.target.value;
+                    const before = Number.parseFloat(totalDays) || 0;
+                    const after = Number.parseFloat(next) || 0;
+                    setTotalDays(next);
+                    if (after !== before) setAllocations([]);
                   }}
                   className="num h-10 w-28 rounded-md border bg-background px-3 text-lg font-semibold tabular-nums"
                 />
@@ -702,17 +716,40 @@ export default function LeaveApplicationPage() {
           <section className="rounded-lg border bg-card p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="font-display text-sm font-semibold">{t("leave.app.step2")}</h2>
+                {/*
+                  ── WHY THE NO-TOTAL CASE IS ITS OWN BRANCH ───────────────────
+                  The Days box is `type="number"`, so while it is empty
+                  `Number.parseFloat("") || 0` is 0 — and a bare three-way compare on
+                  `remaining` then reads NEGATIVE and announced "0.5 too many" in red.
+
+                  That is what an employee hit trying to file half a day of Week-off:
+                  the badge told her she had allocated too much when she had allocated
+                  half of nothing, while the problem list below correctly said the day
+                  count was missing. Two messages on one screen contradicting each
+                  other, and the wrong one was the loud one.
+
+                  `no_total` is the same problem `allocationProblems` reports, so the
+                  badge and the list now agree by construction.
+                */}
                 <p
                   className={cn(
-                    "num text-sm font-semibold tabular-nums",
-                    remaining === 0 ? "text-success" : remaining < 0 ? "text-destructive" : "text-warning",
+                    "text-sm font-semibold",
+                    total <= 0
+                      ? "text-warning"
+                      : remaining === 0
+                        ? "num tabular-nums text-success"
+                        : remaining < 0
+                          ? "num tabular-nums text-destructive"
+                          : "num tabular-nums text-warning",
                   )}
                 >
-                  {remaining === 0
-                    ? t("leave.app.allPlaced")
-                    : remaining > 0
-                      ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
-                      : t("leave.app.overBy", { days: formatNumber(-remaining) })}
+                  {total <= 0
+                    ? t("leave.app.problem.noTotal")
+                    : remaining === 0
+                      ? t("leave.app.allPlaced")
+                      : remaining > 0
+                        ? t("leave.app.leftToPlace", { days: formatNumber(remaining) })
+                        : t("leave.app.overBy", { days: formatNumber(-remaining) })}
                 </p>
               </div>
 

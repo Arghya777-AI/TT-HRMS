@@ -42,6 +42,7 @@ import { useMyPhoto } from "@/features/profile/hooks/useMyPhoto";
 import { BRAND } from "@/config/brand";
 import { BrandLogo } from "@/shared/ui/BrandLogo";
 import { useAuth } from "@/app/auth/AuthProvider";
+import { useLocationTrail } from "@/features/attendance/hooks/useLocationTrail";
 import { useAppRealtime } from "@/shared/hooks/useAppRealtime";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { useServiceWorker } from "@/shared/pwa/registerServiceWorker";
@@ -225,6 +226,23 @@ function NotificationBell() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { employee, session, signOut } = useAuth();
+
+  /*
+    ── THE LOCATION TRAIL ────────────────────────────────────────────────────
+    Mounted in the shell rather than on a page, because it has to survive navigation:
+    an employee moving between My Attendance and Apply should not restart the watch and
+    re-record a first fix each time.
+
+    Gated on there being an employee record — a signed-in account with no employee row
+    (an admin-only login) has no attendance to trail. It samples only while the app is
+    visible, which is the ceiling for a web application: `watchPosition` is suspended
+    when the page is hidden and the API is not available to service workers. Continuous
+    background sampling needs a native app, which this product does not have.
+
+    The venue holds signed consent for location tracking; this is the disclosed
+    mechanism that consent covers.
+  */
+  useLocationTrail({ enabled: employee !== null });
 
   /*
     THE APP'S ONE LIVE CONNECTION, mounted here so every screen inherits it.

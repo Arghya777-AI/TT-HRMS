@@ -232,3 +232,49 @@ export const keysApprovalEvidence = {
   "admin.wf.ev.f.is_receipt_required": "Receipt required",
   "admin.wf.ev.f.status": "State",
 } as const;
+
+/**
+ * The proof photograph on an off-hours punch.
+ *
+ * The venue's words: "Can we give one small screenshot or something for records, evidence?" —
+ * "Mandatory, yes. They should attach. And while checking out also, it's mandatory. Someone
+ * will check in and the meeting would have been over long back. They might check out by 10 or
+ * 12 o'clock. I don't want to pay so much and I don't want to keep on verifying all that."
+ *
+ * The copy asks for the thing that proves the CLAIM, not a selfie: the meeting invitation, the
+ * call window, the place of work. A picture of a face proves the person exists, which the face
+ * capture two steps later already establishes.
+ */
+export const keysPunchProof = {
+  "me.punch.offHours.proof.label": "Attach proof",
+  "me.punch.offHours.proof.hint":
+    "A screenshot of the meeting or call, or a photo of where you are working. Needed on the way in and on the way out.",
+  "me.punch.offHours.proof.uploading": "Attaching…",
+  "me.punch.offHours.proof.attached": "Attached: {name}",
+  "me.punch.offHours.proof.tooLarge": "That file is over {mb} MB. Attach a smaller one.",
+  /*
+    Said BEFORE a file is chosen wherever possible: every predicate of
+    `documents__self__insert` has to resolve for the upload to be accepted, and finding out
+    afterwards wastes the employee's time at the gate.
+  */
+  "me.punch.offHours.proof.unavailable":
+    "Proof cannot be attached on this account yet. Punch anyway — an administrator will be asked to confirm your hours.",
+  /*
+    NOT a dead end. The punch still goes through: the server records a proofless off-hours
+    punch and flags it, because this venue has already lost attendance to a hard gate — people
+    concluded the app was broken and stopped punching altogether.
+  */
+  "me.punch.offHours.proof.failed":
+    "That did not upload — the signal may be weak. Try again, or punch without it and an administrator will ask you for it.",
+} as const;
+
+/** The proof, on the administrator's off-hours queue. */
+export const keysOffHoursProof = {
+  "admin.offHours.proof.attached": "Proof attached",
+  /*
+    In words, not a blank. The form makes the photograph mandatory, so an absent one means the
+    upload failed and the punch was recorded anyway rather than costing the employee their
+    evening — the approver should ask for it, not assume it is there.
+  */
+  "admin.offHours.proof.missing": "No proof attached — the upload may have failed. Ask for it before approving.",
+} as const;

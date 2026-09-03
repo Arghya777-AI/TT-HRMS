@@ -359,6 +359,17 @@ export interface SelfPunchRequest {
    * asks when it believes one is required and the server refuses if it actually was.
    */
   readonly offHoursReason?: string;
+  /**
+   * A photograph supporting an off-hours punch — a `documents` row of type ATTENDANCE_PROOF
+   * the card uploaded before calling this.
+   *
+   * The card makes it MANDATORY for an off-hours punch, per the venue's instruction ("they
+   * should attach, and while checking out also it's mandatory"). It is optional in this type
+   * because the server deliberately records a punch that arrives without one and flags it
+   * `off_hours_proof_missing` instead of refusing: an upload failing on weak signal at 9 pm
+   * must cost a review, not somebody's evening.
+   */
+  readonly proofDocumentId?: string;
   /** Opaque per-browser label; `null` when localStorage is unavailable. */
   readonly deviceId: string | null;
   /**
@@ -596,6 +607,11 @@ export function buildSelfPunchBody(
     // a value the server then has to decide is not a reason.
     ...((request.offHoursReason ?? "").trim() !== ""
       ? { reason: (request.offHoursReason ?? "").trim() }
+      : {}),
+    // Same reason as the reason field: `.strict()` on the body, so an absent proof is an
+    // absent KEY rather than a null the server has to interpret.
+    ...((request.proofDocumentId ?? "") !== ""
+      ? { proofDocumentId: request.proofDocumentId }
       : {}),
     clientEventId: request.clientEventId,
   };

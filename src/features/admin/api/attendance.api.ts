@@ -885,6 +885,15 @@ export const pendingApprovalPunchSchema = z.object({
   lat: dbNumericNullable,
   lng: dbNumericNullable,
   location_accuracy_m: dbNumericNullable,
+  /**
+   * The photograph the employee attached, or null.
+   *
+   * NULL IS INFORMATION, not an empty cell. The form makes the picture mandatory for an
+   * off-hours punch, so a null here means the upload failed and the server recorded the punch
+   * anyway rather than losing somebody's evening — the queue says so, and the approver knows
+   * to ask for it instead of assuming a picture exists and never opening it.
+   */
+  proof_document_id: dbUuidNullable,
 });
 export type PendingApprovalPunch = z.infer<typeof pendingApprovalPunchSchema>;
 
@@ -894,7 +903,7 @@ export function fetchPendingApprovalPunches(
   return selectMany(V_PUNCH_DETAIL, pendingApprovalPunchSchema, {
     columns:
       "id, employee_id, employee_code, display_name, punched_at, ist_date, ist_time, " +
-      "source, reason, lat, lng, location_accuracy_m",
+      "source, reason, lat, lng, location_accuracy_m, proof_document_id",
     filters: [
       { op: "is", column: "requires_approval", value: true },
       { op: "is", column: "approved_at", value: null },

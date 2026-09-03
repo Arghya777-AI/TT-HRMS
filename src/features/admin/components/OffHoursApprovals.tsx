@@ -18,7 +18,7 @@
  * they did not choose. Shown together, deliberately.
  */
 import { useMemo } from "react";
-import { CalendarClock, Check, Globe, MapPin, X } from "lucide-react";
+import { CalendarClock, Check, FileWarning, Globe, MapPin, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ import { ReasonDialog } from "@/shared/ui/ReasonDialog";
 import { openStreetMapUrl } from "@/lib/punchPlace";
 import { distanceFromVenue, formatDistance, type VenuePoint } from "@/lib/venueDistance";
 import { useReasonPrompt } from "../hooks/useReasonPrompt";
+import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { usePendingApprovalPunches, useDecideOffHoursPunch } from "../hooks/useAttendanceRecords";
 import type { PendingApprovalPunch } from "../api/attendance.api";
 
@@ -136,6 +137,39 @@ export function OffHoursApprovals({ venue }: OffHoursApprovalsProps): React.JSX.
                     <p className="mt-1 rounded-md bg-muted/40 px-2 py-1 text-sm">
                       {row.reason ?? t("admin.offHours.noReason")}
                     </p>
+
+                    {/*
+                      ── THE PROOF ────────────────────────────────────────────
+                      "I don't want to pay so much and I don't want to keep on verifying all
+                      that. So it's better they attach screenshots for check-in and check out."
+
+                      Opened through `document-access`, which logs the view BEFORE it mints a
+                      URL — for evidence that decides whether overtime is paid, that trail is
+                      the point.
+
+                      ABSENCE IS STATED, in words. The form makes the picture mandatory, so a
+                      null here means the upload failed and the punch was recorded anyway
+                      rather than losing somebody's evening. Rendering nothing would let an
+                      approver assume a photograph exists and never open it.
+                    */}
+                    {row.proof_document_id !== null ? (
+                      <div className="mt-1.5 flex items-center justify-between gap-2 rounded-md border px-2 py-1">
+                        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
+                          <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          {t("admin.offHours.proof.attached")}
+                        </span>
+                        <DocumentOpenButtons
+                          documentId={row.proof_document_id}
+                          title={t("admin.offHours.proof.attached")}
+                          variant="icon"
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning">
+                        <FileWarning className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                        {t("admin.offHours.proof.missing")}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 gap-1.5">

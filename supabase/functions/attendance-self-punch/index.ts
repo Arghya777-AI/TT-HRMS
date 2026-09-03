@@ -441,6 +441,27 @@ const SelfPunchBody = z
      * happened. "wfh" cannot do that.
      */
     reason: z.string().trim().max(500).optional(),
+    /**
+     * A photograph or screenshot supporting an off-hours punch — a `documents` row of type
+     * ATTENDANCE_PROOF that the client has already uploaded.
+     *
+     * ── OPTIONAL HERE, MANDATORY ON THE FORM, AND THAT IS DELIBERATE ─────────
+     * The venue's instruction was "mandatory, they should attach, and while checking out also
+     * it's mandatory". The form enforces exactly that: an off-hours punch cannot be submitted
+     * without a picture.
+     *
+     * The SERVER does not refuse one that arrives without it. This venue has already lost
+     * attendance to a hard gate — employees hit the reason requirement, decided the app was
+     * broken and stopped punching: "they thought okay, it's not working, so let's attend like
+     * that only." An upload failing on a weak signal at 9 pm must cost a review, not a day's
+     * work. So a proofless off-hours punch is RECORDED AND FLAGGED, and lands in the same
+     * approval queue with the absence stated on it.
+     *
+     * Not validated against `documents` here: the row is written under the employee's own RLS
+     * insert policy before this call, and `attendance_punches_proof_document_id_fkey` refuses an id that does not
+     * exist. A second existence check in TypeScript would be a second thing to keep in step.
+     */
+    proofDocumentId: z.string().uuid().optional(),
     /** Stable per-browser id the app generates; provenance, not an identifier. */
     deviceId: z.string().trim().min(8).max(128).optional(),
     /** Minted when the button was pressed; the permanent per-punch dedup key. */
@@ -1302,7 +1323,7 @@ async function writePunch(input: WriteInput): Promise<WriteOutcome> {
         ip, user_agent, device_id,
         needs_review, is_voided, voided_by, voided_at, void_reason,
         duplicate_of_punch_id, recorded_by, request_id, idempotency_key,
-        requires_approval, reason
+        requires_approval, reason, proof_document_id
       ) VALUES (
         ${punchId}::uuid,
         ${subject.employeeId}::uuid,
@@ -1329,7 +1350,14 @@ async function writePunch(input: WriteInput): Promise<WriteOutcome> {
         ${ctx.requestId}::uuid,
         ${body.clientEventId}::text,
         ${requiresApproval}::boolean,
-        ${requiresApproval ? offHoursReason : (offHoursReason === "" ? null : offHoursReason)}::text
+        ${requiresApproval ? offHoursReason : (offHoursReason === "" ? null : offHoursReason)}::text,
+        /*
+          Only ever attached to a punch that NEEDS it. An in-window punch carrying a
+          photograph would put a picture of somebody's home in the vault for no reason
+          anybody could point at, which is the sort of collection that is hard to justify
+          later and easy to avoid now.
+        */
+        ${requiresApproval ? (body.proofDocumentId ?? null) : null}::uuid
       )
       RETURNING id, punched_at, effective_date::text AS effective_date
     `;
@@ -1946,6 +1974,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ? await evaluateVenueIp(client, ctx.ip ?? null, config.venueCidrs, actorLog)
       : null;
     if (venueIpOk === false) reviewNotes.push("outside_venue_network");
+    /*
+      ── AN OFF-HOURS PUNCH THAT ARRIVED WITHOUT ITS PROOF ────────────────────
+      The form makes the photograph mandatory, so reaching here without one means the upload
+      failed — weak signal at 9 pm, a denied camera, a file the vault refused. The punch is
+      still recorded, because the alternative is what this venue already lived through: a hard
+      gate that made people conclude the app was broken and stop punching altogether.
+
+      Flagged instead, in words, so the approval queue shows the absence rather than an
+      approver assuming a picture exists and never checking. `requires_approval` was already
+      going to send it to that queue; this says WHY it deserves a second look.
+    */
+    if (!withinShift && (body.proofDocumentId ?? "") === "") {
+      reviewNotes.push("off_hours_proof_missing");
+    }
 
     if (REVIEW_STATUSES.has(subject.employmentStatus)) {
       reviewNotes.push(`employment_status:${subject.employmentStatus}`);

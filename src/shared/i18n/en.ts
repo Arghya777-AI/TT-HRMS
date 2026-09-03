@@ -58,7 +58,12 @@ import { keysAnalytics } from "./keys/analytics";
 import { keysAnalyticsPlanned } from "./keys/analytics-planned";
 import { keysAnalyticsOverview } from "./keys/analytics-overview";
 import { keysCertification } from "./keys/certification";
-import { keysClaimEvidence, keysApprovalEvidence } from "./keys/claim-evidence";
+import {
+  keysClaimEvidence,
+  keysApprovalEvidence,
+  keysPunchProof,
+  keysOffHoursProof,
+} from "./keys/claim-evidence";
 import { keysEvents } from "./keys/events";
 import { keysScheduledReports } from "./keys/scheduled-reports";
 import { keysClaims } from "./keys/claims";
@@ -124,6 +129,8 @@ export const en = catalogue({
   ...keysAdminCommandCharts,
   ...keysClaimEvidence,
   ...keysApprovalEvidence,
+  ...keysPunchProof,
+  ...keysOffHoursProof,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,

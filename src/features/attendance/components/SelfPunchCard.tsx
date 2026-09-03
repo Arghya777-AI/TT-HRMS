@@ -94,6 +94,15 @@ import type { SignInGeo, SignInLocationStatus } from "@/features/auth/lib/geoloc
 import { useSignInLocation } from "@/features/auth/hooks/useSignInLocation";
 import type { PunchRecorded, SelfPunchOutcome, SelfPunchState } from "../api/selfPunch.api";
 import { useSelfPunch, useSelfPunchEligibility, useSelfPunchState } from "../hooks/useSelfPunch";
+import { useAuth } from "@/app/auth/AuthProvider";
+import { useMyProfile } from "@/features/profile/hooks/useProfile";
+import {
+  fetchAttendanceProofType,
+  uploadAttendanceProof,
+} from "../api/attendanceProof.api";
+import { useQuery } from "@tanstack/react-query";
+import { qk } from "@/shared/api/keys";
+import { shouldRetryQuery } from "@/shared/api/query";
 
 /**
  * Frame cadence. See the header: this is the spacing `liveness.ts` is calibrated
@@ -407,6 +416,7 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
           clientEventId: eventIdRef.current,
           // Sent whenever one was typed; the SERVER decides whether it was required.
           ...(offHoursReason.trim() !== "" ? { offHoursReason: offHoursReason.trim() } : {}),
+          ...(proofDocId !== null ? { proofDocumentId: proofDocId } : {}),
         });
       } catch {
         // `selfPunch` resolves refusals, so anything thrown here is unexpected —
@@ -620,6 +630,27 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
   */
   const [offHoursReason, setOffHoursReason] = useState("");
 
+  /*
+    ── THE PROOF PHOTOGRAPH ──────────────────────────────────────────────────
+    "Mandatory, yes. They should attach. And while checking out also, it's mandatory."
+
+    Uploaded the moment it is chosen, not on submit, for two reasons: the employee finds out
+    immediately whether the vault accepted it, and the punch request itself stays a single
+    call that carries only an id. `proofDocId` holding a value is the proof that the bytes
+    landed — the button gates on that, never on a file being selected.
+  */
+  const { user } = useAuth();
+  const myProfile = useMyProfile();
+  const proofType = useQuery({
+    queryKey: qk.attendance.list({ part: "attendance-proof-type" }),
+    queryFn: ({ signal }) => fetchAttendanceProofType(signal),
+    retry: shouldRetryQuery,
+  });
+  const [proofDocId, setProofDocId] = useState<string | null>(null);
+  const [proofName, setProofName] = useState<string | null>(null);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [proofError, setProofError] = useState<string | null>(null);
+
   const busy =
     phase.name === "location" ||
     phase.name === "engine" ||
@@ -636,6 +667,17 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
   const reasonTooShort =
     punchState.data?.needsOffHoursReason === true &&
     offHoursReason.trim().length < MIN_OFF_HOURS_REASON;
+  /*
+    The photograph is required for the same punches the note is. Gated on the DOCUMENT ID, not
+    on a file having been picked: a chosen file whose upload failed is not proof of anything,
+    and letting it through would mean the approver sees "proof attached" with nothing behind it.
+
+    The SERVER does not refuse a proofless punch — it records and flags it — so this gate is
+    the venue's "mandatory" and the server's flag is the safety net for a failed upload at
+    9 pm on a weak signal.
+  */
+  const proofMissing =
+    punchState.data?.needsOffHoursReason === true && proofDocId === null;
   const cameraLive =
     phase.name === "camera" || phase.name === "capturing" || phase.name === "sending";
   const today = istToday();
@@ -838,7 +880,7 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             // The label falls back to a neutral "Punch attendance" until the state
             // arrives, and the SERVER decides in-or-out regardless, so there is
             // nothing to wait for.
-            disabled={busy || reasonTooShort}
+            disabled={busy || reasonTooShort || proofMissing}
             onClick={() => void start()}
           >
             {busy ? (
@@ -917,6 +959,102 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
                     min: String(MIN_OFF_HOURS_REASON),
                   })}
                 </p>
+
+                {/*
+                  ── THE PROOF ─────────────────────────────────────────────
+                  "Mandatory, yes. They should attach. And while checking out also."
+
+                  `capture="environment"` opens the rear camera straight away on a phone,
+                  which is what somebody standing outside a client's office wants; on a
+                  laptop the same input is an ordinary file picker, so a screenshot of the
+                  meeting invitation works just as well.
+
+                  Uploaded on choose, not on submit: the employee learns immediately whether
+                  the vault took it, rather than losing it at the end of a face capture.
+                */}
+                <div className="mt-2 border-t border-warning/30 pt-2">
+                  <label
+                    htmlFor="off-hours-proof"
+                    className="block text-xs font-medium text-warning"
+                  >
+                    {t("me.punch.offHours.proof.label")}
+                  </label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {t("me.punch.offHours.proof.hint")}
+                  </p>
+                  <input
+                    id="off-hours-proof"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    capture="environment"
+                    disabled={proofBusy || busy}
+                    className="mt-1.5 w-full text-xs file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1 file:text-xs"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.target.value = "";
+                      if (file === null) return;
+                      setProofError(null);
+                      const type = proofType.data;
+                      const employeeId = myProfile.data?.id ?? null;
+                      const companyId = myProfile.data?.company_id ?? null;
+                      const profileId = user?.id ?? null;
+                      /*
+                        Every predicate of `documents__self__insert` had to resolve before the
+                        picker was even offered; if any of them is missing the honest answer is
+                        that the attachment cannot be made, not a failed upload afterwards.
+                      */
+                      if (
+                        type === null || type === undefined ||
+                        employeeId === null || companyId === null || profileId === null
+                      ) {
+                        setProofError(t("me.punch.offHours.proof.unavailable"));
+                        return;
+                      }
+                      const limitBytes = (type.max_file_size_mb ?? 10) * 1024 * 1024;
+                      if (file.size > limitBytes) {
+                        setProofError(
+                          t("me.punch.offHours.proof.tooLarge", {
+                            mb: String(type.max_file_size_mb ?? 10),
+                          }),
+                        );
+                        return;
+                      }
+                      setProofBusy(true);
+                      void uploadAttendanceProof({
+                        employeeId,
+                        companyId,
+                        profileId,
+                        type,
+                        file,
+                        // `file.type` is the browser's guess from the NAME and is often empty
+                        // for a photo shared out of a chat app; the uploader defaults it.
+                        mimeType: file.type,
+                      })
+                        .then((doc) => {
+                          setProofDocId(doc.id);
+                          setProofName(file.name);
+                        })
+                        .catch(() => {
+                          setProofDocId(null);
+                          setProofName(null);
+                          setProofError(t("me.punch.offHours.proof.failed"));
+                        })
+                        .finally(() => setProofBusy(false));
+                    }}
+                  />
+                  {proofBusy ? (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {t("me.punch.offHours.proof.uploading")}
+                    </p>
+                  ) : proofDocId !== null ? (
+                    <p className="mt-1 break-words text-[11px] text-success">
+                      {t("me.punch.offHours.proof.attached", { name: proofName ?? "" })}
+                    </p>
+                  ) : null}
+                  {proofError !== null ? (
+                    <p className="mt-1 text-[11px] text-destructive">{proofError}</p>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 

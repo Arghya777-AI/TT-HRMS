@@ -57,6 +57,8 @@ import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
 import { CountTile } from "../components/CountTile";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
+import { useClaimLineEvidence } from "../hooks/useClaimEvidence";
+import { AttachmentCount, ClaimEvidenceSheet } from "../components/ClaimEvidenceSheet";
 import {
   useClaimDecisionTargets,
   useDecideClaim,
@@ -154,6 +156,22 @@ export default function PayrollReimbursementsPage() {
   const matching = useReimbursementClaimCount(filters);
   const labels = useEmployeeLabels();
   const targets = useClaimDecisionTargets();
+  /*
+    ── THE BILLS ────────────────────────────────────────────────────────────
+    Fetched with the register, not per row: the attachment COUNT belongs on the
+    row, so every visible claim's lines are needed before anybody clicks. One
+    request for the page — the register shows up to 500 claims.
+
+    An admin could not see a single attachment before this, and it was never a
+    permission: `documents__admin__all`, the storage policy and `document-access`
+    all admit them, checked by impersonating every live admin under RLS. The
+    receipt lives on `claim_lines.receipt_document_id`, one level below the
+    header this page read, and nothing fetched it.
+  */
+  const claimIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const evidence = useClaimLineEvidence(claimIds);
+  const [evidenceFor, setEvidenceFor] = useState<ReimbursementClaim | null>(null);
+
   const [target, setTarget] = useState<DecisionTarget | null>(null);
   const [payTarget, setPayTarget] = useState<ReimbursementClaim | null>(null);
   const [payMode, setPayMode] = useState<ClaimPaymentMode>("bank_transfer");
@@ -198,6 +216,7 @@ export default function PayrollReimbursementsPage() {
 
   const labelMap = labels.data;
   const targetMap = targets.data;
+  const tallies = evidence.data?.tallies;
 
   const confirm = (reason: string): void => {
     if (target === null) return;
@@ -333,6 +352,55 @@ export default function PayrollReimbursementsPage() {
           ),
       },
       {
+        /*
+          Between the status and the Decide button on purpose: this is the column an
+          approver has to read BEFORE the one they click.
+        */
+        key: "attachments",
+        header: t("admin.reimb.ev.col"),
+        width: "11rem",
+        render: (row) => {
+          const tally = tallies?.get(row.id);
+          if (tally === undefined) {
+            return <span className="text-xs text-muted-foreground">{dash(null)}</span>;
+          }
+          return (
+            <span className="flex flex-col items-start gap-0.5">
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-sm"
+                onClick={() => setEvidenceFor(row)}
+                aria-label={t("admin.reimb.ev.openAria", { claim: row.claim_number })}
+              >
+                {tally.attachments === 0 ? (
+                  <span className="text-muted-foreground">{t("admin.reimb.ev.none")}</span>
+                ) : (
+                  <AttachmentCount n={tally.attachments} />
+                )}
+              </Button>
+              {/*
+                A line that OWES a receipt and a line whose receipt this reader cannot open
+                are different facts, and neither may be rendered as a plain count.
+                `ck_claim_lines__receipt_present` is NOT VALID, so rows filed before it can
+                genuinely be missing one — an approver should see that on the row rather than
+                discover it after approving.
+              */}
+              {tally.missing > 0 ? (
+                <span className="text-[11px] text-destructive">
+                  {t("admin.reimb.ev.missing", { n: String(tally.missing) })}
+                </span>
+              ) : null}
+              {tally.unreadable > 0 ? (
+                <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                  {t("admin.reimb.ev.unreadable", { n: String(tally.unreadable) })}
+                </span>
+              ) : null}
+            </span>
+          );
+        },
+      },
+      {
         key: "decide",
         header: t("admin.reimb.col.decide"),
         width: "13rem",
@@ -409,7 +477,7 @@ export default function PayrollReimbursementsPage() {
         },
       },
     ],
-    [labelMap, targetMap, decide.isPending],
+    [labelMap, targetMap, tallies, decide.isPending],
   );
 
   return (
@@ -672,6 +740,22 @@ export default function PayrollReimbursementsPage() {
         }}
       />
 
+      {/*
+        The evidence sheet. `lines` come from the register's own query, so the bills render
+        the instant it opens and only the audit trail streams in underneath.
+      */}
+      <ClaimEvidenceSheet
+        claim={evidenceFor}
+        lines={
+          evidenceFor === null ? [] : (evidence.data?.byClaim.get(evidenceFor.id) ?? [])
+        }
+        employeeName={
+          evidenceFor === null ? null : (labelMap?.get(evidenceFor.employee_id)?.name ?? null)
+        }
+        onOpenChange={(open) => {
+          if (!open) setEvidenceFor(null);
+        }}
+      />
 
       <ReasonDialog
         open={target !== null}

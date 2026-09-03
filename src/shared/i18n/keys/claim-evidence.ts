@@ -328,3 +328,30 @@ export const keysOvertimeClaim = {
   "apply.ot.mineEmpty": "You have not claimed any overtime yet.",
   "apply.ot.applied": "credited",
 } as const;
+
+/**
+ * The location trail, on an administrator's day panel.
+ *
+ * ── THE CAVEAT IS THE MOST IMPORTANT STRING HERE ─────────────────────────────
+ * A web page cannot sample position in the background, so the trail covers only the time the
+ * app was open. Somebody reading this panel to decide whether an employee was where they
+ * claimed could otherwise read an absence of dots as an absence of person — and act on it. The
+ * caveat is rendered ABOVE the points, every time, full or empty.
+ */
+export const keysLocationTrail = {
+  "admin.trail.title": "Where their device reported being",
+  "admin.trail.caveat":
+    "Recorded only while the app was open — a phone cannot report its position in the background. A gap means the app was closed, not that the person was elsewhere.",
+  "admin.trail.empty": "No points for this day. The app was not open, or location was not granted.",
+  "admin.trail.count": "{n} point(s)",
+  "admin.trail.window": "{from} to {to}",
+  "admin.trail.furthest": "furthest {d} from the venue",
+  "admin.trail.fromVenue": "{d} away",
+  "admin.trail.accuracy": "±{m} m",
+  /* A fix this coarse is usually IP-derived: it names a city, not a place. */
+  "admin.trail.coarse": "±{m} m — too vague to place",
+  "admin.trail.coarseCount": "{n} too vague to place",
+  "admin.trail.outsideShift": "{n} outside shift hours",
+  "admin.trail.offShift": "off-shift",
+  "admin.trail.noFix": "No coordinates recorded",
+} as const;

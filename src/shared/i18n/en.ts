@@ -64,6 +64,7 @@ import {
   keysPunchProof,
   keysOffHoursProof,
   keysOvertimeClaim,
+  keysLocationTrail,
 } from "./keys/claim-evidence";
 import { keysEvents } from "./keys/events";
 import { keysScheduledReports } from "./keys/scheduled-reports";
@@ -133,6 +134,7 @@ export const en = catalogue({
   ...keysPunchProof,
   ...keysOffHoursProof,
   ...keysOvertimeClaim,
+  ...keysLocationTrail,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,

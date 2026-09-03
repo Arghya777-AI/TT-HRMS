@@ -55,6 +55,7 @@ import { PeriodBar } from "../components/PeriodBar";
 import { periodLabel } from "../analyticsFilterBar";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { Notice } from "../components/Notice";
+import { LocationTrailPanel } from "../components/LocationTrailPanel";
 import { PersonCell } from "../components/PersonCell";
 import { useAdminEmployee } from "../hooks/usePeople";
 import {
@@ -916,6 +917,15 @@ function DayPanel({
                   </div>
                 </div>
               ) : null}
+
+              {/*
+                ── WHERE THEIR DEVICE REPORTED BEING ────────────────────────
+                Below the day's own figures, because it explains them rather than replacing
+                them: the hours come from punches, and this says where the phone was in
+                between. Its own caveat is inside the panel, above the points — a gap means
+                the app was closed, and that must not be read as an absence of person.
+              */}
+              <LocationTrailPanel employeeId={employeeId} istDate={row.ist_date} />
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">

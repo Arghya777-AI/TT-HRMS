@@ -56,6 +56,11 @@ const CODE_TO_PATH: Readonly<Record<string, string>> = {
     beforehand; the other is the spend, claimed after. Both belong on the menu
     now that both work.
   */
+  /*
+    The overtime CLAIM, filed after a month is over — not `OT_PREAPPROVAL`, which asks
+    permission before working late and keeps its own screen.
+  */
+  OT_CLAIM: "/me/apply/overtime",
   TRAVEL_REQUISITION: "/me/apply/travel",
   ASSET_REQUEST: "/me/apply/asset",
   RESIGNATION: "/me/apply/resignation",

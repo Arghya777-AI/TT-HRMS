@@ -63,6 +63,7 @@ import {
   keysApprovalEvidence,
   keysPunchProof,
   keysOffHoursProof,
+  keysOvertimeClaim,
 } from "./keys/claim-evidence";
 import { keysEvents } from "./keys/events";
 import { keysScheduledReports } from "./keys/scheduled-reports";
@@ -131,6 +132,7 @@ export const en = catalogue({
   ...keysApprovalEvidence,
   ...keysPunchProof,
   ...keysOffHoursProof,
+  ...keysOvertimeClaim,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,

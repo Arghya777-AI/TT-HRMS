@@ -95,6 +95,7 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/apply/resignation", title: "Resignation", hint: "Notice period, last working day and clearance.", cap: "me.view", domain: "apply", phase: "P2", icon: ClipboardList },
   { path: "/me/apply/tax", title: "Income tax", hint: "Regime election; full declarations arrive in a later phase.", cap: "me.view", domain: "apply", phase: "P2", icon: ClipboardList },
   { path: "/me/apply/certification", title: "Certification reimbursement", hint: "Claim a certification from the approved catalogue.", cap: "me.view", domain: "apply", phase: "P1.5", icon: ClipboardList },
+  { path: "/me/apply/overtime", title: "Overtime claim", hint: "A finished month's credited overtime, as pay or compensatory off.", cap: "me.view", domain: "apply", phase: "P1.5", icon: Clock },
   { path: "/me/assets", title: "My assets", hint: "What you hold, what to confirm, and what to return.", cap: "me.view", domain: "assets", phase: "P1.5", icon: Package },
   { path: "/me/approvals", title: "Awaiting your action", hint: "Everything waiting on you, plus what you're waiting on.", cap: "me.view", domain: "approvals", phase: "P1", icon: Inbox },
   { path: "/me/policies", title: "Policies", hint: "Read and acknowledge company policies by category.", cap: "me.view", domain: "policies", phase: "P1", icon: ScrollText },

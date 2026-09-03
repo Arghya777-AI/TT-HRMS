@@ -278,3 +278,53 @@ export const keysOffHoursProof = {
   */
   "admin.offHours.proof.missing": "No proof attached — the upload may have failed. Ask for it before approving.",
 } as const;
+
+/**
+ * The overtime claim screen.
+ *
+ * The venue's words: "If they have completed one month attendance, and there are certain days
+ * where they have worked extra — it should show summarised. Can they submit it to me saying,
+ * okay, the overtime I want to claim? It should come as an approval to me." And on the outcome:
+ * "either you can be compensated, or we can give it as a compensatory off."
+ *
+ * The copy never invites a number. There is no minutes field: `submit_overtime_claim` sums the
+ * month itself, so the figure shown is the figure filed and an approver is deciding whether to
+ * pay rather than checking arithmetic.
+ */
+export const keysOvertimeClaim = {
+  "apply.ot.title": "Claim overtime",
+  "apply.ot.subtitle":
+    "A finished month's credited overtime, claimed as pay or as compensatory off. The hours come from your attendance — you do not type a number.",
+  "apply.ot.month": "Month",
+  "apply.ot.credited": "Credited overtime",
+  "apply.ot.creditedHint": "Across {days} day(s) that cleared your policy's overtime minimum.",
+  /*
+    Said plainly because the employee can see these hours on their own attendance page. If the
+    claim is smaller and nothing explains why, the system looks like it lost their time.
+  */
+  "apply.ot.withheld":
+    "A further {held} across {days} day(s) is not claimable yet — those days still have a punch waiting for an administrator. Once approved, it can be claimed.",
+  "apply.ot.alreadyClaimed": "You already have a claim in progress for this month.",
+
+  "apply.ot.mode": "What you would like",
+  "apply.ot.mode.paid": "Paid",
+  "apply.ot.mode.compOff": "Compensatory off",
+  "apply.ot.mode.paidHint": "Paid with the month's payroll, once approved.",
+  /*
+    The rounding is stated up front rather than discovered on refusal: comp-off is credited in
+    half-days, so a short claim buys nothing and the function refuses it.
+  */
+  "apply.ot.mode.compOffHint":
+    "Credited as leave you can take later. Rounded down to the nearest half day, so a short claim is better taken as pay.",
+
+  "apply.ot.reason": "What was the extra work?",
+  "apply.ot.reasonPlaceholder": "Evening calls with the US client team, and the Sadanand decor review.",
+  "apply.ot.reasonCounter": "{n} of {min} characters",
+  "apply.ot.file": "Send for approval",
+  "apply.ot.filing": "Sending…",
+  "apply.ot.filed": "{month} sent for approval.",
+
+  "apply.ot.mineTitle": "Your claims",
+  "apply.ot.mineEmpty": "You have not claimed any overtime yet.",
+  "apply.ot.applied": "credited",
+} as const;

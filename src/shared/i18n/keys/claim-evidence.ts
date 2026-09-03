@@ -122,3 +122,48 @@ export const keysClaimEvidence = {
   "admin.reimb.ev.onBehalf": "on behalf of {name}",
   "admin.reimb.ev.unknownActor": "An account that no longer exists",
 } as const;
+
+/**
+ * The Approval Inbox's evidence block — the request itself, not just its envelope.
+ *
+ * HR's words, opening the call: "if I go for an approval, I can see only the amount. There is
+ * no Excel, no attachment, nothing is there." And on a regularisation: "I'm not able to see
+ * any details — just given the request and it is showing nothing. I just approved it."
+ *
+ * So this block answers one question: WHAT AM I APPROVING. It reads the row named by
+ * `approval_requests.detail_table` / `detail_id`, which the panel already carried and never
+ * opened.
+ */
+export const keysApprovalEvidence = {
+  "admin.wf.ev.title": "What you are approving",
+  "admin.wf.ev.loading": "Opening the request…",
+  "admin.wf.ev.none": "This request type has no detail panel yet.",
+  /* The row exists and RLS did not return it. Never rendered as "nothing attached". */
+  "admin.wf.ev.unreadable":
+    "The request's own record is outside what you can read, so its details cannot be shown here.",
+
+  // Regularisations
+  "admin.wf.ev.reg.kind": "Correction asked for",
+  "admin.wf.ev.reg.date": "Day being corrected",
+  "admin.wf.ev.reg.in": "Claimed in",
+  "admin.wf.ev.reg.out": "Claimed out",
+  "admin.wf.ev.reg.status": "Claimed day status",
+  "admin.wf.ev.reg.reason": "Why",
+  "admin.wf.ev.reg.proof": "Proof attached",
+  "admin.wf.ev.reg.noProof": "No proof attached to this request.",
+  "admin.wf.ev.reg.applied": "Applied to attendance",
+  "admin.wf.ev.reg.notApplied": "Not yet applied to attendance",
+  /*
+    Said on the panel because it was silently untrue for two live requests: approving through
+    this screen settled the approval and never created the punches, so the hours never moved.
+    Fixed in 20260903090000 — an approved regularisation now applies itself — and the line
+    stays so an approver can confirm the effect landed rather than assume it.
+  */
+  "admin.wf.ev.reg.appliedHint":
+    "Approving creates the punches for these times and recomputes the day.",
+  "admin.wf.ev.reg.quota": "Correction {n} this month",
+
+  // Claims
+  "admin.wf.ev.claim.lines": "Expense lines",
+  "admin.wf.ev.claim.noLines": "This claim carries no expense lines.",
+} as const;

@@ -60,6 +60,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { summaryText } from "@/features/apply/api/apply.api";
 import { Notice } from "../components/Notice";
+import { ApprovalEvidence } from "../components/ApprovalEvidence";
 import { PersonCell } from "../components/PersonCell";
 import { SelectField } from "../components/Field";
 import { useReasonPrompt } from "../hooks/useReasonPrompt";
@@ -932,6 +933,17 @@ function RequestDetail({
           value={dash(row.applied_at, fmtDateTime)}
         />
       </dl>
+
+      {/*
+        ── THE REQUEST ITSELF ────────────────────────────────────────────────
+        Everything above is the ENVELOPE: dates, days, an amount, the clocks. HR approved
+        a reimbursement seeing "only the amount, no attachment, nothing", and a
+        regularisation showing "nothing details — I just approved it". The address was on
+        this row the whole time: `detail_table` and `detail_id` are already handed to
+        `act_on_approval` when the decision is made, and nothing read them to show what
+        the decision was about.
+      */}
+      <ApprovalEvidence detailTable={row.detail_table} detailId={row.detail_id} />
 
       {row.apply_error !== null ? (
         <div className="mt-3">

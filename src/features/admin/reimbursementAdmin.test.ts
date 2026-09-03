@@ -239,3 +239,74 @@ describe("the download", () => {
     expect(csv).toContain("\r\n");
   });
 });
+
+// -----------------------------------------------------------------------------
+// The pending queue is not a month's statistic
+// -----------------------------------------------------------------------------
+/**
+ * ── WHAT WAS REPORTED, AND WHY IT WAS NOT AN ARITHMETIC BUG ──────────────────
+ * "Pending bills are not showing." They were not, and every figure on the page was correct.
+ *
+ * The one pending claim, CLM-2026-000003 for 5,970, has an expense period ending 30 AUGUST and
+ * was filed on 2 SEPTEMBER. The page opens on the current month counted by expense period, so
+ * the claim sat in August by that basis and the default view legitimately excluded it. Pending
+ * read 0 while somebody waited for an approval, and nothing on screen said why.
+ *
+ * A total is a question about a PERIOD — what did September cost. A queue is a question about
+ * NOW — what is waiting on me. Filtering the second by the first hides work, and hides it
+ * silently, because the count reads zero rather than "not in this month".
+ */
+describe("nothing awaiting a decision can be hidden by a date filter", () => {
+  it("drops the period when the pending band is chosen", () => {
+    const f = claimFilters({
+      slice: "awaiting", from: "2026-09-01", to: "2026-09-30", basis: "period", ignorePeriod: true,
+    });
+    for (const c of f) expect(["period_to", "created_at", "paid_on"]).not.toContain(c.column);
+  });
+
+  it("still applies the period for every other band", () => {
+    // Only the QUEUE is unscoped. A month's report is still a month's report.
+    const f = claimFilters({ slice: "paid", from: "2026-09-01", to: "2026-09-30", basis: "period" });
+    expect(f.some((c) => c.column === "period_to")).toBe(true);
+  });
+
+  it("keeps the claim-type filter while ignoring the period", () => {
+    const f = claimFilters({ claimType: "travel", from: "2026-09-01", to: "2026-09-30", ignorePeriod: true });
+    expect(f).toEqual([{ op: "eq", column: "claim_type", value: "travel" }]);
+  });
+
+  it("counts pending across every month, in SQL", () => {
+    /*
+      Unscoped in the function itself rather than by a second query, so the tile and the table
+      cannot disagree about what "pending" means.
+    */
+    const q = strip(read("supabase", "migrations", "20260904210000_pending_work_is_not_a_months_statistic.sql"));
+    expect(q).toContain("pending_anywhere");
+    /*
+      Matched as two substrings rather than one literal containing a newline — the previous
+      attempt embedded a real line break inside a JS string and would not even parse.
+    */
+    expect(q).toMatch(/FROM public\.reimbursement_claims w/);
+    expect(q).toMatch(/WHERE w\.status IN \('pending', 'in_progress', 'escalated'\)/);
+    // And it must NOT read from the period-scoped CTE.
+    expect(q).not.toMatch(/pending_anywhere[\s\S]{0,200}FROM scoped/);
+  });
+
+  it("reads the tile from the unscoped figure, not the period's", () => {
+    expect(page).toContain("value={s.pending_anywhere}");
+    expect(page).not.toContain('label={t("admin.radm.count.pending")} value={s.pending_count}');
+  });
+
+  it("says so when pending work falls outside the period being viewed", () => {
+    // The silence was the defect. A zero with no explanation is what sent somebody looking.
+    expect(page).toContain("s.pending_anywhere > s.pending_count");
+    expect(page).toContain("admin.radm.pendingOutside");
+    expect(page).toContain("admin.radm.showQueue");
+  });
+
+  it("keeps the in-period pending figure too, for the month's own report", () => {
+    // A month's report still needs to say how much of THAT month is undecided.
+    const q = strip(read("supabase", "migrations", "20260904210000_pending_work_is_not_a_months_statistic.sql"));
+    expect(q).toContain("pending_count     integer");
+  });
+});

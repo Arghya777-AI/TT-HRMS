@@ -50,6 +50,21 @@ export const reimbursementSummarySchema = z.object({
    * this is 0 today and exists so that a total can never quietly omit a row.
    */
   undated_count: dbInt,
+  /**
+   * Every claim still awaiting a decision, and the money in them, IGNORING the period.
+   *
+   * ── WHY THIS IS NOT PERIOD-SCOPED ──────────────────────────────────────────
+   * Reported as "pending bills are not showing". They were not, and every figure was right:
+   * the one pending claim has an expense period ending 30 AUGUST and was filed on
+   * 2 SEPTEMBER, so the default September-by-expense-period view legitimately excluded it and
+   * Pending read 0 while somebody waited for an approval.
+   *
+   * A total is a question about a period — what did September cost. A queue is a question
+   * about now — what is waiting on me. Filtering the second by the first hides work, silently,
+   * because the count reads zero rather than "not in this month".
+   */
+  pending_anywhere: dbInt,
+  pending_anywhere_paise: dbInt,
 });
 export type ReimbursementSummary = z.infer<typeof reimbursementSummarySchema>;
 

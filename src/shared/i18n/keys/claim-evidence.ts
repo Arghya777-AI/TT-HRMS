@@ -464,3 +464,20 @@ export const keysReimbursementAdmin = {
   "admin.radm.type.guest_hospitality": "Guest hospitality",
   "admin.radm.type.misc": "Miscellaneous",
 } as const;
+
+/**
+ * The pending queue on the reimbursement page.
+ *
+ * Reported as "pending bills are not showing". Every figure was correct: the one pending claim
+ * had an expense period ending 30 August and was filed on 2 September, so the default
+ * September-by-expense-period view excluded it and Pending read 0 while somebody waited for an
+ * approval. A total is about a period; a queue is about now.
+ */
+export const keysReimbursementQueue = {
+  /* Under the number, because the figure deliberately is NOT the period's. */
+  "admin.radm.count.pendingNote": "Every month — a decision cannot wait on a date filter",
+  "admin.radm.pendingOutside":
+    "{n} of the {total} claim(s) awaiting a decision fall outside this period, so they are not counted above.",
+  "admin.radm.showQueue": "Show everything pending",
+  "admin.radm.queueTitle": "Every claim awaiting a decision, any month",
+} as const;

@@ -208,9 +208,26 @@ export function ReimbursementAdminPage() {
     ONE filter object for the rows, the count and the summary. The summary is a Postgres
     aggregate over the same period and basis, so the tiles and the table cannot disagree.
   */
+  /*
+    ── THE PENDING BAND IS NOT PERIOD-SCOPED ─────────────────────────────────
+    Reported as "pending bills are not showing", and the figures were right: the one pending
+    claim has an expense period ending 30 August and was filed on 2 September, so the default
+    September-by-expense-period view excluded it and Pending read 0 while somebody waited.
+
+    A total is about a period; a queue is about now. So choosing Pending drops the period
+    entirely and shows everything awaiting a decision.
+  */
+  const queueOnly = slice === "awaiting";
   const filters = useMemo(
-    () => ({ slice, claimType, from: period.from, to: period.to, basis }),
-    [slice, claimType, period.from, period.to, basis],
+    () => ({
+      slice,
+      claimType,
+      from: period.from,
+      to: period.to,
+      basis,
+      ignorePeriod: queueOnly,
+    }),
+    [slice, claimType, period.from, period.to, basis, queueOnly],
   );
 
   const claims = useReimbursementClaims(filters);
@@ -493,8 +510,13 @@ export function ReimbursementAdminPage() {
               table below re-reads with them.
             */}
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <StateTile label={t("admin.radm.count.pending")} value={s.pending_count}
-                active={slice === "awaiting"} onClick={() => setParam("slice", "awaiting")} />
+              {/*
+                The UNSCOPED count, deliberately. This tile answers "what is waiting on me",
+                which the period must not be able to reduce to zero.
+              */}
+              <StateTile label={t("admin.radm.count.pending")} value={s.pending_anywhere}
+                active={queueOnly} onClick={() => setParam("slice", "awaiting")}
+                note={t("admin.radm.count.pendingNote")} />
               <StateTile label={t("admin.radm.count.processed")} value={s.approved_count}
                 active={slice === "unrouted"} onClick={() => setParam("slice", "unrouted")} />
               <StateTile label={t("admin.radm.count.done")} value={s.paid_count}
@@ -508,6 +530,29 @@ export function ReimbursementAdminPage() {
               a claim can exist that no month-by-expense-period total can legitimately include.
               Saying so is the difference between a total that is narrow and one that is wrong.
             */}
+            {/*
+              THE THING THAT WAS SILENT. Pending work outside the chosen period used to make
+              the tile read 0 with nothing to explain it. Now it is stated, with the money, and
+              one click shows it.
+            */}
+            {!queueOnly && s.pending_anywhere > s.pending_count ? (
+              <div className="mt-3">
+                <Notice tone="warning">
+                  {t("admin.radm.pendingOutside", {
+                    n: formatNumber(s.pending_anywhere - s.pending_count),
+                    total: formatNumber(s.pending_anywhere),
+                  })}{" "}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => setParam("slice", "awaiting")}
+                  >
+                    {t("admin.radm.showQueue")}
+                  </button>
+                </Notice>
+              </div>
+            ) : null}
+
             {basis === "period" && s.undated_count > 0 ? (
               <div className="mt-3">
                 <Notice tone="warning">
@@ -542,7 +587,9 @@ export function ReimbursementAdminPage() {
       {/* ── Every claim ────────────────────────────────────────────────────── */}
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-sm font-semibold">{t("admin.radm.tableTitle")}</h2>
+          <h2 className="font-display text-sm font-semibold">
+            {queueOnly ? t("admin.radm.queueTitle") : t("admin.radm.tableTitle")}
+          </h2>
           {slice !== null ? (
             <Button variant="ghost" size="sm" onClick={() => setParam("slice", "")}>
               {t("admin.radm.clearSlice")}
@@ -636,11 +683,14 @@ function StateTile({
   value,
   active,
   onClick,
+  note,
 }: {
   label: string;
   value: number;
   active: boolean;
   onClick: () => void;
+  /** One line under the number, for a tile whose figure is not the period's. */
+  note?: string;
 }) {
   return (
     <button
@@ -656,6 +706,9 @@ function StateTile({
       <span className="num mt-0.5 block text-2xl font-semibold tabular-nums">
         {formatNumber(value)}
       </span>
+      {note !== undefined ? (
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{note}</span>
+      ) : null}
     </button>
   );
 }

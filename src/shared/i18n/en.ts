@@ -66,6 +66,7 @@ import {
   keysOvertimeClaim,
   keysLocationTrail,
   keysReimbursementAdmin,
+  keysReimbursementQueue,
 } from "./keys/claim-evidence";
 import { keysEvents } from "./keys/events";
 import { keysScheduledReports } from "./keys/scheduled-reports";
@@ -137,6 +138,7 @@ export const en = catalogue({
   ...keysOvertimeClaim,
   ...keysLocationTrail,
   ...keysReimbursementAdmin,
+  ...keysReimbursementQueue,
   ...keysLeaveApplication,
   ...keysLeaveApplicationExtra,
   ...keysLeaveMentions,

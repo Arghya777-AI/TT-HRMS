@@ -336,6 +336,14 @@ export interface ClaimFilters {
   readonly to?: string | null;
   readonly basis?: ClaimPeriodBasis | null;
   readonly employeeId?: string | null;
+  /**
+   * Read the whole queue, whatever period is on screen.
+   *
+   * Set when the Pending band is selected. A claim awaiting a decision belongs to no month —
+   * its expense period can sit in August while it was filed in September — and a date filter
+   * over an approval queue hides work rather than narrowing a report.
+   */
+  readonly ignorePeriod?: boolean;
 }
 
 /**
@@ -359,7 +367,7 @@ export function claimFilters(f: ClaimFilters): Filter[] {
   const basis: ClaimPeriodBasis = f.basis ?? "period";
   const from = f.from ?? null;
   const to = f.to ?? null;
-  if (from !== null && to !== null) {
+  if (from !== null && to !== null && f.ignorePeriod !== true) {
     if (basis === "filed") {
       /*
         ── AN IST CIVIL DATE AGAINST A TIMESTAMPTZ NEEDS IST BOUNDS ───────────

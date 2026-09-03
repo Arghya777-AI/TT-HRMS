@@ -297,3 +297,131 @@ describe("the signed display", () => {
     expect(fmtSignedMinutes(-45).startsWith("−")).toBe(true);
   });
 });
+
+// -----------------------------------------------------------------------------
+// A day that has not happened yet
+// -----------------------------------------------------------------------------
+/**
+ * ── THE BUG THESE EXIST FOR ──────────────────────────────────────────────────
+ * An employee had approved HALF-day leave on a Sunday three days out. The screen showed a red
+ * "-4h" against it.
+ *
+ * The arithmetic was doing exactly what it was written to do. `compute_attendance_day`
+ * materialises a future date when approved leave exists — it is the one thing that does — so
+ * the row arrives RESOLVED, `on_leave_half`, with a 480-minute shift and a 0.5 leave fraction.
+ * Half the shift is still owed, nothing is worked because the day is in the future, and
+ * 0 - 240 = -240.
+ *
+ * A FULL day of leave escaped only by accident: it expects nothing, so the subtraction came out
+ * zero. The half-day case is where the flaw showed, and the flaw was a missing date check.
+ *
+ * `today` is passed explicitly in every test below. Relying on the real clock would make these
+ * pass or fail depending on the day they are run, which is precisely the class of defect they
+ * are here to prevent.
+ */
+describe("a future day is never a shortfall", () => {
+  const TODAY = "2026-09-03";
+
+  it("reports the reported case as nothing owed, not -4h", () => {
+    const v = dayVariance(
+      day({
+        ist_date: "2026-09-06",
+        status: "on_leave_half",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        leave_type_id: "lt-mrl",
+        leave_day_fraction: 0.5,
+        total_worked_minutes: 0,
+        payable_worked_minutes: 0,
+      }),
+      TODAY,
+    );
+    expect(v.varianceMinutes).toBe(0);
+    expect(v.counts).toBe(false);
+    expect(v.reason).toBe("future");
+    // And it must not quietly claim half a shift was expected.
+    expect(v.expectedMinutes).toBe(0);
+  });
+
+  it("outranks every expectation rule, including a plain working day", () => {
+    /*
+      The guard is FIRST on purpose. A future ordinary working day would otherwise expect a
+      full shift and report a whole day's shortfall — the same bug, an order of magnitude worse.
+    */
+    const v = dayVariance(
+      day({
+        ist_date: "2026-09-30",
+        status: "pending",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        total_worked_minutes: null,
+        payable_worked_minutes: null,
+      }),
+      TODAY,
+    );
+    expect(v.counts).toBe(false);
+    expect(v.reason).toBe("future");
+  });
+
+  it("still judges today, which can genuinely be behind", () => {
+    /*
+      Deliberately NOT excluded. Somebody checking at 4 pm should see they are short — that is
+      information, not an error. Only strictly-future days are exempt.
+    */
+    const v = dayVariance(
+      day({
+        ist_date: TODAY,
+        status: "present",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        total_worked_minutes: 200,
+        payable_worked_minutes: 200,
+      }),
+      TODAY,
+    );
+    expect(v.counts).toBe(true);
+    expect(v.varianceMinutes).toBe(-280);
+  });
+
+  it("still judges yesterday", () => {
+    const v = dayVariance(
+      day({
+        ist_date: "2026-09-02",
+        status: "present",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        total_worked_minutes: 586,
+        payable_worked_minutes: 586,
+      }),
+      TODAY,
+    );
+    expect(v.counts).toBe(true);
+    expect(v.varianceMinutes).toBe(106);
+  });
+
+  it("keeps a past half-day leave counting as it always did", () => {
+    // The fix must not excuse a real shortfall on a half-day that has passed.
+    const v = dayVariance(
+      day({
+        ist_date: "2026-09-01",
+        status: "on_leave_half",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        leave_type_id: "lt-mrl",
+        leave_day_fraction: 0.5,
+        total_worked_minutes: 0,
+        payable_worked_minutes: 0,
+      }),
+      TODAY,
+    );
+    expect(v.counts).toBe(true);
+    expect(v.expectedMinutes).toBe(240);
+    expect(v.varianceMinutes).toBe(-240);
+  });
+
+  it("compares dates as strings, which is chronological for ISO dates", () => {
+    // The whole test is a string comparison; this pins that it orders correctly across a month.
+    expect(dayVariance(day({ ist_date: "2026-10-01" }), TODAY).reason).toBe("future");
+    expect(dayVariance(day({ ist_date: "2026-08-31" }), TODAY).reason).not.toBe("future");
+  });
+});

@@ -27,6 +27,7 @@
  * anybody is paid. This is the plain-English "did I make my hours" number, and where it differs
  * from approved overtime, both are shown rather than one being quietly presented as the other.
  */
+import { istToday } from "@/lib/datetime";
 import type { AttendancePeriodSummary, AttendanceStatus } from "../api/attendance.api";
 
 /**
@@ -43,6 +44,11 @@ import type { AttendancePeriodSummary, AttendanceStatus } from "../api/attendanc
  * the admin `DayRow` satisfy it structurally.
  */
 export interface VarianceDay {
+  /**
+   * The IST civil date. Needed for one reason only: a day that has NOT HAPPENED YET cannot be
+   * a shortfall, and without the date this function cannot tell.
+   */
+  readonly ist_date: string;
   readonly status: AttendanceStatus;
   readonly is_holiday: boolean;
   readonly is_weekly_off: boolean;
@@ -60,7 +66,9 @@ export type NoExpectationReason =
   | "weekly_off"
   | "on_leave"
   | "not_working_day"
-  | "unresolved";
+  | "unresolved"
+  /** The day is still ahead. Distinct from `unresolved`, which is a day that HAS passed. */
+  | "future";
 
 export interface DayVariance {
   /** Minutes the shift asked for. 0 when the day expects nothing. */
@@ -111,8 +119,40 @@ const OUTSIDE_EMPLOYMENT: ReadonlySet<AttendanceStatus> = new Set<AttendanceStat
  * preferred over `total_worked_minutes` because it is the figure the engine has already adjusted
  * for breaks and policy — the same number the WORKED column shows.
  */
-export function dayVariance(day: VarianceDay): DayVariance {
+export function dayVariance(day: VarianceDay, today: string = istToday()): DayVariance {
   const worked = day.payable_worked_minutes ?? day.total_worked_minutes ?? 0;
+
+  /*
+    ── A DAY THAT HAS NOT HAPPENED YET IS NOT A SHORTFALL ─────────────────────
+    FIRST, before any expectation rule, because it outranks all of them.
+
+    An employee applied for half a day's leave on a Sunday three days out. The engine
+    materialises a future date when approved leave exists — it is the one thing that does — so
+    the row arrives resolved, `on_leave_half`, with a 480-minute shift and a 0.5 leave
+    fraction. Half the shift is therefore still "owed", nothing is worked because the day is in
+    the future, and the screen showed a red −4h against somebody who had done nothing wrong and
+    could not yet have done anything at all.
+
+    A FULL day of leave escaped this only by accident: it expects nothing, so the subtraction
+    happened to come out zero. The half-day case is where the flaw shows, and the flaw is the
+    missing date check, not the fraction.
+
+    `counts: false` keeps it out of every total and renders as an em dash, which is the honest
+    answer for a day nobody can report on yet. ISO dates compare lexicographically in
+    chronological order, so a string comparison is the whole test.
+
+    TODAY IS DELIBERATELY NOT EXCLUDED. A day in progress genuinely can be behind, and somebody
+    checking at 4 pm should see that they are short — that is information, not an error.
+  */
+  if (day.ist_date > today) {
+    return {
+      expectedMinutes: 0,
+      workedMinutes: worked,
+      varianceMinutes: 0,
+      counts: false,
+      reason: "future",
+    };
+  }
 
   if (UNRESOLVED.has(day.status)) {
     // Not a shortfall — an unknown. Folding unknowns into a total makes it indefensible.
@@ -219,8 +259,15 @@ export function periodVariance(days: readonly VarianceDay[]): PeriodVariance {
   let surplusDays = 0;
   let shortfallDays = 0;
 
+  /*
+    Resolved ONCE for the whole period, not per day: a month spanning midnight IST would
+    otherwise classify its last days against two different "today"s and the parts would not sum
+    to the whole.
+  */
+  const today = istToday();
+
   for (const day of days) {
-    const v = dayVariance(day);
+    const v = dayVariance(day, today);
     if (!v.counts) {
       unresolvedDays += 1;
       continue;

@@ -75,6 +75,7 @@ const VARIANCE_REASON_KEY: Record<NoExpectationReason, Parameters<typeof t>[0]> 
   on_leave: "attendance.variance.reason.onLeave",
   not_working_day: "attendance.variance.reason.notWorking",
   unresolved: "attendance.variance.reason.unresolved",
+  future: "attendance.variance.reason.future",
 };
 
 const SLICE_LABEL_KEY: Record<SliceKey, Parameters<typeof t>[0]> = {

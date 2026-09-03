@@ -1825,6 +1825,15 @@ export const en = catalogue({
   "attendance.variance.reason.onLeave": "Approved leave — nothing was expected for this day",
   "attendance.variance.reason.notWorking": "Not a working day for you",
   "attendance.variance.reason.unresolved": "Not processed yet — this day is not counted either way",
+  /*
+    A day still ahead. DISTINCT from `unresolved`, which is a day that has passed and the engine
+    has not settled: this one is nobody's fault and nothing is owed on it yet.
+
+    The wording matters because it replaces a red "-4h" that appeared against approved half-day
+    leave three days in the future — a shortfall on a day the person could not possibly have
+    worked.
+  */
+  "attendance.variance.reason.future": "Still to come — nothing is owed on this day yet",
   "attendance.col.action": "Action",
   "attendance.action.punches": "Punches",
   "attendance.action.fix": "Fix",

@@ -1,231 +1,205 @@
 /**
- * ApprovalEvidence — what the approver is actually approving.
+ * ApprovalEvidence — everything the employee submitted, on the approver's screen.
  *
- * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
- * The Approval Inbox's detail panel showed the request's ENVELOPE — dates, days, an amount,
- * the SLA clock and the action trail — and never the request. HR, on a reimbursement: "I can
- * see only the amount. There is no Excel, no attachment, nothing is there." On an attendance
- * regularisation: "I'm not able to see any details — just given the request and it is showing
- * nothing. I just approved it."
+ * ── WHAT HR SAID, TWICE ─────────────────────────────────────────────────────
+ * "If I go for an approval, I can see only the amount. There is no Excel, no attachment,
+ * nothing is there." And: "No details are showing properly. Every detail should be coming —
+ * images, what they applied for, what is the reason, and at what time they applied. Right now
+ * only the times are coming, but not the reason or the purpose. If they have attached a
+ * document or not, nothing is coming."
  *
- * Both were approving blind, and the panel had the address the whole time:
- * `approval_requests.detail_table` and `detail_id` are on the row and are already passed to
- * `act_on_approval`. Nothing read them.
+ * All of it accurate. The Approval Inbox rendered `approval_requests` — dates, days, an
+ * amount, the SLA clocks — and never opened the row it names through `detail_table` /
+ * `detail_id`. Those two columns are already handed to `act_on_approval` when the decision is
+ * taken; nothing read them to show what the decision was about. A leave request therefore
+ * showed no reason, and `leave_requests.supporting_document_id` had no reader anywhere.
  *
- * ── NOT A PERMISSION PROBLEM, CHECKED ───────────────────────────────────────
- * Every admin can read these rows — `documents__admin__all`, the documents storage policy,
- * and the regularisation table's own policies, verified by impersonating each live
- * administrator under RLS. Every read below runs under the caller's token, so RLS still
- * decides; a row that does not come back is reported as unreadable rather than as absent.
+ * ── ONE PANEL FOR ALL 19 TYPES ──────────────────────────────────────────────
+ * `approval_request_evidence` (migration 20260903120000) returns whatever the detail row holds
+ * minus plumbing, plus every attachment id, plus child rows for a claim. So this renders a
+ * request type it has never heard of — which is the property that stops the fourteenth type
+ * shipping blank. `evidenceFields.ts` decides order and formatting and is tested on its own.
  *
- * ── ONE COMPONENT, SWITCHED ON `detail_table` ───────────────────────────────
- * Keyed on the column the database uses, not on the request-type CODE. `detail_table` is what
- * `act_on_approval` dispatches on, so the panel and the decision agree by construction. A
- * type with no block yet says so plainly instead of rendering an empty box.
+ * ── NOT A PERMISSION PROBLEM, AND NOT RE-IMPLEMENTED HERE ───────────────────
+ * The function is SECURITY INVOKER, so RLS decides what comes back. `readable: false` means
+ * the row exists and this approver may not read it — rendered as exactly that, never as "no
+ * details", because telling an approver an employee submitted nothing is worse than telling
+ * them they cannot see it.
  */
 import { useQuery } from "@tanstack/react-query";
-import { Paperclip } from "lucide-react";
+import { FileWarning, Paperclip, ShieldAlert } from "lucide-react";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { Money } from "@/shared/ui/Money";
 import { DocumentOpenButtons } from "@/features/docs/components/DocumentOpenButtons";
 import { fmtCivilDate, fmtDateTime } from "@/lib/datetime";
-import { dash, formatNumber } from "@/lib/format";
-import { t } from "@/shared/i18n/en";
+import { t, type MessageKey } from "@/shared/i18n/en";
+import { en } from "@/shared/i18n/en";
 import {
-  attachReceipts,
-  fetchClaimLines,
-  fetchClaimReceipts,
-  type ClaimLineWithReceipt,
-} from "../api/claimEvidence.api";
-import { fetchRegularizationsByIds } from "../api/regularizations-admin.api";
-import type { Regularization } from "@/features/attendance/api/regularizations.api";
+  evidenceValueKind,
+  humaniseKey,
+  isWideField,
+  orderEvidenceKeys,
+} from "../evidenceFields";
+import { fetchApprovalEvidence } from "../api/approvalEvidence.api";
 
-/** The detail tables this panel can open. Anything else says so rather than rendering blank. */
-const CLAIM_TABLE = "reimbursement_claims";
-const REGULARIZATION_TABLE = "attendance_regularizations";
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="break-words text-sm">{children}</dd>
-    </div>
-  );
+/**
+ * A translated label when the catalogue has one, otherwise the humanised key.
+ *
+ * `t()` has NO missing-key fallback — `en[key]` is undefined and `t` returns it unchanged — so
+ * membership is checked against the catalogue before calling it. Building the key by template
+ * and hoping is how a cell renders empty.
+ */
+function fieldLabel(key: string): string {
+  const messageKey = `admin.wf.ev.f.${key}`;
+  return Object.prototype.hasOwnProperty.call(en, messageKey)
+    ? t(messageKey as MessageKey)
+    : humaniseKey(key);
 }
 
-function ClaimBlock({ rows }: { rows: readonly ClaimLineWithReceipt[] }) {
-  if (rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t("admin.wf.ev.claim.noLines")}</p>;
+function EvidenceValue({ fieldKey, value }: { fieldKey: string; value: unknown }) {
+  switch (evidenceValueKind(fieldKey, value)) {
+    case "money":
+      return <Money paise={value as number} />;
+    case "instant":
+      return <>{fmtDateTime(value as string)}</>;
+    case "date":
+      return <>{fmtCivilDate(value as string)}</>;
+    case "boolean":
+      return <>{value === true ? t("common.yes") : t("common.no")}</>;
+    default:
+      // Objects and arrays that reached here are shown as JSON rather than "[object Object]".
+      return <>{typeof value === "object" ? JSON.stringify(value) : String(value)}</>;
+  }
+}
+
+function FieldGrid({ fields }: { fields: Record<string, unknown> }) {
+  const keys = orderEvidenceKeys(Object.keys(fields));
+  if (keys.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t("admin.wf.ev.noFields")}</p>;
   }
   return (
-    <ul className="space-y-3">
-      {rows.map(({ line, receipt }) => (
-        <li key={line.id} className="rounded-md border p-3">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-            <Fact label={t("admin.reimb.ev.f.date")}>{fmtCivilDate(line.line_date)}</Fact>
-            <Fact label={t("admin.reimb.ev.f.head")}>{dash(line.expense_head)}</Fact>
-            <Fact label={t("admin.reimb.ev.f.claimed")}>
-              <Money paise={line.amount_claimed_paise} />
-            </Fact>
-            {line.from_location !== null || line.to_location !== null ? (
-              <>
-                <Fact label={t("admin.reimb.ev.f.from")}>{dash(line.from_location)}</Fact>
-                <Fact label={t("admin.reimb.ev.f.to")}>{dash(line.to_location)}</Fact>
-              </>
-            ) : null}
-            {line.distance_km !== null ? (
-              <Fact label={t("admin.reimb.ev.f.distance")}>
-                {t("admin.reimb.ev.km", { km: formatNumber(line.distance_km) })}
-              </Fact>
-            ) : null}
-            {line.gst_number !== null ? (
-              <Fact label={t("admin.reimb.ev.f.gst")}>{line.gst_number}</Fact>
-            ) : null}
-            <div className="col-span-2 sm:col-span-3">
-              <Fact label={t("admin.reimb.ev.f.desc")}>{dash(line.description)}</Fact>
-            </div>
-          </dl>
-          <div className="mt-3 flex items-start justify-between gap-3 border-t pt-3">
-            <p className="min-w-0 break-words text-xs">
-              {/*
-                THE THREE ABSENCES, kept apart here exactly as on the payroll register: a
-                receipt this reader may not open is a bill that EXISTS, and calling it "none
-                attached" would tell an approver the employee filed nothing.
-              */}
-              {receipt !== null ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Paperclip className="size-3.5 text-muted-foreground" aria-hidden />
-                  {dash(receipt.file_name ?? receipt.title)}
-                </span>
-              ) : line.receipt_document_id !== null ? (
-                <span className="text-amber-700 dark:text-amber-400">
-                  {t("admin.reimb.ev.billUnreadable")}
-                </span>
-              ) : line.is_receipt_required ? (
-                <span className="text-destructive">{t("admin.reimb.ev.noBillRequired")}</span>
-              ) : (
-                <span className="text-muted-foreground">{t("admin.reimb.ev.noBill")}</span>
-              )}
-            </p>
-            {receipt !== null ? (
-              <DocumentOpenButtons
-                documentId={receipt.id}
-                title={receipt.file_name ?? receipt.title}
-                variant="icon"
-              />
-            ) : null}
+    <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+      {keys.map((key) => {
+        const value = fields[key];
+        return (
+          <div
+            key={key}
+            className={isWideField(key, value) ? "min-w-0 sm:col-span-2 lg:col-span-3" : "min-w-0"}
+          >
+            <dt className="text-xs text-muted-foreground">{fieldLabel(key)}</dt>
+            <dd className="break-words text-sm">
+              <EvidenceValue fieldKey={key} value={value} />
+            </dd>
           </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function RegularizationBlock({ reg }: { reg: Regularization }) {
-  return (
-    <div className="rounded-md border p-3">
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-        <Fact label={t("admin.wf.ev.reg.date")}>{fmtCivilDate(reg.ist_date)}</Fact>
-        <Fact label={t("admin.wf.ev.reg.kind")}>{reg.regularization_kind}</Fact>
-        <Fact label={t("admin.wf.ev.reg.quota", { n: formatNumber(reg.month_quota_counter) })}>
-          {dash(reg.created_at, fmtDateTime)}
-        </Fact>
-        {/* THE TIMES. Absent from the panel entirely before this — an approver was asked to
-            accept a correction to somebody's attendance without seeing the correction. */}
-        <Fact label={t("admin.wf.ev.reg.in")}>{dash(reg.requested_first_in_at, fmtDateTime)}</Fact>
-        <Fact label={t("admin.wf.ev.reg.out")}>{dash(reg.requested_last_out_at, fmtDateTime)}</Fact>
-        <Fact label={t("admin.wf.ev.reg.status")}>{dash(reg.requested_status)}</Fact>
-        <div className="col-span-2 sm:col-span-3">
-          <Fact label={t("admin.wf.ev.reg.reason")}>{reg.employee_reason}</Fact>
-        </div>
-      </dl>
-
-      <div className="mt-3 flex items-start justify-between gap-3 border-t pt-3">
-        <div className="min-w-0">
-          <p className="text-xs">
-            {reg.applied_at !== null ? (
-              <span>
-                {t("admin.wf.ev.reg.applied")} · {fmtDateTime(reg.applied_at)}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">{t("admin.wf.ev.reg.notApplied")}</span>
-            )}
-          </p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-            {t("admin.wf.ev.reg.appliedHint")}
-          </p>
-          {reg.supporting_document_id === null ? (
-            <p className="mt-1 text-xs text-muted-foreground">{t("admin.wf.ev.reg.noProof")}</p>
-          ) : null}
-        </div>
-        {reg.supporting_document_id !== null ? (
-          <div className="shrink-0">
-            <p className="mb-1 text-right text-xs text-muted-foreground">
-              {t("admin.wf.ev.reg.proof")}
-            </p>
-            <DocumentOpenButtons documentId={reg.supporting_document_id} variant="icon" />
-          </div>
-        ) : null}
-      </div>
-    </div>
+        );
+      })}
+    </dl>
   );
 }
 
 export interface ApprovalEvidenceProps {
-  readonly detailTable: string;
-  readonly detailId: string;
+  readonly approvalRequestId: string;
 }
 
-export function ApprovalEvidence({ detailTable, detailId }: ApprovalEvidenceProps) {
-  const supported = detailTable === CLAIM_TABLE || detailTable === REGULARIZATION_TABLE;
-
+export function ApprovalEvidence({ approvalRequestId }: ApprovalEvidenceProps) {
   const evidence = useQuery({
-    queryKey: qk.admin.payslips({ part: "approval-evidence", detailTable, detailId }),
-    enabled: supported,
+    queryKey: qk.admin.payslips({ part: "approval-evidence", approvalRequestId }),
     retry: shouldRetryQuery,
-    queryFn: async ({ signal }) => {
-      if (detailTable === CLAIM_TABLE) {
-        const lines = await fetchClaimLines([detailId], signal);
-        const receipts = await fetchClaimReceipts(lines, signal);
-        return { kind: "claim" as const, rows: attachReceipts(lines, receipts) };
-      }
-      const regs = await fetchRegularizationsByIds([detailId], signal);
-      return { kind: "regularization" as const, reg: regs[0] ?? null };
-    },
+    queryFn: ({ signal }) => fetchApprovalEvidence(approvalRequestId, signal),
   });
 
-  if (!supported) {
-    return (
-      <section className="mt-4">
-        <h3 className="mb-2 text-sm font-semibold">{t("admin.wf.ev.title")}</h3>
-        <p className="text-sm text-muted-foreground">{t("admin.wf.ev.none")}</p>
-      </section>
-    );
-  }
-
   return (
-    <section className="mt-4">
+    <section className="mt-4" aria-label={t("admin.wf.ev.title")}>
       <h3 className="mb-2 text-sm font-semibold">{t("admin.wf.ev.title")}</h3>
       <StateBoundary
         loading={evidence.isPending}
         error={evidence.error}
         onRetry={() => void evidence.refetch()}
       >
-        {evidence.data === undefined ? null : evidence.data.kind === "claim" ? (
-          <ClaimBlock rows={evidence.data.rows} />
-        ) : evidence.data.reg === null ? (
-          /*
-            The row exists — the approval names it — and RLS did not return it. That is an
-            access outcome, not an empty request, and it must not read as "no details".
-          */
-          <p className="text-sm text-amber-700 dark:text-amber-400">
-            {t("admin.wf.ev.unreadable")}
-          </p>
-        ) : (
-          <RegularizationBlock reg={evidence.data.reg} />
-        )}
+        {(() => {
+          const data = evidence.data;
+          if (data === undefined || data === null || !data.found) {
+            return <p className="text-sm text-muted-foreground">{t("admin.wf.ev.none")}</p>;
+          }
+          if (data.unknown_table) {
+            // A detail_table with no registered request type. Schema drift, said out loud.
+            return (
+              <p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
+                <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                {t("admin.wf.ev.unknownTable", { table: data.detail_table ?? "" })}
+              </p>
+            );
+          }
+          if (!data.readable) {
+            /*
+              THE DISTINCTION THAT MATTERS. The row exists — this approval names it — and RLS
+              did not return it. "No details" would tell an approver the employee submitted
+              nothing while they decide money or somebody's attendance.
+            */
+            return (
+              <p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
+                <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                {t("admin.wf.ev.unreadable")}
+              </p>
+            );
+          }
+
+          return (
+            <div className="space-y-4">
+              <div className="rounded-md border p-3">
+                <FieldGrid fields={data.fields} />
+              </div>
+
+              {/* Child rows. A claim keeps its money on `claim_lines`, so the header alone
+                  showed an approver a total with nothing behind it. */}
+              {data.lines.length > 0 ? (
+                <div>
+                  <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    {t("admin.wf.ev.claim.lines")}
+                  </h4>
+                  <ul className="space-y-2">
+                    {data.lines.map((line, i) => (
+                      <li key={String(line["id"] ?? i)} className="rounded-md border p-3">
+                        <FieldGrid fields={line} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {/* ── THE ATTACHMENTS ─────────────────────────────────────────
+                  "If they have attached a document or not, nothing is coming." Every
+                  attachment on the row, opened through `document-access`, which logs the
+                  access before the URL exists. Absence is stated rather than left blank —
+                  an approver needs to know a request came WITHOUT proof. */}
+              <div>
+                <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  {t("admin.wf.ev.docs")}
+                </h4>
+                {data.documents.length === 0 ? (
+                  <p className="flex items-start gap-2 rounded-md bg-muted/50 p-2 text-xs">
+                    <FileWarning className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    {t("admin.wf.ev.noDocs")}
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {data.documents.map((id, i) => (
+                      <li key={id} className="flex items-center justify-between gap-3 rounded-md border p-2">
+                        <span className="inline-flex min-w-0 items-center gap-1.5 text-sm">
+                          <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                          {t("admin.wf.ev.docN", { n: String(i + 1) })}
+                        </span>
+                        <DocumentOpenButtons documentId={id} variant="icon" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </StateBoundary>
     </section>
   );

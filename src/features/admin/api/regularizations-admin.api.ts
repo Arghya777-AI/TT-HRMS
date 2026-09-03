@@ -91,33 +91,6 @@ export function fetchRegularizationQueue(
   });
 }
 
-/**
- * One regularisation by id — for the Approval Inbox, which knows only
- * `approval_requests.detail_id`.
- *
- * WHY THE INBOX NEEDS THIS AT ALL. The generic approval panel showed dates, days, an amount
- * and the trail, and nothing of the request itself: an approver looking at a regularisation
- * saw no requested times, no kind, and not the reason the employee typed. HR said so
- * plainly — "I'm not able to see any details, just given the request and it is showing
- * nothing. I just approved it." Approving a correction to somebody's attendance without
- * seeing the correction is not an approval.
- *
- * A list rather than a single id so the panel can be opened on several rows without a
- * request each; `inList` is the form the rest of this file uses.
- */
-export function fetchRegularizationsByIds(
-  ids: readonly string[],
-  signal?: AbortSignal,
-): Promise<Regularization[]> {
-  if (ids.length === 0) return Promise.resolve([]);
-  return selectMany(REGULARIZATIONS_TABLE, regularizationSchema, {
-    columns: ADMIN_REG_COLUMNS,
-    filters: [inList("id", ids)],
-    limit: ids.length,
-    ...(signal ? { signal } : {}),
-  });
-}
-
 export function countRegularizationQueue(
   f: RegularizationQueueFilters,
   signal?: AbortSignal,

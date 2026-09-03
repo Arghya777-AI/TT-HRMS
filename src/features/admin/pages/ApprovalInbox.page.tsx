@@ -943,7 +943,7 @@ function RequestDetail({
         `act_on_approval` when the decision is made, and nothing read them to show what
         the decision was about.
       */}
-      <ApprovalEvidence detailTable={row.detail_table} detailId={row.detail_id} />
+      <ApprovalEvidence approvalRequestId={row.id} />
 
       {row.apply_error !== null ? (
         <div className="mt-3">

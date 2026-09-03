@@ -166,4 +166,69 @@ export const keysApprovalEvidence = {
   // Claims
   "admin.wf.ev.claim.lines": "Expense lines",
   "admin.wf.ev.claim.noLines": "This claim carries no expense lines.",
+
+  // ── The generic panel ─────────────────────────────────────────────────────
+  "admin.wf.ev.noFields": "This request carries no details of its own.",
+  "admin.wf.ev.unknownTable":
+    "This request points at “{table}”, which is not a registered request type. Nothing can be shown until that is corrected.",
+  "admin.wf.ev.docs": "Attachments",
+  /*
+    Stated, never left blank. An approver needs to know a request arrived WITHOUT proof —
+    that is a reason to ask for it, and an empty space says nothing.
+  */
+  "admin.wf.ev.noDocs": "Nothing was attached to this request.",
+  "admin.wf.ev.docN": "Attachment {n}",
+
+  /*
+    ── FIELD LABELS ────────────────────────────────────────────────────────
+    Only the ones worth wording. Anything without a label here is humanised from its column
+    name (`employee_reason` -> "Employee reason"), which is why a request type nobody has
+    labelled yet is still legible the day it appears instead of after a deploy.
+  */
+  "admin.wf.ev.f.leave_type": "Leave type",
+  "admin.wf.ev.f.reason": "Reason given",
+  "admin.wf.ev.f.employee_reason": "Reason given",
+  "admin.wf.ev.f.purpose": "Purpose",
+  "admin.wf.ev.f.travel_purpose": "Purpose of travel",
+  "admin.wf.ev.f.reason_category": "Category",
+  "admin.wf.ev.f.from_date": "From",
+  "admin.wf.ev.f.to_date": "To",
+  "admin.wf.ev.f.ist_date": "Day being corrected",
+  "admin.wf.ev.f.period_from": "Period from",
+  "admin.wf.ev.f.period_to": "Period to",
+  "admin.wf.ev.f.requested_first_in_at": "Claimed in",
+  "admin.wf.ev.f.requested_last_out_at": "Claimed out",
+  "admin.wf.ev.f.requested_status": "Claimed day status",
+  "admin.wf.ev.f.regularization_kind": "Correction asked for",
+  "admin.wf.ev.f.portion": "Half or full day",
+  "admin.wf.ev.f.total_days": "Days asked for",
+  "admin.wf.ev.f.approved_days": "Days approved",
+  "admin.wf.ev.f.paid_days": "Paid days",
+  "admin.wf.ev.f.unpaid_days": "Unpaid days",
+  "admin.wf.ev.f.total_claimed_paise": "Claimed",
+  "admin.wf.ev.f.total_approved_paise": "Approved",
+  "admin.wf.ev.f.amount_claimed_paise": "Claimed",
+  "admin.wf.ev.f.amount_approved_paise": "Approved",
+  "admin.wf.ev.f.advance_adjusted_paise": "Advance adjusted",
+  "admin.wf.ev.f.tax_amount_paise": "Tax",
+  "admin.wf.ev.f.rate_per_km_paise": "Rate per km",
+  "admin.wf.ev.f.from_location": "From",
+  "admin.wf.ev.f.to_location": "To",
+  "admin.wf.ev.f.distance_km": "Distance (km)",
+  "admin.wf.ev.f.address_during_leave": "Address while away",
+  "admin.wf.ev.f.contact_during_leave": "Contact while away",
+  "admin.wf.ev.f.handover_notes": "Handover",
+  "admin.wf.ev.f.event_reference": "Event",
+  "admin.wf.ev.f.expense_head": "Expense head",
+  "admin.wf.ev.f.description": "What it was for",
+  "admin.wf.ev.f.gst_number": "GST number",
+  "admin.wf.ev.f.line_date": "Date of expense",
+  "admin.wf.ev.f.decision_comment": "Decision note",
+  "admin.wf.ev.f.decided_comment": "Decision note",
+  "admin.wf.ev.f.decided_at": "Decided",
+  "admin.wf.ev.f.applied_at": "Applied",
+  "admin.wf.ev.f.is_backdated": "Backdated",
+  "admin.wf.ev.f.month_quota_counter": "Correction this month",
+  "admin.wf.ev.f.is_receipt_required": "Receipt required",
+  "admin.wf.ev.f.status": "State",
 } as const;

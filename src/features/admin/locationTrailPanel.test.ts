@@ -42,6 +42,9 @@ const ping = (over: Partial<LocationPing> = {}): LocationPing => ({
   source: "web_foreground",
   within_shift: true,
   distance_m: 0,
+  /* Live by default; the offline cases set it explicitly. */
+  captured_offline: false,
+  synced_at: null,
   ...over,
 });
 
@@ -104,7 +107,8 @@ describe("the summary an administrator actually asked for", () => {
 
   it("survives a day with no points", () => {
     expect(summariseTrail([])).toEqual({
-      points: 0, firstAt: null, lastAt: null, furthestMetres: null, outsideShift: 0, coarse: 0,
+      points: 0, firstAt: null, lastAt: null, furthestMetres: null,
+      outsideShift: 0, coarse: 0, replayed: 0,
     });
   });
 
@@ -159,5 +163,35 @@ describe("where it is mounted, and what it reads", () => {
   it("bounds the read", () => {
     expect(api).toContain("limit: TRAIL_ROW_CAP");
     expect(api).toContain("TRAIL_ROW_CAP = 400");
+  });
+});
+
+describe("a replayed fix is marked, not disguised", () => {
+  it("counts fixes taken with no signal", () => {
+    /*
+      Worth its own figure. A day with many of these is a day spent somewhere without signal —
+      which is itself an answer to "where were they" — and it means the trail was not live at
+      the time, so nobody could have been watching it.
+    */
+    const s = summariseTrail([
+      ping(),
+      ping({ id: "p2", captured_offline: true }),
+      ping({ id: "p3", captured_offline: true }),
+    ]);
+    expect(s.replayed).toBe(2);
+    expect(s.points).toBe(3);
+  });
+
+  it("says so on the row", () => {
+    expect(panel).toContain("ping.captured_offline");
+    expect(panel).toContain('t("admin.trail.replayed")');
+  });
+
+  it("does not treat it as less accurate", () => {
+    // GPS needs no network: an offline fix is exactly as precise as a live one, and nothing
+    // here may downgrade it. Only its ARRIVAL was late.
+    const s = summariseTrail([ping({ captured_offline: true, accuracy_m: 8, distance_m: 4064 })]);
+    expect(s.coarse).toBe(0);
+    expect(s.furthestMetres).toBe(4064);
   });
 });

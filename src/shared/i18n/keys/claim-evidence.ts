@@ -481,3 +481,9 @@ export const keysReimbursementQueue = {
   "admin.radm.showQueue": "Show everything pending",
   "admin.radm.queueTitle": "Every claim awaiting a decision, any month",
 } as const;
+
+/** A location fix that was taken with no signal and replayed later. */
+export const keysTrailOffline = {
+  "admin.trail.replayed": "no signal — sent later",
+  "admin.trail.replayedCount": "{n} taken with no signal",
+} as const;

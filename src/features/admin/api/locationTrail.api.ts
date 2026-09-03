@@ -48,12 +48,23 @@ export const locationPingSchema = z.object({
   /** The server's answer at capture time, not re-derived from a shift that may have changed. */
   within_shift: z.boolean().nullable(),
   distance_m: dbNumericNullable,
+  /**
+   * The device had no connectivity when the GPS answered.
+   *
+   * The fix is no less accurate for it — GPS needs no network — but it reached the server
+   * later, so the panel marks it. An administrator reading a trail needs to know which points
+   * arrived live and which were replayed out of a dead zone: the second kind proves somebody
+   * was there, and also proves nobody could have been watching at the time.
+   */
+  captured_offline: z.boolean(),
+  /** When a queued fix finally arrived. NULL means it was sent live. */
+  synced_at: z.string().nullable(),
 });
 export type LocationPing = z.infer<typeof locationPingSchema>;
 
 const PING_COLUMNS =
   "id, employee_id, captured_at, ist_date, lat, lng, accuracy_m, source, " +
-  "within_shift, distance_m";
+  "within_shift, distance_m, captured_offline, synced_at";
 
 /**
  * One employee's samples for one IST day, oldest first.
@@ -91,6 +102,14 @@ export interface TrailSummary {
   readonly outsideShift: number;
   /** Points too coarse to place anybody — kept, counted, and never silently dropped. */
   readonly coarse: number;
+  /**
+   * Points captured with no connectivity and replayed later.
+   *
+   * Worth a figure of its own: a day with many of these is a day the person spent somewhere
+   * without signal, which is itself the answer to "where were they" — and it means the trail
+   * was not live at the time, so nobody could have been monitoring it.
+   */
+  readonly replayed: number;
 }
 
 /** Metres beyond which a fix cannot place somebody. Mirrors the client's own ceiling. */
@@ -98,12 +117,17 @@ export const COARSE_ABOVE_M = 2_000;
 
 export function summariseTrail(pings: readonly LocationPing[]): TrailSummary {
   if (pings.length === 0) {
-    return { points: 0, firstAt: null, lastAt: null, furthestMetres: null, outsideShift: 0, coarse: 0 };
+    return {
+      points: 0, firstAt: null, lastAt: null, furthestMetres: null,
+      outsideShift: 0, coarse: 0, replayed: 0,
+    };
   }
   let furthest: number | null = null;
   let outsideShift = 0;
   let coarse = 0;
+  let replayed = 0;
   for (const p of pings) {
+    if (p.captured_offline) replayed += 1;
     const d = p.distance_m === null ? null : Number(p.distance_m);
     if (d !== null && Number.isFinite(d) && (furthest === null || d > furthest)) furthest = d;
     if (p.within_shift === false) outsideShift += 1;
@@ -117,5 +141,6 @@ export function summariseTrail(pings: readonly LocationPing[]): TrailSummary {
     furthestMetres: furthest,
     outsideShift,
     coarse,
+    replayed,
   };
 }

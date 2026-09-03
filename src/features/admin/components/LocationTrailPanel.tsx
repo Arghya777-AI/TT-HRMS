@@ -98,6 +98,18 @@ function PingRow({ ping }: { ping: LocationPing }) {
       {ping.within_shift === false ? (
         <span className="text-xs text-muted-foreground">{t("admin.trail.offShift")}</span>
       ) : null}
+
+      {/*
+        Marked, because it changes what the point means. The fix is just as accurate — GPS needs
+        no network — but it was replayed out of a dead zone, so nobody could have been watching
+        the trail at the time. That is the difference between a record and a live signal.
+      */}
+      {ping.captured_offline ? (
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <WifiOff className="size-3 shrink-0" aria-hidden />
+          {t("admin.trail.replayed")}
+        </span>
+      ) : null}
     </li>
   );
 }
@@ -166,6 +178,9 @@ export function LocationTrailPanel({ employeeId, istDate }: LocationTrailPanelPr
                 <span className="text-warning">
                   {t("admin.trail.coarseCount", { n: String(summary.coarse) })}
                 </span>
+              ) : null}
+              {summary.replayed > 0 ? (
+                <span>{t("admin.trail.replayedCount", { n: String(summary.replayed) })}</span>
               ) : null}
             </p>
             <ul className="mt-2 max-h-72 overflow-y-auto">

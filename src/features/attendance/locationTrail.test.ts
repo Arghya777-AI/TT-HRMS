@@ -148,9 +148,18 @@ describe("it is mounted where it survives navigation", () => {
     expect(hook).toContain('document.removeEventListener("visibilitychange", onVisibility)');
   });
 
-  it("advances the cursor only on a write that landed", () => {
-    // Otherwise a dropped request silently opens a five-minute hole in the trail.
-    expect(hook).toContain("if (!error) lastRecorded.current = sample;");
+  it("advances the cursor only once the fix is safe", () => {
+    /*
+      Either sent OR queued — both mean the fix is kept, so the throttle may move on. What must
+      never happen is advancing after a fix was LOST, which would open a five-minute hole.
+
+      Rewritten when offline queueing landed: the old assertion pinned
+      `if (!error) lastRecorded.current = sample;`, which no longer exists because the success
+      path now also covers the queued case. Pinning the two branches is the durable form.
+    */
+    const sendBlock = hook.slice(hook.indexOf("const send = "));
+    expect(sendBlock).toContain("if (ok) {");
+    expect(sendBlock.match(/lastRecorded\.current = sample;/g) ?? []).toHaveLength(2);
   });
 
   it("never throws, and renders nothing", () => {
@@ -179,5 +188,132 @@ describe("it is mounted where it survives navigation", () => {
   it("is permitted by the deployed Permissions-Policy", () => {
     // `geolocation=(self)` — without it the watch is blocked by the browser, silently.
     expect(read("vercel.json")).toContain("geolocation=(self)");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// A fix taken with no signal
+// -----------------------------------------------------------------------------
+/**
+ * ── WHY THIS HALF MATTERS MOST ───────────────────────────────────────────────
+ * "Even if the internet is not on, then we can access the GPS." Correct — a GPS receiver needs
+ * no network. What a phone with no signal cannot do is SEND the reading, so every fix taken in
+ * a basement, a lift or a dead zone was previously lost.
+ *
+ * For staff working away from the venue that is exactly the wrong half to lose: the places with
+ * no signal are the places somebody is least accounted for.
+ *
+ * Verified against the live database before shipping: a fix replayed nine hours late kept its
+ * own 12:47 capture instant, was resolved as within-shift FOR THAT MOMENT rather than for the
+ * replay, carried `captured_offline = true`, and got its own `synced_at`.
+ */
+describe("a fix the phone could not send is kept", () => {
+  const queue = strip(read("src", "features", "attendance", "lib", "locationQueue.ts"));
+  const hook = strip(read("src", "features", "attendance", "hooks", "useLocationTrail.ts"));
+  const mig = read("supabase", "migrations", "20260905090000_a_location_taken_offline_still_counts.sql")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*--.*$/gm, "");
+
+  it("queues it instead of dropping it, unconditionally on the failure path", () => {
+    /*
+      `toContain("await enqueue({")` alone was too weak — it still passes with
+      `if (false) await enqueue({`, which is exactly the regression it should catch. So this
+      asserts the call is REACHED: nothing between the success branch's `return` and the
+      enqueue may reintroduce a condition.
+    */
+    /*
+      Anchored on the LINE, because slicing from the first `return;` found the in-flight guard
+      at the top of `send` rather than the success branch — the assertion then failed against
+      correct code, which is the second wrong version of this one check. The enqueue must be a
+      statement of its own: `if (false) await enqueue({` puts something before the `await` and
+      is caught here.
+    */
+    const enqueueLine = hook
+      .split("\n")
+      .find((l) => l.includes("await enqueue({"));
+    expect(enqueueLine).toBeDefined();
+    expect(enqueueLine?.trim()).toBe("await enqueue({");
+    expect(hook).toContain("capturedAt: nowInstantIso(new Date(sample.at))");
+  });
+
+  it("keeps the ORIGINAL capture instant, never the sync time", () => {
+    /*
+      Re-dating a replayed fix would draw somebody teleporting to wherever they regained
+      signal, every point at once — and it would be judged against the wrong shift window.
+    */
+    expect(mig).toContain("public.punch_within_shift(v_emp, p_captured_at, 0)");
+    expect(queue).toContain("readonly capturedAt: string");
+  });
+
+  it("records the arrival separately, so the delay is visible", () => {
+    expect(mig).toContain("synced_at");
+    expect(mig).toContain("CASE WHEN COALESCE(p_offline, false) THEN now() ELSE NULL END");
+  });
+
+  it("cannot claim it arrived before it was taken", () => {
+    expect(mig).toContain("synced_at IS NULL OR synced_at >= captured_at");
+  });
+
+  it("treats navigator.onLine as a hint, not a verdict", () => {
+    /*
+      It reports a network interface, not a reachable server: a captive portal and a dead
+      uplink both read as online. So it only decides whether to TRY — anything that fails to
+      send is queued whatever the flag claimed, and a false "online" costs a retry rather than
+      a lost fix.
+    */
+    expect(hook).toContain("navigator.onLine === false");
+    expect(hook).toContain("const attempt = offline ? Promise.resolve(false) : post(sample, false)");
+  });
+
+  it("advances the throttle cursor even when the fix was only queued", () => {
+    /*
+      The fix is KEPT, so treating it as never-taken would make the next reading compare
+      against a stale point, fail the five-minute throttle, and queue a burst of near-identical
+      fixes the moment signal returned.
+    */
+    const queuedBranch = hook.slice(hook.indexOf("await enqueue({"));
+    expect(queuedBranch).toContain("lastRecorded.current = sample;");
+  });
+
+  it("drains on reconnect, on becoming visible, and at mount", () => {
+    // None alone is enough: `online` does not fire if the app was shut when signal returned.
+    expect(hook).toContain('window.addEventListener("online", onOnline)');
+    expect(hook).toContain('window.removeEventListener("online", onOnline)');
+    expect(hook).toContain("void drain();");
+  });
+
+  it("stops a drain at the first failure rather than burning every attempt", () => {
+    // Three attempts is all a fix gets; spending them on one outage would discard the queue.
+    expect(hook).toContain("if (!ok) break;");
+  });
+
+  it("does not let two drains overlap", () => {
+    expect(hook).toContain("if (draining.current) return;");
+  });
+
+  it("drops the OLDEST when full, so it never goes blind", () => {
+    /*
+      For "where is this person", the newest fix is the one that matters. A queue that refused
+      new writes would stop recording at exactly the moment it filled.
+    */
+    expect(queue).toContain("MAX_QUEUED = 2_000");
+    expect(queue).toContain('.index("capturedAt")');
+    expect(queue).toContain("cursor.delete()");
+  });
+
+  it("keeps its own database, not the gate's", () => {
+    // One feature's version bump must not block the other's queue mid-outage.
+    expect(queue).toContain('const DB_NAME = "tt-hrms-location"');
+    expect(queue).not.toContain('"tt-gate"');
+  });
+
+  it("parks a fix the server keeps refusing", () => {
+    expect(queue).toContain("MAX_ATTEMPTS = 3");
+    expect(queue).toContain("p.attempts < MAX_ATTEMPTS");
+  });
+
+  it("never throws out of the queue", () => {
+    // A trail is never worth breaking a page for.
+    expect(queue).toContain("resolve(null)");
+    expect(queue).not.toMatch(/\bthrow\b/);
   });
 });

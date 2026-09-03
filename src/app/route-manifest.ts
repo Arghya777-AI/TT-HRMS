@@ -93,7 +93,26 @@ const ME: readonly RouteMeta[] = [
   { path: "/me/apply/claim", title: "Local claim", hint: "Expense claim with receipts and per-grade caps.", cap: "me.view", domain: "apply", phase: "P1.5", icon: ClipboardList },
   { path: "/me/apply/travel", title: "Travel requisition", hint: "Trip request with advance and estimated cost.", cap: "me.view", domain: "apply", phase: "P2", icon: ClipboardList },
   { path: "/me/apply/asset", title: "Asset request", hint: "Ask Stores for equipment or a uniform item.", cap: "me.view", domain: "apply", phase: "P1.5", icon: Package },
-  { path: "/me/apply/resignation", title: "Resignation", hint: "Notice period, last working day and clearance.", cap: "me.view", domain: "apply", phase: "P2", icon: ClipboardList },
+  /*
+    RESIGNATION IS `admin.access`, NOT `me.view`, on the venue's instruction: "they
+    shouldn't think like that, right? So let's not give the option."
+
+    The Apply tile was withdrawn first, and that was not enough — the command palette
+    offers every route the reader's caps allow, so an employee typing "resign" still
+    found it. The cap is the ONE lever that closes every entrance at once, including any
+    link somebody adds later, which a second suppression list would not.
+
+    HIDDEN, NOT DELETED: the screen, its route and its form are untouched, an admin
+    still reaches it, and restoring it to everybody is this one word. The consequence
+    worth stating is that an employee who types the URL is now refused rather than shown
+    the form — which is what "do not give the option" means, but it is a refusal rather
+    than an absence, and somebody should know that before they hear it as a bug.
+
+    Named in ME_TIER_EXCEPTIONS in route-manifest.test.ts, pinned in both directions,
+    beside /me/holidays. An admin-only screen on a /me path is a smell and that list is
+    where it stays visible.
+  */
+  { path: "/me/apply/resignation", title: "Resignation", hint: "Notice period, last working day and clearance.", cap: "admin.access", domain: "apply", phase: "P2", icon: ClipboardList },
   { path: "/me/apply/tax", title: "Income tax", hint: "Regime election; full declarations arrive in a later phase.", cap: "me.view", domain: "apply", phase: "P2", icon: ClipboardList },
   { path: "/me/apply/certification", title: "Certification reimbursement", hint: "Claim a certification from the approved catalogue.", cap: "me.view", domain: "apply", phase: "P1.5", icon: ClipboardList },
   { path: "/me/apply/overtime", title: "Overtime claim", hint: "A finished month's credited overtime, as pay or compensatory off.", cap: "me.view", domain: "apply", phase: "P1.5", icon: Clock },

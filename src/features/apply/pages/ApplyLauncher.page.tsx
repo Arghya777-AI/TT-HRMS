@@ -105,8 +105,15 @@ const SUPPRESSED_CODES: ReadonlySet<string> = new Set([
     that, right? So let's not give the option." An employee who does resign says so
     to HR, who records the exit on /admin/people — that path is untouched.
 
-    The screen at /me/apply/resignation still exists and still works; it simply has
-    no tile. Deleting the line above restores it.
+    The screen at /me/apply/resignation still exists, and an ADMIN still reaches it.
+    Hiding the tile turned out not to be enough on its own — the command palette offers
+    every route the reader's caps allow, so an employee typing "resign" still found it —
+    so the route is now gated to `admin.access` in the manifest as well. That cap is the
+    lever that closes every entrance; this line only keeps the tile off an admin's own
+    Apply page, which is a self-service screen they have no use for.
+
+    To restore it for everybody: delete the entry below AND put the route's cap back to
+    `me.view`, which route-manifest.test.ts pins by name in both directions.
   */
   "RESIGNATION",
 ]);

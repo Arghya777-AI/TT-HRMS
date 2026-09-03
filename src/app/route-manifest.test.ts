@@ -58,6 +58,18 @@ describe("route manifest", () => {
     */
     const ME_TIER_EXCEPTIONS: Readonly<Record<string, string>> = {
       "/me/holidays": "admin.access",
+      /*
+        A SECOND ONE, and it is a withdrawal rather than a tier decision:
+        "/me/apply/resignation" is gated to admin.access so no employee can reach the
+        resignation form — the venue's instruction, "they shouldn't think like that, so let's
+        not give the option."
+
+        Hiding the Apply tile alone was not enough: the command palette offers every route the
+        reader's caps allow, so an employee typing "resign" still found it. The cap closes
+        every entrance at once. Pinned here in both directions, so putting it back on `me.view`
+        fails this test and cannot happen by accident.
+      */
+      "/me/apply/resignation": "admin.access",
     };
     const TEAM_TIER = ["team.view", "team.today"];
     for (const r of ROUTES) {

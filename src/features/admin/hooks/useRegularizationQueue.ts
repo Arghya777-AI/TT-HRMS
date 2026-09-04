@@ -87,10 +87,17 @@ export function useDaysNow(rows: readonly Regularization[]): {
 export function useDecideRegularization(): AuditedMutationResult<DecisionResult, DecideInput> {
   return useAuditedMutation<DecisionResult, DecideInput>({
     mutationFn: (input, reason) => decideRegularization(input, reason),
-    // Approval created punches and recomputed the day in the same transaction —
-    // sweeping the whole admin attendance prefix refreshes the queue, the punch
-    // log, the day records and the exception counts together.
-    invalidate: [qk.admin.attendanceAll()],
+    /*
+      Approval creates the punches, recomputes the day and CLOSES THE APPROVAL
+      REQUEST, all in the one transaction — so three prefixes are stale, not one.
+
+      `admin.attendanceAll` covers the queue, the punch log, the day records and the
+      exception counts. `approvals.all` is the addition that matters: the same
+      decision takes the request off the approval inbox, and without this the row
+      the admin just decided stays on that screen looking undecided. `home.all`
+      carries the Command Centre tiles that count open items.
+    */
+    invalidate: [qk.admin.attendanceAll(), qk.approvals.all, qk.home.all],
     minReasonLength: 10,
   });
 }

@@ -69,7 +69,18 @@ const INVALIDATES: Readonly<Record<RealtimeTable, readonly (readonly string[])[]
 
   // Leave: the applicant's own screens, their manager's inbox, and the admin calendars.
   leave_requests: [qk.leave.all, qk.home.all, qk.team.all, qk.approvals.all, qk.admin.all],
-  approval_requests: [qk.approvals.all, qk.team.all, qk.home.all, qk.admin.all],
+  /*
+    `qk.attendance.all` belongs here, and its absence was a real hole.
+
+    A regularisation, an off-hours punch and an overtime claim are all attendance
+    requests, and the employee reads their outcome on the attendance screens. When one
+    is APPROVED the day is recomputed too, so `attendance_days` arrives alongside and
+    those screens refresh either way. When one is REJECTED nothing else changes —
+    no punch, no recompute, no day row — so this was the only message that would ever
+    come, and it did not reach the list showing the request. The decision sat there
+    saying "pending" until the employee reloaded the page by hand.
+  */
+  approval_requests: [qk.approvals.all, qk.team.all, qk.home.all, qk.admin.all, qk.attendance.all],
 
   // The bell, and the badge count that hangs off it.
   notifications: [qk.notifications.all, qk.home.all],

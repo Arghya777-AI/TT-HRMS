@@ -28,6 +28,7 @@ import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { ReasonDialog } from "@/shared/ui/ReasonDialog";
+import { CancelLeaveDaysDialog } from "../components/CancelLeaveDaysDialog";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
@@ -45,9 +46,7 @@ import {
   LEAVE_ROW_CAP,
   useAdminLeaveRequests,
   useAdminLeaveTypes,
-  useCancelLeaveRequest,
   useDecideLeaveRequest,
-  type CancelTarget,
   useLeaveTypeMap,
   type DecisionInput,
 } from "../hooks/useAdminLeave";
@@ -103,16 +102,17 @@ export default function AdminLeaveRequestsPage() {
     `useDecideLeaveRequest`, and "cancel" — only offered on an already-approved row — goes to
     `useCancelLeaveRequest`, which calls the guarded database function.
   */
-  const prompt = useReasonPrompt<DecisionInput | CancelTarget>();
+  const prompt = useReasonPrompt<DecisionInput>();
   const { ask, close: closePrompt, target, isOpen } = prompt;
   const [done, setDone] = useState<string | null>(null);
-  const isCancel = (x: DecisionInput | CancelTarget | null): x is CancelTarget =>
-    x !== null && x.decision === "cancelled";
-
-  const cancel = useCancelLeaveRequest(profileId, (input) => {
-    closePrompt();
-    setDone(t("admin.leaveReq.done.cancelled", { number: input.requestNumber }));
-  });
+  /*
+    The day picker, not a straight cancel. A three-day booking is rarely wrong in all three,
+    and cancelling the whole thing so the employee can re-apply loses the approval trail and
+    the notice period. Same dialog the leave calendar opens, so the two screens cannot drift.
+  */
+  const [cancelTarget, setCancelTarget] = useState<
+    { requestId: string; requestNumber: string; name: string | null } | null
+  >(null);
 
   const decide = useDecideLeaveRequest(profileId, (input) => {
     closePrompt();
@@ -239,12 +239,11 @@ export default function AdminLeaveRequestsPage() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={cancel.isPending}
                 onClick={() =>
-                  ask({
+                  setCancelTarget({
                     requestId: row.id,
                     requestNumber: row.request_number,
-                    decision: "cancelled",
+                    name: labels.data?.get(row.employee_id)?.name ?? null,
                   })
                 }
               >
@@ -295,7 +294,7 @@ export default function AdminLeaveRequestsPage() {
         },
       },
     ],
-    [labels.data, typeMap, profileId, decide.isPending, cancel.isPending, ask],
+    [labels.data, typeMap, profileId, decide.isPending, ask],
   );
 
   return (
@@ -386,45 +385,38 @@ export default function AdminLeaveRequestsPage() {
       <ReasonDialog
         open={isOpen}
         title={
-          isCancel(target)
-            ? t("admin.leaveReq.dialog.cancelTitle", { number: target.requestNumber })
-            : target?.decision === "rejected"
+          target?.decision === "rejected"
               ? t("admin.leaveReq.dialog.rejectTitle", { number: target.requestNumber })
-              : t("admin.leaveReq.dialog.approveTitle", {
-                  number: target?.requestNumber ?? "",
-                })
+            : t("admin.leaveReq.dialog.approveTitle", {
+                number: target?.requestNumber ?? "",
+              })
         }
-        description={
-          isCancel(target)
-            ? t("admin.leaveReq.dialog.cancelDescription")
-            : t("admin.leaveReq.dialog.description")
-        }
+        description={t("admin.leaveReq.dialog.description")}
         actorName={actorName}
         minLength={SENSITIVE_REASON_LENGTH}
         confirmLabel={
-          isCancel(target)
-            ? t("admin.leaveReq.action.cancel")
-            : target?.decision === "rejected"
-              ? t("admin.leaveReq.action.reject")
-              : t("admin.leaveReq.action.approve")
+          target?.decision === "rejected"
+            ? t("admin.leaveReq.action.reject")
+            : t("admin.leaveReq.action.approve")
         }
-        pending={decide.isPending || cancel.isPending}
-        errorMessage={decide.userMessage ?? cancel.userMessage}
+        pending={decide.isPending}
+        errorMessage={decide.userMessage}
         onConfirm={(reason) => {
-          if (target === null) return;
-          /*
-            The refusals from `admin_cancel_leave_request` — a locked period, a leave already
-            in payroll — arrive as `cancel.userMessage` and are shown in this dialog rather
-            than swallowed, because each one names something the administrator must go and do.
-          */
-          if (isCancel(target)) cancel.save(target, reason);
-          else decide.save(target, reason);
+          if (target !== null) decide.save(target, reason);
         }}
         onCancel={() => {
           decide.reset();
-          cancel.reset();
           closePrompt();
         }}
+      />
+
+      <CancelLeaveDaysDialog
+        open={cancelTarget !== null}
+        onOpenChange={(next) => { if (!next) setCancelTarget(null); }}
+        requestId={cancelTarget?.requestId ?? null}
+        requestNumber={cancelTarget?.requestNumber ?? ""}
+        employeeName={cancelTarget?.name ?? null}
+        onDone={(message) => { setCancelTarget(null); setDone(message); }}
       />
     </div>
   );

@@ -423,6 +423,79 @@ export function decideLeaveRequest(
   );
 }
 
+/**
+ * The individual days of a leave request, so an administrator can take back some of them.
+ *
+ * `leave_request_days__parent_read` admits anyone who may see the employee, and the day rows
+ * carry `is_counted` — a holiday or weekly off falling inside a range is stored but costs no
+ * balance. The dialog shows those greyed rather than hiding them: a three-day booking that
+ * spans a Sunday is three rows on the calendar and must be three rows here too, or the
+ * administrator will think a day has gone missing.
+ */
+export const leaveRequestDaySchema = z.object({
+  id: dbUuid,
+  leave_request_id: dbUuid,
+  leave_date: z.string(),
+  portion: z.string(),
+  day_value: dbNumeric,
+  is_counted: z.boolean(),
+  is_holiday: z.boolean(),
+  is_weekly_off: z.boolean(),
+  status: z.string(),
+});
+export type LeaveRequestDay = z.infer<typeof leaveRequestDaySchema>;
+
+export function fetchLeaveRequestDays(
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<LeaveRequestDay[]> {
+  return selectMany("leave_request_days", leaveRequestDaySchema, {
+    columns: "id, leave_request_id, leave_date, portion, day_value, is_counted, is_holiday, is_weekly_off, status",
+    filters: [eq("leave_request_id", requestId)],
+    order: [{ column: "leave_date", ascending: true }],
+    limit: 400,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** What `admin_cancel_leave_days` hands back. */
+export const leaveDaysCancelResultSchema = z.object({
+  leave_request_id: dbUuid,
+  request_number: z.string(),
+  employee_id: dbUuid,
+  days_cancelled: z.number().int(),
+  days_released: dbNumeric,
+  days_remaining: dbNumeric,
+  status: z.string(),
+});
+export type LeaveDaysCancelResult = z.infer<typeof leaveDaysCancelResultSchema>;
+
+/**
+ * Cancel NAMED days of an approved leave.
+ *
+ * Separate from `cancelLeaveRequest` because the reversal is a different shape: the status
+ * trigger reverses by REQUEST and cannot release two days of three. `admin_cancel_leave_days`
+ * closes the old debit and opens a new one for what is left, and hands the whole request back
+ * to the trigger once no approved day remains — so a partial and a full cancellation cannot
+ * both credit the same day.
+ */
+export async function cancelLeaveDays(
+  requestId: string,
+  dates: readonly string[],
+  reason: string,
+  signal?: AbortSignal,
+): Promise<LeaveDaysCancelResult> {
+  const rows = await rpcAudited(
+    "admin_cancel_leave_days",
+    { p_request_id: requestId, p_dates: [...dates], p_reason: reason.trim() },
+    leaveDaysCancelResultSchema,
+    { reason, minReasonLength: SENSITIVE_REASON_LENGTH, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error("admin_cancel_leave_days returned no row");
+  return row;
+}
+
 /** What `admin_cancel_leave_request` hands back — the summary, not the row. */
 export const leaveCancelResultSchema = z.object({
   leave_request_id: dbUuid,

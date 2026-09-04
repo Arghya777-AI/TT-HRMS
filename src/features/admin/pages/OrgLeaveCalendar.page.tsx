@@ -39,11 +39,8 @@ import { CalendarRange, Users, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
-import { ReasonDialog } from "@/shared/ui/ReasonDialog";
-import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
 import { useAuth } from "@/app/auth/AuthProvider";
-import { useReasonPrompt } from "../hooks/useReasonPrompt";
-import { useCancelLeaveRequest, type CancelTarget } from "../hooks/useAdminLeave";
+import { CancelLeaveDaysDialog } from "../components/CancelLeaveDaysDialog";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import {
@@ -102,19 +99,18 @@ export default function AdminOrgLeaveCalendarPage() {
   const today = nowIstDate();
 
   /*
-    Cancelling from the calendar uses the same guarded path as the requests queue — the
-    database function that refuses a locked period or a leave already paid. A second, looser
-    route to the same record is how the two screens end up disagreeing.
+    ── CLICK A NAME, PICK THE DAYS ────────────────────────────────────────────
+    The calendar is where an administrator SEES the problem — "three people off on the 14th" —
+    so it is where the action belongs. Clicking a person opens the day picker for their whole
+    request, which is the same guarded database path the requests queue uses. A second, looser
+    route to the same record is how two screens end up disagreeing.
   */
   const { user } = useAuth();
   const profileId = user?.id ?? null;
-  const prompt = useReasonPrompt<CancelTarget>();
-  const { ask, close: closePrompt, target, isOpen } = prompt;
+  const [target, setTarget] = useState<
+    { requestId: string; requestNumber: string; name: string | null } | null
+  >(null);
   const [done, setDone] = useState<string | null>(null);
-  const cancel = useCancelLeaveRequest(profileId, (input) => {
-    closePrompt();
-    setDone(t("admin.leaveReq.done.cancelled", { number: input.requestNumber }));
-  });
 
   const departments = useRefOptions("departments");
   const types = useAdminLeaveTypes();
@@ -465,12 +461,11 @@ export default function AdminOrgLeaveCalendarPage() {
                       {row.status === "approved" && profileId !== null ? (
                         <button
                           type="button"
-                          disabled={cancel.isPending}
                           onClick={() =>
-                            ask({
+                            setTarget({
                               requestId: row.leave_request_id,
                               requestNumber: row.request_number,
-                              decision: "cancelled",
+                              name: row.display_name,
                             })
                           }
                           title={t("adminLeave.cal.cancelAria", {
@@ -481,7 +476,7 @@ export default function AdminOrgLeaveCalendarPage() {
                             name: row.display_name ?? "",
                             date: fmtCivilDayMonthWeekday(cell.date),
                           })}
-                          className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <X className="size-3.5" aria-hidden />
                         </button>
@@ -500,22 +495,13 @@ export default function AdminOrgLeaveCalendarPage() {
           </Notice>
         ) : null}
 
-        <ReasonDialog
-          open={isOpen}
-          title={t("admin.leaveReq.dialog.cancelTitle", { number: target?.requestNumber ?? "" })}
-          description={t("admin.leaveReq.dialog.cancelDescription")}
-          actorName={user?.email ?? null}
-          minLength={SENSITIVE_REASON_LENGTH}
-          confirmLabel={t("admin.leaveReq.action.cancel")}
-          pending={cancel.isPending}
-          errorMessage={cancel.userMessage}
-          onConfirm={(reason) => {
-            if (target !== null) cancel.save(target, reason);
-          }}
-          onCancel={() => {
-            cancel.reset();
-            closePrompt();
-          }}
+        <CancelLeaveDaysDialog
+          open={target !== null}
+          onOpenChange={(next) => { if (!next) setTarget(null); }}
+          requestId={target?.requestId ?? null}
+          requestNumber={target?.requestNumber ?? ""}
+          employeeName={target?.name ?? null}
+          onDone={(message) => { setTarget(null); setDone(message); }}
         />
 
         <p className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">

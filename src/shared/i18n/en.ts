@@ -3918,6 +3918,42 @@ export const en = catalogue({
   "admin.leaveReq.done.cancelled": "{number} cancelled. The days are back in the balance.",
   /** The per-person cancel on the leave calendar's day list. */
   "adminLeave.cal.cancelAria": "Cancel {name}'s leave on {date}",
+  /*
+    ── CANCELLING SOME OF A BOOKING ──────────────────────────────────────────
+    A three-day request is rarely wrong in all three. The wording says what the days do —
+    they go back to the balance — rather than naming the mechanism, and it names the PERSON,
+    because an administrator opening this from a calendar is looking at a name, not a number.
+  */
+  "adminLeave.cancelDays.title": "Cancel {name}'s leave",
+  "adminLeave.cancelDays.body":
+    "Pick the days to cancel from {number}. They go back to the balance and those dates "
+    + "become working days again. Anything you leave ticked off stays approved.",
+  "adminLeave.cancelDays.pick": "Days in this request",
+  "adminLeave.cancelDays.selectAll": "Select all",
+  "adminLeave.cancelDays.selectNone": "Clear",
+  "adminLeave.cancelDays.halfDay": "half day",
+  /** Stored as part of the booking, costs no balance — said rather than hidden. */
+  "adminLeave.cancelDays.holiday": "holiday — no balance used",
+  "adminLeave.cancelDays.weeklyOff": "weekly off — no balance used",
+  "adminLeave.cancelDays.releasing": "{days} day(s) will go back to the balance.",
+  "adminLeave.cancelDays.reasonLabel": "Why is this being cancelled?",
+  "adminLeave.cancelDays.counter": "{n} of {min} characters",
+  "adminLeave.cancelDays.confirmAll": "Cancel the whole leave",
+  "adminLeave.cancelDays.confirmSome": "Cancel {n} day(s)",
+  /*
+    Shown only when a picked day has already passed. Cancelling a future leave is planning;
+    cancelling one that has happened rewrites the attendance record for a day people may
+    already have acted on, so it is acknowledged rather than assumed.
+  */
+  "adminLeave.cancelDays.pastWarning":
+    "{dates} has already passed. Cancelling it changes an attendance record for a day that "
+    + "has already happened.",
+  "adminLeave.cancelDays.pastAck": "I understand — cancel it anyway",
+  "adminLeave.cancelDays.keep": "Keep it",
+  "adminLeave.cancelDays.close": "Close without cancelling",
+  "adminLeave.cancelDays.doneAll": "{number} cancelled. The days are back in the balance.",
+  "adminLeave.cancelDays.donePartial":
+    "{n} day(s) of {number} cancelled; {left} day(s) still approved.",
   "admin.leaveReq.status.draft": "Draft",
   "admin.leaveReq.status.pending": "Awaiting approval",
   "admin.leaveReq.status.partially_approved": "Partly approved",

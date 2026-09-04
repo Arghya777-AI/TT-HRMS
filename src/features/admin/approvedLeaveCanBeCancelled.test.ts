@@ -42,6 +42,10 @@ const api = strip(read("src", "features", "admin", "api", "leave.api.ts"));
 const hook = strip(read("src", "features", "admin", "hooks", "useAdminLeave.ts"));
 const queue = strip(read("src", "features", "admin", "pages", "LeaveRequests.page.tsx"));
 const cal = strip(read("src", "features", "admin", "pages", "OrgLeaveCalendar.page.tsx"));
+const dialog = strip(read("src", "features", "admin", "components", "CancelLeaveDaysDialog.tsx"));
+const daysSql = strip(
+  read("supabase", "migrations", "20260906180000_a_leave_can_be_taken_back_a_day_at_a_time.sql"),
+);
 
 describe("only an administrator, and only an approved request", () => {
   it("re-asserts admin and scope inside the definer", () => {
@@ -124,13 +128,15 @@ describe("the client goes through that door, not around it", () => {
 describe("where an administrator can reach it", () => {
   it("offers it on an approved row in the requests queue", () => {
     expect(queue).toContain('row.status === "approved" || row.status === "partially_approved"');
-    expect(queue).toContain('decision: "cancelled"');
+    expect(queue).toContain("setCancelTarget({");
+    expect(queue).toContain("<CancelLeaveDaysDialog");
   });
 
   it("offers it per person on the leave calendar's day list", () => {
     // "by clicking on that particular day/section ... there will be options".
     expect(cal).toContain('row.status === "approved" && profileId !== null');
-    expect(cal).toContain("useCancelLeaveRequest");
+    expect(cal).toContain("setTarget({");
+    expect(cal).toContain("<CancelLeaveDaysDialog");
   });
 
   it("does not offer it on a PENDING row from the calendar", () => {
@@ -141,16 +147,112 @@ describe("where an administrator can reach it", () => {
     expect(cal).not.toContain('row.status === "pending"');
   });
 
-  it("asks for a reason on both screens rather than acting on a click", () => {
-    expect(queue).toContain("<ReasonDialog");
-    expect(cal).toContain("<ReasonDialog");
-    expect(queue).toContain("SENSITIVE_REASON_LENGTH");
-    expect(cal).toContain("SENSITIVE_REASON_LENGTH");
+  it("opens the SAME dialog from both screens", () => {
+    // Two routes to one record is how two screens end up disagreeing.
+    expect(queue).toContain('from "../components/CancelLeaveDaysDialog"');
+    expect(cal).toContain('from "../components/CancelLeaveDaysDialog"');
+  });
+
+  it("asks for a reason before acting on a click", () => {
+    expect(dialog).toContain("SENSITIVE_REASON_LENGTH");
+    expect(dialog).toContain("reason.trim().length >= SENSITIVE_REASON_LENGTH");
   });
 
   it("shows the function's refusal instead of swallowing it", () => {
-    // "locked period", "already paid" — each names something the admin must go and do.
-    expect(queue).toContain("cancel.userMessage");
-    expect(cal).toContain("errorMessage={cancel.userMessage}");
+    // "locked period", "already paid", "comp-off is booked whole" — each names a next step.
+    expect(dialog).toContain("cancel.userMessage");
+  });
+});
+
+describe("picking which days", () => {
+  it("ticks every cancellable day, because the whole booking is the ordinary case", () => {
+    expect(dialog).toContain("setPicked(cancellable.map((d) => d.leave_date));");
+  });
+
+  it("cannot re-pick a day that is already cancelled", () => {
+    expect(dialog).toContain('(days.data ?? []).filter((d) => d.status === "approved")');
+    expect(dialog).toContain("disabled={done}");
+  });
+
+  it("shows a holiday or weekly off rather than hiding it", () => {
+    /*
+      Those rows are part of the booking and cost no balance. A three-day request spanning a
+      Sunday is three rows on the calendar; showing two here reads as a lost day.
+    */
+    expect(dialog).toContain("adminLeave.cancelDays.holiday");
+    expect(dialog).toContain("adminLeave.cancelDays.weeklyOff");
+    expect(dialog).toContain("free ? \"—\" : Number(d.day_value).toFixed(2)");
+  });
+
+  it("counts only counted days toward what is released", () => {
+    expect(dialog).toContain("(d.is_counted ? Number(d.day_value) : 0)");
+  });
+});
+
+describe("a day that has already passed is warned about", () => {
+  it("warns only for past dates, and names them", () => {
+    // THE REGRESSION THIS EXISTS FOR: cancelling a future leave is planning; cancelling a
+    // past one rewrites an attendance record for a day people may already have acted on.
+    expect(dialog).toContain("const pastPicked = picked.filter((d) => d < today);");
+    expect(dialog).toContain("const needsAck = pastPicked.length > 0;");
+    expect(dialog).toContain('t("adminLeave.cancelDays.pastWarning"');
+  });
+
+  it("blocks the button until it is acknowledged", () => {
+    expect(dialog).toContain("(!needsAck || acknowledged)");
+  });
+
+  it("compares against the VENUE'S day, not the browser's", () => {
+    /*
+      `new Date()` on a laptop in another timezone would call the same morning "past" in one
+      place and "future" in another, on the same record.
+    */
+    expect(dialog).toContain("const today = istToday();");
+    expect(dialog).not.toContain("new Date()");
+  });
+
+  it("re-arms the acknowledgement for every request", () => {
+    // An acknowledgement is for the days in front of you, not a setting.
+    expect(dialog).toContain("setAcknowledged(false);");
+  });
+});
+
+describe("the per-day function keeps the ledger honest", () => {
+  it("closes the old debit whole and opens a new one for the remainder", () => {
+    /*
+      THE BUG THIS EXISTS FOR. A first draft wrote a +1 reversal against a -3 debit and left
+      the debit un-reversed, so when the last two days were cancelled the status trigger —
+      which reverses every un-reversed `availed` row — returned another 3. Four days back
+      from a three-day booking. Verified live after the fix: the ledger reads
+      -3, +3, -2, +2 and nets to exactly zero.
+    */
+    expect(daysSql).toContain("ll.entry_type = 'availed'");
+    expect(daysSql).toContain("ll.reversed_by_id IS NULL");
+    expect(daysSql).toContain("UPDATE public.leave_ledger SET reversed_by_id = v_rev_id");
+    expect(daysSql).toContain("'availed', -v_still");
+  });
+
+  it("hands a fully-emptied request back to the status trigger", () => {
+    // And writes no partial entry on that path, or the trigger would reverse it twice.
+    expect(daysSql).toContain("IF v_left = 0 THEN");
+    expect(daysSql).toContain("SET status              = 'cancelled',");
+  });
+
+  it("releases each day's own value, so a half day releases a half", () => {
+    expect(daysSql).toContain("COALESCE(sum(ld.day_value), 0)");
+  });
+
+  it("refuses a date that is not in the request", () => {
+    expect(daysSql).toContain("is not a day of request");
+  });
+
+  it("refuses to split a comp-off booking", () => {
+    // A credit is consumed as a unit against a specific earned day.
+    expect(daysSql).toContain("Comp-off is booked as a whole");
+  });
+
+  it("keeps paid and unpaid within the days constraint", () => {
+    // ck_lr__days requires paid + unpaid <= total; shrinking total alone is refused.
+    expect(daysSql).toContain("paid_days     = GREATEST(0, LEAST(paid_days - v_release, v_left))");
   });
 });

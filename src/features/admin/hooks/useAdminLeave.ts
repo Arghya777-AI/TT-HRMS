@@ -23,8 +23,12 @@ import {
 } from "@/shared/hooks/useAuditedMutation";
 import {
   cancelLeaveRequest,
+  cancelLeaveDays,
   decideLeaveRequest,
+  fetchLeaveRequestDays,
   type LeaveCancelResult,
+  type LeaveDaysCancelResult,
+  type LeaveRequestDay,
   fetchCompOffBalances,
   fetchCompOffLedger,
   fetchLeaveBalances,
@@ -256,6 +260,43 @@ export function useDecideLeaveRequest(
 export interface CancelInput {
   readonly requestId: string;
   readonly requestNumber: string;
+}
+
+/** The days of one request, for the pick-which-days dialog. */
+export function useLeaveRequestDays(
+  requestId: string | null,
+): UseQueryResult<LeaveRequestDay[], Error> {
+  return useQuery({
+    queryKey: qk.admin.list({ part: "leave-request-days", requestId }),
+    queryFn: ({ signal }) => fetchLeaveRequestDays(requestId ?? "", signal),
+    enabled: requestId !== null,
+    retry: shouldRetryQuery,
+  });
+}
+
+export interface CancelDaysInput {
+  readonly requestId: string;
+  readonly requestNumber: string;
+  readonly dates: readonly string[];
+}
+
+/**
+ * Cancel named days of an approved leave.
+ *
+ * Invalidates attendance as well as leave: a released day becomes a working day again, so a
+ * roster still showing "on leave" would contradict the balance beside it.
+ */
+export function useCancelLeaveDays(
+  onDone?: (input: CancelDaysInput, result: LeaveDaysCancelResult) => void,
+): AuditedMutationResult<LeaveDaysCancelResult, CancelDaysInput> {
+  return useAuditedMutation<LeaveDaysCancelResult, CancelDaysInput>({
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    invalidate: [qk.admin.leaveAll(), qk.admin.attendanceAll(), qk.attendance.all],
+    mutationFn: (input, reason) => cancelLeaveDays(input.requestId, input.dates, reason),
+    ...(onDone
+      ? { onSuccess: (data: LeaveDaysCancelResult, input: CancelDaysInput) => onDone(input, data) }
+      : {}),
+  });
 }
 
 /**

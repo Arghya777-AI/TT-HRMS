@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Tamarind Tree HRMS \u2014 Machani Hospitalities LLP. Enterprise HRMS: IST-native attendance via a shared face-scan kiosk, field-level audit, payroll, documents, and a Claude infographic agent.",
+  "description": "Tamarind Tree HRMS — Machani Hospitalities LLP. Enterprise HRMS: IST-native attendance via a shared face-scan kiosk, field-level audit, payroll, documents, and a Claude infographic agent.",
   "engines": {
     "node": ">=20"
   },
@@ -52,6 +52,7 @@
     "date-fns": "^3.6.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
@@ -69,23 +70,24 @@
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
+    "@types/leaflet": "^1.9.12",
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "embedded-postgres": "^17.5.0-beta.15",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "jsdom": "^25.0.1",
+    "pg": "^8.13.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4",
-    "embedded-postgres": "^17.5.0-beta.15",
-    "pg": "^8.13.1"
+    "vitest": "^3.2.4"
   }
 }

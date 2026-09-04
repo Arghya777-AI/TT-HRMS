@@ -18,9 +18,9 @@
  * A fix good to 8 metres and one good to 2 kilometres look identical on a map. The second cannot
  * place anybody, and is marked as such rather than quietly rendered as a location.
  */
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, Navigation, WifiOff } from "lucide-react";
+import { Map as MapIcon, MapPin, Navigation, WifiOff } from "lucide-react";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
@@ -30,12 +30,23 @@ import { formatDistance } from "@/lib/venueDistance";
 import { formatCoordinates, openStreetMapUrl, roundAccuracy } from "@/lib/punchPlace";
 import { t } from "@/shared/i18n/en";
 import { cn } from "@/lib/utils";
+import { useQuery as useVenueQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import {
   COARSE_ABOVE_M,
   fetchLocationTrail,
+  fetchVenuePoint,
   summariseTrail,
   type LocationPing,
 } from "../api/locationTrail.api";
+
+/*
+  Leaflet and its stylesheet are ~150 KB, and this panel sits behind a day's expander on one
+  admin screen. Static, it would land in the chunk every employee downloads to read a payslip.
+*/
+const JourneyMap = lazy(() =>
+  import("./JourneyMap").then((m) => ({ default: m.JourneyMap })),
+);
 
 export interface LocationTrailPanelProps {
   readonly employeeId: string;
@@ -130,6 +141,24 @@ export function LocationTrailPanel({ employeeId, istDate }: LocationTrailPanelPr
   const pings = trail.data ?? [];
   const summary = useMemo(() => summariseTrail(pings), [pings]);
 
+  /*
+    The map is opt-in. Two reasons, and the second is the one that matters: it costs a
+    library and a dozen tile requests, and a route drawn between points is the most
+    over-readable thing on this screen. Somebody who wants it asks for it, having already
+    seen the caveat and the accuracy of each reading in the list.
+  */
+  const [showMap, setShowMap] = useState(false);
+  const venue = useVenueQuery({
+    queryKey: qk.admin.list({ part: "venue-point" }),
+    queryFn: ({ signal }) => fetchVenuePoint(signal),
+    retry: shouldRetryQuery,
+    enabled: showMap,
+    staleTime: 30 * 60 * 1000, // a venue does not move
+  });
+
+  /** Two points is the fewest that can make a line. One point is not a journey. */
+  const canDrawRoute = pings.filter((p) => p.lat !== null && p.lng !== null).length >= 2;
+
   return (
     <section className="mt-4 border-t pt-4" aria-label={t("admin.trail.title")}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -199,7 +228,55 @@ export function LocationTrailPanel({ employeeId, istDate }: LocationTrailPanelPr
                 <span>{t("admin.trail.replayedCount", { n: String(summary.replayed) })}</span>
               ) : null}
             </p>
-            <ul className="mt-2 max-h-72 overflow-y-auto">
+
+            {/*
+              ── THE ROUTE, ON REQUEST ───────────────────────────────────────
+              Below the summary and above the points, so the accuracy of each reading is
+              read before the line that joins them. Offered only when there are two points
+              to join: one point is a position, not a journey.
+            */}
+            {canDrawRoute ? (
+              <div className="mt-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowMap(!showMap)}
+                  aria-expanded={showMap}
+                >
+                  <MapIcon className="mr-2 size-4" aria-hidden />
+                  {showMap ? t("admin.journey.hide") : t("admin.journey.show")}
+                </Button>
+
+                {showMap ? (
+                  <div className="mt-3">
+                    <h4 className="text-sm font-semibold">{t("admin.journey.title")}</h4>
+                    {/*
+                      Its own caveat, not a repeat of the panel's. The panel's warns that a
+                      GAP is not an absence of person; this one warns that a LINE is not
+                      necessarily movement — at this venue the readings are ±35 m and the
+                      whole day's spread is 60 m, so the two say different things and a
+                      reader needs both.
+                    */}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("admin.journey.caveat")}
+                    </p>
+                    <Suspense
+                      fallback={
+                        <div
+                          className="mt-3 h-[340px] w-full animate-pulse rounded-lg border bg-muted"
+                          aria-hidden
+                        />
+                      }
+                    >
+                      <JourneyMap pings={pings} venue={venue.data ?? null} />
+                    </Suspense>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <ul className="mt-4 max-h-72 overflow-y-auto">
               {pings.map((p) => (
                 <PingRow key={p.id} ping={p} />
               ))}

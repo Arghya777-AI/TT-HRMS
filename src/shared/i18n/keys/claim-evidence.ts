@@ -346,6 +346,39 @@ export const keysLocationTrail = {
   "admin.trail.empty": "No points for this day. The app was not open, or location was not granted.",
   "admin.trail.count": "{n} point(s)",
   "admin.trail.window": "{from} to {to} IST",
+
+  /*
+    The journey map. Wording carries the same duty the panel's caveat does: the line is
+    what the device reported, not a route anybody observed walking.
+  */
+  "admin.journey.title": "The route those points make",
+  "admin.journey.caveat":
+    "Points joined in the order they were taken. The shaded circle around each one is how "
+    + "accurate that reading was — where the circles overlap the line, the movement between "
+    + "them is inside the margin of error and may not be movement at all.",
+  "admin.journey.show": "Show the route on a map",
+  "admin.journey.hide": "Hide the map",
+  "admin.journey.alt": "Map of {n} recorded positions, joined in order.",
+  "admin.journey.pointOf": "point {n} of {total}",
+  "admin.journey.noAccuracy": "The device did not report how accurate this was.",
+  "admin.journey.venueFence": "Geofence {m} m",
+  "admin.journey.gap":
+    "The app was closed between {from} and {to}. This line is a straight guess, not a route.",
+  "admin.journey.failed":
+    "The map could not load. The list of points below is the record and is unaffected.",
+  "admin.journey.key.first": "First point",
+  "admin.journey.key.last": "Last point",
+  "admin.journey.key.gap": "App was closed",
+  "admin.journey.key.accuracy": "Accuracy of the reading",
+  /*
+    The sentence that stops this map being used as evidence of movement it does not show.
+    Rendered when the day's whole spread fits inside the error of one reading — which at
+    this venue, where readings are ±35 m and staff stay within 60 m of the gate, is the
+    ordinary case rather than the exception.
+  */
+  "admin.journey.withinError":
+    "Every point here is within the margin of error of the others, so this line is not "
+    + "evidence of movement. A person who stayed in one place produces a map like this.",
   "admin.trail.furthest": "furthest {d} from the venue",
   "admin.trail.fromVenue": "{d} away",
   "admin.trail.accuracy": "±{m} m",

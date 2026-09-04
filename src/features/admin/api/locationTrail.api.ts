@@ -19,6 +19,7 @@
  */
 import { z } from "zod";
 import { dbDate, dbNumericNullable, dbTimestamp, dbUuid, eq, selectMany } from "@/shared/api/query";
+import type { VenuePoint } from "@/lib/venueDistance";
 
 export const LOCATION_PINGS_TABLE = "employee_location_pings";
 
@@ -143,4 +144,43 @@ export function summariseTrail(pings: readonly LocationPing[]): TrailSummary {
     coarse,
     replayed,
   };
+}
+
+// -----------------------------------------------------------------------------
+// The venue, for the map
+// -----------------------------------------------------------------------------
+
+/**
+ * The primary venue's point and geofence, read for the journey map.
+ *
+ * Its own tiny query rather than a slice of `useTodayRoster`: that hook fetches the whole
+ * day's roster and every punch to hand back one row, and this panel needs nothing else
+ * from it. Same source and same shape, so the circle drawn here is the circle the punch
+ * paths actually test against.
+ */
+const venuePointSchema = z.object({
+  name: z.string(),
+  lat: dbNumericNullable,
+  lng: dbNumericNullable,
+  geofence_radius_m: z.number().int().nullable(),
+});
+
+export async function fetchVenuePoint(signal?: AbortSignal): Promise<VenuePoint | null> {
+  const rows = await selectMany("locations", venuePointSchema, {
+    columns: "name, lat, lng, geofence_radius_m",
+    filters: [eq("is_primary", true)],
+    limit: 1,
+    ...(signal ? { signal } : {}),
+  });
+  const row = rows[0];
+  if (row === undefined) return null;
+  /*
+    BOTH halves or nothing. A latitude with no longitude is not half a position, and
+    drawing it would put the venue on the equator — the same rule todayRoster.api.ts
+    states for the same row.
+  */
+  const lat = row.lat === null ? null : Number(row.lat);
+  const lng = row.lng === null ? null : Number(row.lng);
+  if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng, radiusM: row.geofence_radius_m ?? 300, name: row.name };
 }

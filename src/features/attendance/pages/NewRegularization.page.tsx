@@ -135,13 +135,35 @@ export default function NewRegularizationPage() {
   const needsStatus = kind !== null && STATUS_KINDS.includes(kind);
   const needsEvidence = kind !== null && EVIDENCE_MANDATORY_KINDS.includes(kind);
 
+  /*
+    ── A STATUS DAY STILL HAS HOURS IN IT ─────────────────────────────────────
+    `on_duty` and `work_from_home` are STATUS_KINDS, and this form used to hide the time
+    fields for them completely — the section rendered nothing but the kind's own name. So
+    "I was on duty" could be said and "from 08:30" could not.
+
+    A sales manager took a client call from home at 08:30, could not punch for it, and filed
+    `on_duty`. It was approved and it worked: the day is on_duty and paid in full. But it
+    carries NO times, so her attendance screen showed her arriving at 12:40 — the gate scan
+    from when she reached the venue — and the day reads zero worked minutes. Paid correctly
+    and recorded as having done nothing. Her report was "I don't see any changes in my login
+    timings", and she was right.
+
+    The database always allowed both: `requested_status` and the two time columns are
+    independent, and `apply_approved_regularization` creates the punches when times are
+    present and sets the status either way. Only this screen forbade the combination.
+
+    So times are now OFFERED on a status kind and REQUIRED on a time kind. Somebody claiming
+    a whole day on duty with no particular hours can still say just that.
+  */
+  const allowsTimes = needsTimes || needsStatus;
+
   const requestedFirstInAt = useMemo(
-    () => (needsTimes && inTime.length === 5 ? istWallClockToInstant(date, inTime) : null),
-    [needsTimes, inTime, date],
+    () => (allowsTimes && inTime.length === 5 ? istWallClockToInstant(date, inTime) : null),
+    [allowsTimes, inTime, date],
   );
   const requestedLastOutAt = useMemo(
-    () => (needsTimes && outTime.length === 5 ? istWallClockToInstant(date, outTime) : null),
-    [needsTimes, outTime, date],
+    () => (allowsTimes && outTime.length === 5 ? istWallClockToInstant(date, outTime) : null),
+    [allowsTimes, outTime, date],
   );
   const requestedStatus = needsStatus ? kind : null;
 
@@ -150,9 +172,14 @@ export default function NewRegularizationPage() {
     requestedLastOutAt === null ||
     new Date(requestedLastOutAt).getTime() > new Date(requestedFirstInAt).getTime();
 
+  /*
+    A time kind is not submittable without at least one time — that IS the request. A status
+    kind is, because the status is the request; but if times were typed they still have to
+    make sense, so the ordering check applies to both.
+  */
   const timesComplete = needsTimes
     ? (requestedFirstInAt !== null || requestedLastOutAt !== null) && timesOrderOk
-    : needsStatus;
+    : needsStatus && timesOrderOk;
 
   const cap = quota.data?.cap ?? null;
   const used = quota.data?.used ?? 0;
@@ -397,8 +424,14 @@ export default function NewRegularizationPage() {
         {/* 4 ── times / status asked for */}
         {kind !== null ? (
           <SectionCard step={4} title={t("reg.form.times")}>
-            {needsTimes ? (
+            {allowsTimes ? (
               <div className="grid gap-4 sm:grid-cols-2">
+                {/* On a status kind the day's status IS the claim; the hours are extra. */}
+                {needsStatus ? (
+                  <p className="text-sm text-muted-foreground sm:col-span-2">
+                    {kindLabel(kind)} — {t("reg.form.times.optional")}
+                  </p>
+                ) : null}
                 <div>
                   <Label htmlFor="reg-in">{t("reg.form.in")}</Label>
                   <Input

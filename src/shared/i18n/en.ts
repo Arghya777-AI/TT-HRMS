@@ -584,6 +584,11 @@ export const en = catalogue({
   "reg.form.type": "What went wrong",
   "reg.form.type.hint": "Only the corrections your entitlements allow are listed.",
   "reg.form.times": "Times you are asking for",
+  /*
+    Shown on `on_duty` / `work_from_home`, where the status is the claim and the hours are
+    extra. Without them the day is paid in full and recorded as zero minutes worked.
+  */
+  "reg.form.times.optional": "hours optional — add them if you want your day to show them",
   "reg.form.in": "Check-in",
   "reg.form.out": "Check-out",
   "reg.form.reason": "Reason",

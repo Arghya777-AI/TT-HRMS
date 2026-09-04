@@ -64,6 +64,13 @@ const strip = (src: string): string => {
 
 const fn = strip(read("supabase", "functions", "attendance-self-punch", "index.ts"));
 const card = strip(read("src", "features", "attendance", "components", "SelfPunchCard.tsx"));
+/*
+  The form moved out of the card and into a dialog the punch button opens: the button used
+  to be DISABLED until the reason and the photo were in, with the form inline below it, so
+  the one control that looks like the way forward was dead on arrival. These assertions
+  follow it — the requirements did not change, only where the employee meets them.
+*/
+const dialog = strip(read("src", "features", "attendance", "components", "OffHoursPunchDialog.tsx"));
 const api = strip(read("src", "features", "attendance", "api", "selfPunch.api.ts"));
 const queue = strip(read("src", "features", "admin", "components", "OffHoursApprovals.tsx"));
 const uploader = strip(read("src", "features", "attendance", "api", "attendanceProof.api.ts"));
@@ -81,28 +88,70 @@ describe("the form makes it mandatory", () => {
       reason. The client gate meant that safety net was never reached: the request was never
       sent. Intent in the server is worth nothing if the client refuses to call it.
 
-      `proofError === null` is the whole fix. Somebody who has not TRIED still faces the
-      requirement; somebody whose upload failed may go ahead.
+      Treating a FAILED upload as settled is the whole fix. Somebody who has not TRIED still
+      faces the requirement; somebody whose upload failed may go ahead, and the server
+      records the punch flagged `off_hours_proof_missing` for an administrator to chase.
+
+      Now expressed as `proofSettled`, and asserted in both places that read it: the card,
+      which decides whether the dialog still needs to open, and the dialog's own confirm.
     */
-    expect(card).toContain("proofDocId === null && proofError === null");
+    expect(card).toContain("proofDocId !== null || proofError !== null");
+    expect(dialog).toContain("proofDocId !== null || proofError !== null");
   });
 
   it("still requires it from somebody who has not tried", () => {
-    // Mandatory, not optional. The gate lifts on FAILURE, never on inaction.
-    const line = card.split("\n").find((l) => l.includes("const proofMissing ="));
-    expect(line).toBeDefined();
-    const clause = card.slice(card.indexOf("const proofMissing ="), card.indexOf("const cameraLive"));
-    expect(clause).toContain("needsOffHoursReason === true");
+    /*
+      Mandatory, not optional. The gate lifts on FAILURE, never on inaction — with no
+      attachment and no error, `proofSettled` is false and the dialog keeps asking.
+    */
+    const clause = card.slice(card.indexOf("const proofSettled ="), card.indexOf("const cameraLive"));
+    expect(clause).toContain("proofDocId !== null || proofError !== null");
+    // And it is only ever asked of a punch the SERVER said was outside the shift window.
+    expect(clause).toContain("punchState.data?.needsOffHoursReason === true");
   });
 
-  it("blocks the punch button until the document id exists", () => {
+  it("gates the dialog's own punch button on the document id existing", () => {
     /*
       Gated on the ID, not on a file having been picked: a chosen file whose upload failed is
       not proof of anything, and letting it through would show the approver "proof attached"
       with nothing behind it.
+
+      The gate is on the CONFIRM INSIDE THE DIALOG now. The card's own button is always live
+      — pressing it outside the shift window opens this dialog rather than refusing.
     */
-    expect(card).toContain("proofDocId === null");
-    expect(card).toContain("disabled={busy || reasonTooShort || proofMissing}");
+    expect(dialog).toContain("proofDocId !== null || proofError !== null");
+    expect(dialog).toContain("disabled={!canPunch}");
+    expect(dialog).toContain("reasonOk && proofSettled && !proofBusy && !busy");
+  });
+
+  it("leaves the card's own punch button always pressable", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. It was `disabled={busy || reasonTooShort || proofMissing}`,
+      which made the primary control unpressable before the employee had been told there was
+      anything to do — reported as "this isn't that much user intuitive".
+    */
+    expect(card).toContain("disabled={busy}");
+    expect(card).not.toContain("reasonTooShort");
+    expect(card).not.toContain("proofMissing");
+  });
+
+  it("opens the dialog instead of starting a capture when justification is owed", () => {
+    expect(card).toContain("if (needsJustification && !justified) {");
+    expect(card).toContain("setOffHoursOpen(true);");
+  });
+
+  it("sends the reason through a ref, because `start` is the mount-time closure", () => {
+    /*
+      `start` is memoised on `[mutateAsync, stopCamera]` and both are stable, so React hands
+      back the function built on the FIRST render forever. Read from the closure, the reason
+      was "" and the proof id null on every punch this card ever sent — the box worked, the
+      counter went green, and the request carried nothing, which is why an off-hours web
+      punch could not succeed at all.
+    */
+    expect(card).toContain("offHoursReasonRef.current.trim()");
+    expect(card).toContain("proofDocIdRef.current !== null");
+    expect(card).toContain("offHoursReasonRef.current = offHoursReason;");
+    expect(card).toContain("proofDocIdRef.current = proofDocId;");
   });
 
   it("asks only for the punches that need it", () => {
@@ -114,11 +163,18 @@ describe("the form makes it mandatory", () => {
     // So the employee learns the vault took it before spending a face capture on it.
     expect(card).toContain("uploadAttendanceProof({");
     expect(card).toContain("setProofDocId(doc.id)");
+    // The picker is in the dialog and hands the file straight to the card's handler.
+    expect(dialog).toContain("onPickProof(file)");
   });
 
   it("opens the rear camera on a phone and a file picker on a laptop", () => {
-    expect(card).toContain('capture="environment"');
-    expect(card).toContain('accept="image/*,application/pdf"');
+    expect(dialog).toContain('capture="environment"');
+    expect(dialog).toContain('accept="image/*,application/pdf"');
+  });
+
+  it("lets the same file be chosen again after a failed upload", () => {
+    // Without clearing the input, re-picking the identical photo fires no change event.
+    expect(dialog).toContain("event.target.value = \"\";");
   });
 
   it("checks the size against the type's own limit, not a hardcoded one", () => {

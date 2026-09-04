@@ -246,6 +246,29 @@ export const keysApprovalEvidence = {
  * capture two steps later already establishes.
  */
 export const keysPunchProof = {
+  /*
+    ── THE DIALOG ────────────────────────────────────────────────────────────
+    The punch button is always live; pressing it outside the shift window opens this and
+    the title is what tells the employee why. It names the situation rather than the rule
+    — "outside your working hours", not "off-hours reason required" — because the person
+    reading it is standing somewhere trying to log in, not administering a policy.
+  */
+  /* The one line left on the card itself, where the form used to be. */
+  "me.punch.offHours.notice.pending":
+    "This is outside your working hours — tapping Punch will ask you why, and for a photo.",
+  "me.punch.offHours.notice.done": "Your reason and photo are ready. Tap Punch to record it.",
+  "me.punch.offHours.dialog.title": "This is outside your working hours",
+  "me.punch.offHours.dialog.body":
+    "You can still punch. Say briefly why you are working now and attach something that "
+    + "shows it — your hours are recorded straight away, and an administrator approves them "
+    + "afterwards.",
+  "me.punch.offHours.dialog.reasonLabel": "Why are you working now?",
+  "me.punch.offHours.dialog.confirm": "Punch in now",
+  "me.punch.offHours.dialog.close": "Close without punching",
+  "me.punch.offHours.dialog.ready": "Ready — this will be recorded now.",
+  "me.punch.offHours.dialog.needReason": "Write at least {min} characters to continue.",
+  "me.punch.offHours.dialog.needProof": "Attach a photo or a screenshot to continue.",
+  "me.punch.offHours.dialog.waitUpload": "Waiting for the attachment to finish…",
   "me.punch.offHours.proof.label": "Attach proof",
   "me.punch.offHours.proof.hint":
     "A screenshot of the meeting or call, or a photo of where you are working. Needed on the way in and on the way out.",

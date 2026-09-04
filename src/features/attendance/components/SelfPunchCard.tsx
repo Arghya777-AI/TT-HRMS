@@ -53,7 +53,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PunchLocation } from "@/shared/ui/PunchLocation";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Loader2, MapPin, ScanFace } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
+  MapPin,
+  ScanFace,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -103,6 +109,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
+import { OffHoursPunchDialog } from "./OffHoursPunchDialog";
 
 /**
  * Frame cadence. See the header: this is the spacing `liveness.ts` is calibrated
@@ -318,6 +325,23 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
   const firstFrameAtRef = useRef<number | null>(null);
   const geoRef = useRef<SignInGeo | null>(null);
   const eventIdRef = useRef<string>("");
+  /*
+    ── LATEST-VALUE REFS, AND WHY THEY ARE NOT OPTIONAL ───────────────────────
+    `start` is wrapped in `useCallback` with `[mutateAsync, stopCamera]`, and BOTH of those
+    are stable — so React returns the function built on the FIRST render for the whole life
+    of the card. It therefore closed over the mount-time values of `offHoursReason` ("") and
+    `proofDocId` (null), and no amount of typing changed what it sent.
+
+    That is why an off-hours web punch could not succeed: the employee's reason never left
+    the browser, and `attendance-self-punch` refuses an off-hours punch that arrives without
+    one. The box worked, the counter turned green, and the request carried nothing.
+
+    Refs rather than dependencies, matching `geoRef` and `eventIdRef` beside them: adding
+    the two values to the dependency array would rebuild `start` on every keystroke, and
+    `start` is the function a capture in flight is holding.
+  */
+  const offHoursReasonRef = useRef("");
+  const proofDocIdRef = useRef<string | null>(null);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -414,9 +438,17 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
           geo: geoRef.current,
           deviceId: browserDeviceId(),
           clientEventId: eventIdRef.current,
-          // Sent whenever one was typed; the SERVER decides whether it was required.
-          ...(offHoursReason.trim() !== "" ? { offHoursReason: offHoursReason.trim() } : {}),
-          ...(proofDocId !== null ? { proofDocumentId: proofDocId } : {}),
+          /*
+            Read through refs, not from the closure. See the note beside their declaration:
+            this callback is the mount-time one forever, so the state variables here would
+            be "" and null on every punch this card has ever sent.
+          */
+          ...(offHoursReasonRef.current.trim() !== ""
+            ? { offHoursReason: offHoursReasonRef.current.trim() }
+            : {}),
+          ...(proofDocIdRef.current !== null
+            ? { proofDocumentId: proofDocIdRef.current }
+            : {}),
         });
       } catch {
         // `selfPunch` resolves refusals, so anything thrown here is unexpected —
@@ -658,33 +690,94 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
     phase.name === "capturing" ||
     phase.name === "sending";
   /*
-    Blocked while an off-hours note is too short — and ONLY when the box is being asked for.
-    An employee punching inside their shift never sees it and must never be stopped by it.
+    ── THE OFF-HOURS JUSTIFICATION IS ASKED, NOT ENFORCED BY A DEAD BUTTON ────
+    These two used to sit in the punch button's `disabled`, with the form inline below it.
+    The button was therefore dead on arrival, with the explanation of why below the fold —
+    which teaches people the app is broken rather than that they have something to fill in.
 
-    The server refuses a short note anyway; this only saves them opening the camera, capturing
-    their face, and then being told to go back and type more.
+    The button is now ALWAYS live. Pressing it outside the shift window opens
+    `OffHoursPunchDialog`, which names the situation, takes the reason and the proof, and
+    offers the punch as its own confirming action. Nothing is refused before the employee
+    has been told why, and nobody has to scroll a card to find the thing blocking them.
+
+    The requirements themselves are unchanged: the server refuses a short note and the
+    CHECK constraint refuses it again. What changed is where the employee meets them.
   */
-  const reasonTooShort =
-    punchState.data?.needsOffHoursReason === true &&
-    offHoursReason.trim().length < MIN_OFF_HOURS_REASON;
+  const reasonOk = offHoursReason.trim().length >= MIN_OFF_HOURS_REASON;
   /*
-    ── THE PHOTOGRAPH IS REQUIRED, UNTIL IT CANNOT BE ─────────────────────────
-    Gated on the DOCUMENT ID, not on a file having been picked: a chosen file whose upload
-    failed is not proof of anything, and letting it through would show an approver "proof
-    attached" with nothing behind it.
+    Settled means attached OR attempted-and-failed.
 
-    BUT A FAILED UPLOAD MUST NOT COST SOMEBODY THEIR ATTENDANCE. It already did: an employee
-    starting at 8 am — before her 09:30 shift, so off-hours — could not punch at all because
-    the photograph would not upload, and the button stayed disabled. The server was built to
-    record a proofless off-hours punch and flag it for exactly this reason, and the client gate
-    meant that safety net was never reached.
-
-    So the gate lifts once an upload has been ATTEMPTED AND FAILED. Not when one was never
-    tried: somebody who ignores the field still gets the requirement. The distinction is the
-    whole point — mandatory for anyone who can, never a locked door for anyone who cannot.
+    A FAILED UPLOAD MUST NOT COST SOMEBODY THEIR ATTENDANCE — it already did once: an
+    employee starting at 8 am, before her 09:30 shift, could not punch at all because the
+    photograph would not upload. The server records a proofless off-hours punch and flags
+    it for an administrator for exactly this case. Not settled when nothing was ever tried:
+    somebody who ignores the field still gets the requirement.
   */
-  const proofMissing =
-    punchState.data?.needsOffHoursReason === true && proofDocId === null && proofError === null;
+  const proofSettled = proofDocId !== null || proofError !== null;
+  /** The server's answer, not a client calculation — the shift boundary lives there. */
+  const needsJustification = punchState.data?.needsOffHoursReason === true;
+  /** Satisfied once, the dialog does not reopen: they may press Punch and go. */
+  const justified = reasonOk && proofSettled;
+  const [offHoursOpen, setOffHoursOpen] = useState(false);
+
+  // Mirrored after render; `start` only ever runs from a user event, so it reads the latest.
+  useEffect(() => {
+    offHoursReasonRef.current = offHoursReason;
+  }, [offHoursReason]);
+  useEffect(() => {
+    proofDocIdRef.current = proofDocId;
+  }, [proofDocId]);
+
+  /*
+    The proof upload, lifted out of the old inline input so the dialog can call it.
+
+    Every predicate of `documents__self__insert` has to resolve BEFORE a file is accepted;
+    if any is missing the honest answer is that the attachment cannot be made, rather than
+    a failed upload after the employee has chosen a photograph.
+  */
+  function pickProof(file: File): void {
+    setProofError(null);
+    const type = proofType.data;
+    const employeeId = myProfile.data?.id ?? null;
+    const companyId = myProfile.data?.company_id ?? null;
+    const profileId = user?.id ?? null;
+    if (
+      type === null || type === undefined ||
+      employeeId === null || companyId === null || profileId === null
+    ) {
+      setProofError(t("me.punch.offHours.proof.unavailable"));
+      return;
+    }
+    const limitBytes = (type.max_file_size_mb ?? 10) * 1024 * 1024;
+    if (file.size > limitBytes) {
+      setProofError(t("me.punch.offHours.proof.tooLarge", {
+        mb: String(type.max_file_size_mb ?? 10),
+      }));
+      return;
+    }
+    setProofBusy(true);
+    void uploadAttendanceProof({
+      employeeId,
+      companyId,
+      profileId,
+      type,
+      file,
+      // `file.type` is the browser's guess from the NAME and is often empty for a photo
+      // shared out of a chat app; the uploader defaults it.
+      mimeType: file.type,
+    })
+      .then((doc) => {
+        setProofDocId(doc.id);
+        setProofName(file.name);
+      })
+      .catch(() => {
+        setProofDocId(null);
+        setProofName(null);
+        setProofError(t("me.punch.offHours.proof.failed"));
+      })
+      .finally(() => setProofBusy(false));
+  }
+
   const cameraLive =
     phase.name === "camera" || phase.name === "capturing" || phase.name === "sending";
   const today = istToday();
@@ -887,8 +980,21 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
             // The label falls back to a neutral "Punch attendance" until the state
             // arrives, and the SERVER decides in-or-out regardless, so there is
             // nothing to wait for.
-            disabled={busy || reasonTooShort || proofMissing}
-            onClick={() => void start()}
+            /*
+              ALWAYS LIVE. Disabled only while a capture is already running, which has its
+              own Cancel beside it. It was previously disabled for a short reason or a
+              missing photo too, which made the primary control on the card unpressable
+              before the employee had been told there was anything to do.
+            */
+            disabled={busy}
+            onClick={() => {
+              // Outside the shift window and not yet justified: ASK, do not refuse.
+              if (needsJustification && !justified) {
+                setOffHoursOpen(true);
+                return;
+              }
+              void start();
+            }}
           >
             {busy ? (
               <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
@@ -928,141 +1034,17 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
               <p>{next === "out" ? t("me.punch.state.expectOut") : t("me.punch.state.expectIn")}</p>
             ) : null}
             {/*
-              THE BOX, BEFORE THE CAMERA. Shown only when the server says a punch now would
-              fall outside this employee's shift window. The counter is live rather than a
-              validation message after the fact: the requirement is 15 characters, so the
-              honest thing is to show how far along they are while they type.
+              A ONE-LINE HEADS-UP, NOT A FORM. The form is in the dialog the punch button
+              opens; saying so here means the employee is not surprised by a modal, and the
+              card stays short enough to read without scrolling.
             */}
-            {punchState.data?.needsOffHoursReason === true ? (
-              <div className="rounded-lg border border-warning/40 bg-warning/5 p-2.5">
-                <label
-                  htmlFor="off-hours-reason"
-                  className="block text-xs font-medium text-warning"
-                >
-                  {t("me.punch.offHours.label")}
-                </label>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {t("me.punch.offHours.hint")}
-                </p>
-                <textarea
-                  id="off-hours-reason"
-                  value={offHoursReason}
-                  onChange={(e) => setOffHoursReason(e.target.value)}
-                  rows={2}
-                  maxLength={500}
-                  className="mt-1.5 w-full rounded-md border bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  placeholder={t("me.punch.offHours.placeholder")}
-                />
-                <p
-                  className={cn(
-                    "mt-1 text-[11px] tabular-nums",
-                    offHoursReason.trim().length >= MIN_OFF_HOURS_REASON
-                      ? "text-success"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {t("me.punch.offHours.counter", {
-                    n: String(offHoursReason.trim().length),
-                    min: String(MIN_OFF_HOURS_REASON),
-                  })}
-                </p>
-
-                {/*
-                  ── THE PROOF ─────────────────────────────────────────────
-                  "Mandatory, yes. They should attach. And while checking out also."
-
-                  `capture="environment"` opens the rear camera straight away on a phone,
-                  which is what somebody standing outside a client's office wants; on a
-                  laptop the same input is an ordinary file picker, so a screenshot of the
-                  meeting invitation works just as well.
-
-                  Uploaded on choose, not on submit: the employee learns immediately whether
-                  the vault took it, rather than losing it at the end of a face capture.
-                */}
-                <div className="mt-2 border-t border-warning/30 pt-2">
-                  <label
-                    htmlFor="off-hours-proof"
-                    className="block text-xs font-medium text-warning"
-                  >
-                    {t("me.punch.offHours.proof.label")}
-                  </label>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {t("me.punch.offHours.proof.hint")}
-                  </p>
-                  <input
-                    id="off-hours-proof"
-                    type="file"
-                    accept="image/*,application/pdf"
-                    capture="environment"
-                    disabled={proofBusy || busy}
-                    className="mt-1.5 w-full text-xs file:mr-2 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1 file:text-xs"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      event.target.value = "";
-                      if (file === null) return;
-                      setProofError(null);
-                      const type = proofType.data;
-                      const employeeId = myProfile.data?.id ?? null;
-                      const companyId = myProfile.data?.company_id ?? null;
-                      const profileId = user?.id ?? null;
-                      /*
-                        Every predicate of `documents__self__insert` had to resolve before the
-                        picker was even offered; if any of them is missing the honest answer is
-                        that the attachment cannot be made, not a failed upload afterwards.
-                      */
-                      if (
-                        type === null || type === undefined ||
-                        employeeId === null || companyId === null || profileId === null
-                      ) {
-                        setProofError(t("me.punch.offHours.proof.unavailable"));
-                        return;
-                      }
-                      const limitBytes = (type.max_file_size_mb ?? 10) * 1024 * 1024;
-                      if (file.size > limitBytes) {
-                        setProofError(
-                          t("me.punch.offHours.proof.tooLarge", {
-                            mb: String(type.max_file_size_mb ?? 10),
-                          }),
-                        );
-                        return;
-                      }
-                      setProofBusy(true);
-                      void uploadAttendanceProof({
-                        employeeId,
-                        companyId,
-                        profileId,
-                        type,
-                        file,
-                        // `file.type` is the browser's guess from the NAME and is often empty
-                        // for a photo shared out of a chat app; the uploader defaults it.
-                        mimeType: file.type,
-                      })
-                        .then((doc) => {
-                          setProofDocId(doc.id);
-                          setProofName(file.name);
-                        })
-                        .catch(() => {
-                          setProofDocId(null);
-                          setProofName(null);
-                          setProofError(t("me.punch.offHours.proof.failed"));
-                        })
-                        .finally(() => setProofBusy(false));
-                    }}
-                  />
-                  {proofBusy ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {t("me.punch.offHours.proof.uploading")}
-                    </p>
-                  ) : proofDocId !== null ? (
-                    <p className="mt-1 break-words text-[11px] text-success">
-                      {t("me.punch.offHours.proof.attached", { name: proofName ?? "" })}
-                    </p>
-                  ) : null}
-                  {proofError !== null ? (
-                    <p className="mt-1 text-[11px] text-destructive">{proofError}</p>
-                  ) : null}
-                </div>
-              </div>
+            {needsJustification ? (
+              <p className="flex items-start gap-1.5 text-xs text-warning">
+                <Clock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                {justified
+                  ? t("me.punch.offHours.notice.done")
+                  : t("me.punch.offHours.notice.pending")}
+              </p>
             ) : null}
 
             {/*
@@ -1156,6 +1138,39 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
         <p className="text-sm leading-relaxed text-muted-foreground">{t("me.punch.lead")}</p>
         {body}
       </div>
+
+      {/*
+        ── THE JUSTIFICATION, ASKED ────────────────────────────────────────────
+        Mounted always, open only when the punch button asks for it. Conditionally rendering
+        it would discard a half-typed reason and an already-uploaded photograph the moment
+        somebody closed it, and re-uploading a photo taken outside a client's office is the
+        last thing to ask of them.
+      */}
+      <OffHoursPunchDialog
+        open={offHoursOpen}
+        onOpenChange={setOffHoursOpen}
+        minReason={MIN_OFF_HOURS_REASON}
+        reason={offHoursReason}
+        onReasonChange={setOffHoursReason}
+        proofDocId={proofDocId}
+        proofName={proofName}
+        proofBusy={proofBusy}
+        proofError={proofError}
+        onPickProof={pickProof}
+        busy={busy}
+        onConfirm={() => {
+          // Shut first: the camera opens behind this, and a modal over it hides the frame.
+          setOffHoursOpen(false);
+          void start();
+        }}
+        directionLabel={
+          next === null
+            ? null
+            : next === "out"
+              ? t("me.punch.state.expectOut")
+              : t("me.punch.state.expectIn")
+        }
+      />
     </section>
   );
 }

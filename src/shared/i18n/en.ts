@@ -1709,6 +1709,10 @@ export const en = catalogue({
   "admin.roster.sess.open": "still in",
   /** The sum, written out: 7h 50m + 1h 05m = 8h 55m. */
   "admin.roster.sess.total": "Total",
+  /** The scans between the in and the out: movement on campus, not a new session. */
+  "admin.roster.sess.alsoScanned": "also scanned",
+  /** Why a session reads less than the span between its two ends. */
+  "admin.roster.sess.break": "−{value} break",
   /* The scans a session swallowed — movement inside the venue, not a departure. */
   "admin.roster.sess.within": "also",
   /* The gap between an out and the next in: on site, off the clock. */

@@ -179,7 +179,11 @@ export default function MyAttendancePage() {
       render: (row) => (
         <StatusChip
           status={row.status}
-          map={dayStatusChip(row.status, row.day?.leave_type_name ?? null)}
+          map={dayStatusChip(
+            row.status,
+            row.day?.leave_type_name ?? null,
+            row.day?.total_worked_minutes ?? null,
+          )}
         />
       ),
     },

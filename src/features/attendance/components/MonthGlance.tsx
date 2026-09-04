@@ -115,7 +115,11 @@ export function MonthGlance({ rows, summary }: MonthGlanceProps) {
     tone: toneFor(row.status),
     caption: t("attendance.glance.trend.caption", {
       date: fmtCivilDayMonthWeekday(row.istDate),
-      status: dayStatusText(row.status, row.day?.leave_type_name ?? null),
+      status: dayStatusText(
+        row.status,
+        row.day?.leave_type_name ?? null,
+        row.day?.total_worked_minutes ?? null,
+      ),
     }),
   }));
 

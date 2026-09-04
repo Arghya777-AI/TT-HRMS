@@ -1491,6 +1491,13 @@ export const en = catalogue({
   "attendance.status.holiday": "Holiday",
   "attendance.status.onLeave": "On leave",
   "attendance.status.onLeaveHalf": "On leave · half day",
+  /*
+    Leave and work are not mutually exclusive. An employee on approved leave who came in
+    for an evening meeting has both facts on his day, and the row used to show only the
+    first — so the work he actually did was invisible on his own attendance page.
+    Unseen work is unpaid work.
+  */
+  "attendance.status.alsoWorked": "worked {hm}",
   "attendance.status.weeklyOffWorked": "Worked on your weekly off",
   "attendance.status.holidayWorked": "Worked on a holiday",
   "attendance.status.compOff": "Comp-off availed",
@@ -8899,6 +8906,13 @@ export const en = catalogue({
   "admin.wf.inbox.detail.readOnly": "You are not one of this request's current approvers, so this view is read-only. Deciding it would be an administrative override, which belongs on a screen built to justify that act — the Override Log records every one that happens.",
   "admin.wf.inbox.detail.override":
     "You are not one of this request's named approvers. Deciding it now is an administrative override — it is recorded as one, with your name, and read back in the Override Log.",
+  /*
+    A self-decision, which is a different act from reaching past somebody else's approver.
+    Permitted for an administrator on their own LEAVE, at the venue's instruction, and
+    recorded in the Override Log like any other override.
+  */
+  "admin.wf.inbox.detail.ownRequest":
+    "This is your own request. Deciding it is recorded in the Override Log as an administrative override, with your name on it.",
   "admin.wf.inbox.detail.dates": "Dates requested",
   "admin.wf.inbox.detail.dateRange": "{from} to {to}",
   "admin.wf.inbox.detail.days": "Days",

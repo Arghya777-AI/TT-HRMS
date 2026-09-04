@@ -54,6 +54,7 @@ import { t } from "@/shared/i18n/en";
 import { PeriodBar } from "../components/PeriodBar";
 import { periodLabel } from "../analyticsFilterBar";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
+import { dayStatusText } from "@/features/attendance/display";
 import { Notice } from "../components/Notice";
 import { LocationTrailPanel } from "../components/LocationTrailPanel";
 import { PersonCell } from "../components/PersonCell";
@@ -81,6 +82,25 @@ import {
  * no raw value can reach the screen (D-10). `absent` and `suspended` are danger
  * tones: an "Absent" badge in a calm colour was a reference-product defect (DR-45).
  */
+/**
+ * The admin chip for one row, with the worked time added on a leave day.
+ *
+ * Keeps this page's own tone vocabulary — it is tuned for a dense register — and takes the
+ * LABEL from the shared `dayStatusText`, so an admin and the employee cannot read one day two
+ * different ways. Every other status falls straight through to the map below.
+ */
+function withWorkedOnLeave(
+  status: string,
+  leaveTypeName: string | null,
+  workedMinutes: number | null,
+): Record<string, StatusChipEntry> {
+  const base = STATUS_CHIP[status as AttendanceStatus];
+  if (base === undefined) return {};
+  return {
+    [status]: { ...base, label: dayStatusText(status, leaveTypeName, workedMinutes) },
+  };
+}
+
 const STATUS_CHIP: Readonly<Record<AttendanceStatus, StatusChipEntry>> = {
   present: { label: t("admin.days.status.present"), tone: "success" },
   half_day: { label: t("admin.days.status.halfDay"), tone: "warn" },
@@ -240,7 +260,19 @@ export default function EmployeeAttendancePage() {
       key: "status",
       header: t("admin.pAtt.col.status"),
       width: "10rem",
-      render: (r) => <StatusChip status={r.status} map={STATUS_CHIP} />,
+      /*
+        Leave and work are not mutually exclusive: an employee on approved leave who came in
+        for an evening meeting has both facts on his day. The admin grid showed only the leave,
+        so his work was invisible here too — the same omission reported on the employee's own
+        page, and the same fix, through the shared helper so the two cannot describe one day
+        differently.
+      */
+      render: (r) => (
+        <StatusChip
+          status={r.status}
+          map={withWorkedOnLeave(r.status, r.leave_type_name, r.total_worked_minutes)}
+        />
+      ),
     },
     {
       key: "shift_code",
@@ -803,7 +835,10 @@ function DayPanel({
           {row !== null ? (
             <>
               <div className="flex flex-wrap items-center gap-3">
-                <StatusChip status={row.status} map={STATUS_CHIP} />
+                <StatusChip
+                  status={row.status}
+                  map={withWorkedOnLeave(row.status, row.leave_type_name, row.total_worked_minutes)}
+                />
                 {row.is_locked ? (
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                     <Lock className="h-3 w-3" aria-hidden />

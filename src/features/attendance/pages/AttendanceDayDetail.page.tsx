@@ -142,7 +142,7 @@ export default function AttendanceDayDetailPage() {
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <StatusChip
                   status={status}
-                  map={dayStatusChip(status, day.data.leave_type_name)}
+                  map={dayStatusChip(status, day.data.leave_type_name, day.data.total_worked_minutes)}
                 />
                 {shift !== null ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs">

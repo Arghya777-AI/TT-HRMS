@@ -11,7 +11,7 @@
  */
 import type { StatusChipEntry, StatusTone } from "@/shared/ui/StatusChip";
 import type { AttendanceDay, AttendancePunch } from "./api/attendance.api";
-import { fmtCivilTime, fmtTime, isFutureIstDate } from "@/lib/datetime";
+import { fmtCivilTime, fmtDurationHm, fmtTime, isFutureIstDate } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 
 /**
@@ -90,20 +90,50 @@ export function statusTone(status: string): StatusTone {
  * The chip below and the chart tooltip beside it both call this, so a day
  * cannot be described one way in the register and another in the picture of it.
  */
-export function dayStatusText(status: string, leaveTypeName: string | null): string {
+export function dayStatusText(
+  status: string,
+  leaveTypeName: string | null,
+  workedMinutes?: number | null,
+): string {
   const onLeave = status === "on_leave" || status === "on_leave_half";
   const base = statusLabel(status);
-  return onLeave && leaveTypeName !== null && leaveTypeName.length > 0
-    ? `${base} · ${leaveTypeName}`
-    : base;
+  const withLeave =
+    onLeave && leaveTypeName !== null && leaveTypeName.length > 0
+      ? `${base} · ${leaveTypeName}`
+      : base;
+
+  /*
+    ── LEAVE AND WORKED ARE NOT MUTUALLY EXCLUSIVE ───────────────────────────
+    An employee on approved leave who came in for an evening meeting has both facts on his
+    day, and the engine records both: `status = on_leave` and 79 worked minutes, with a
+    `worked_on_leave` anomaly flag.
+
+    The row said only "On leave", so the work he actually did was invisible on his own
+    attendance page. Reported as exactly that: "even if he's on leave, he still worked."
+    Showing one and hiding the other is not a summary, it is an omission — and it is the half
+    that costs somebody, because unseen work is unpaid work.
+
+    Only on a LEAVE day. Everywhere else the worked figure has its own column and repeating it
+    in the status chip would be noise.
+  */
+  const worked = typeof workedMinutes === "number" && Number.isFinite(workedMinutes) ? workedMinutes : 0;
+  return onLeave && worked > 0
+    ? `${withLeave} · ${t("attendance.status.alsoWorked", { hm: fmtDurationHm(worked) })}`
+    : withLeave;
 }
 
 /** A one-entry `StatusChip` vocabulary for a day row. */
 export function dayStatusChip(
   status: string,
   leaveTypeName: string | null,
+  workedMinutes?: number | null,
 ): Record<string, StatusChipEntry> {
-  return { [status]: { label: dayStatusText(status, leaveTypeName), tone: statusTone(status) } };
+  return {
+    [status]: {
+      label: dayStatusText(status, leaveTypeName, workedMinutes),
+      tone: statusTone(status),
+    },
+  };
 }
 
 /**

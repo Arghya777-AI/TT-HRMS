@@ -126,7 +126,7 @@ function TodayFacts({ day, nowMs }: { day: AttendanceDay; nowMs: number }) {
         <div className="min-w-0">
           <dt className="text-xs text-muted-foreground">{t("home.today.title")}</dt>
           <dd className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <StatusChip status={status} map={dayStatusChip(status, day.leave_type_name)} />
+            <StatusChip status={status} map={dayStatusChip(status, day.leave_type_name, day.total_worked_minutes)} />
             {day.is_regularized ? (
               <Badge variant="info">{t("home.today.regularized")}</Badge>
             ) : null}

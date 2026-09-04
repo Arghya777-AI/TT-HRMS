@@ -251,6 +251,13 @@ export default function ApprovalInboxPage() {
   */
   const { roles } = useAuth();
   const isSuperAdmin = roles.includes("super_admin");
+  /*
+    `admin` OR `super_admin`. `app.is_admin()` on the server is `has_role('admin')`, which a
+    super admin satisfies through the role hierarchy, so this mirrors exactly who the database
+    will let act — a screen that offered the button to somebody the server then refused would
+    be worse than not offering it.
+  */
+  const isAdmin = isSuperAdmin || roles.includes("admin");
   const breachedIds = useMemo(
     () => new Set<string>(breachIds.data ?? []),
     [breachIds.data],
@@ -259,10 +266,35 @@ export default function ApprovalInboxPage() {
   const isNamedApprover = (row: ApprovalRequestRow): boolean =>
     myEmployeeId !== null && row.current_approver_ids.includes(myEmployeeId);
 
+  /** The subject of a request is the person it is about. */
+  const isMine = (row: ApprovalRequestRow): boolean =>
+    myEmployeeId !== null && row.subject_employee_id === myEmployeeId;
+
+  /*
+    ── AN ADMIN MAY DECIDE THEIR OWN LEAVE ───────────────────────────────────
+    Asked for directly: "Sunil will be approving his own leave also. Give all admins the
+    access to approve their own leave also."
+
+    The server already permits it — `act_on_approval` exempts an admin from the
+    "an employee cannot approve their own request" rule and records the act as
+    `admin_override`, which the Override Log lists. This screen was the only thing refusing,
+    and refusing something the API allows makes the screen a liar rather than a control.
+
+    SCOPED TO LEAVE, deliberately, because that is what was asked and because the other types
+    are not the same decision. A reimbursement is money: an administrator approving their own
+    claim is the control that exists to stop exactly that, and nobody asked for it to go. It
+    stays blocked and can be opened in one line if the venue wants it.
+
+    Every self-decision is still an override: the warning notice renders, and the Override Log
+    records who did it and why.
+  */
+  const isOwnLeave = (row: ApprovalRequestRow): boolean =>
+    isMine(row) && isAdmin && typeMap.get(row.request_type_id)?.code === "LEAVE";
+
   /** True when acting would reach past the named approver. */
   const isOverride = (row: ApprovalRequestRow): boolean => {
     if (isNamedApprover(row)) return false;
-    if (myEmployeeId !== null && row.subject_employee_id === myEmployeeId) return false;
+    if (isMine(row)) return isOwnLeave(row);
     return isSuperAdmin || breachedIds.has(row.id);
   };
 
@@ -639,6 +671,7 @@ export default function ApprovalInboxPage() {
                     typeName={typeMap.get(row.request_type_id)?.name ?? null}
                     canDecide={canDecide(row)}
                     isOverride={isOverride(row)}
+                    isOwn={isMine(row)}
                     onClose={() => setOpenId(null)}
                     onDecide={(decision) => {
                       decide.reset();
@@ -827,6 +860,7 @@ function RequestDetail({
   typeName,
   canDecide,
   isOverride,
+  isOwn,
   onClose,
   onDecide,
 }: {
@@ -835,6 +869,8 @@ function RequestDetail({
   canDecide: boolean;
   /** Acting reaches past the named approver — the panel must say so. */
   isOverride: boolean;
+  /** The signed-in person is the subject. Named separately: it is a different act. */
+  isOwn: boolean;
   onClose: () => void;
   onDecide: (decision: ApprovalDecision) => void;
 }) {
@@ -892,7 +928,14 @@ function RequestDetail({
             the Override Log; the person doing it should know that before they
             click, not afterwards.
           */}
-          <Notice tone="warning">{t("admin.wf.inbox.detail.override")}</Notice>
+          {/*
+            A self-decision is not the same act as reaching past somebody else's approver, and
+            the notice should not pretend it is. Both are recorded in the Override Log; only
+            one of them is you signing your own leave.
+          */}
+          <Notice tone="warning">
+            {isOwn ? t("admin.wf.inbox.detail.ownRequest") : t("admin.wf.inbox.detail.override")}
+          </Notice>
         </div>
       ) : null}
 

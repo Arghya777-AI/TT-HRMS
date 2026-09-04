@@ -68,9 +68,18 @@ export interface PunchSession<P extends SessionPunch = SessionPunch> {
   readonly minutes: number | null;
 }
 
-/** `"09:40"` -> 580. Null for anything that is not a wall clock. */
+/**
+ * `"09:40"` -> 580. Null for anything that is not a wall clock.
+ *
+ * SECONDS ARE OPTIONAL, AND THAT IS NOT COSMETIC. Punch times arrive from `fmtTime` as
+ * "HH:MM", but a shift's `start_time`/`end_time` are Postgres `time` columns and arrive as
+ * "09:30:00". Requiring exactly HH:MM parsed the scans and rejected the shift, so
+ * `sessionsFromPunches` fell back to consecutive pairing on EVERY row — and the whole
+ * shift-boundary rule silently did nothing. It looked correct in tests because the fixtures
+ * were written as "17:30"; production sends "17:30:00".
+ */
 export function parseHm(hm: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(hm.trim());
   if (m === null) return null;
   const h = Number(m[1]);
   const min = Number(m[2]);

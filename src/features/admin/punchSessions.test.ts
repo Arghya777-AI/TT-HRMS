@@ -26,7 +26,13 @@ import { join } from "node:path";
 import { minutesBetween, parseHm, sessionsFromPunches, sessionTotals } from "./punchSessions";
 
 /** The 09:30–17:30 general shift most of the venue is on. */
-const DAY = { startTime: "09:30", endTime: "17:30" } as const;
+/*
+  THE REAL WIRE FORMAT. `shifts.start_time` and `end_time` are Postgres `time` columns and
+  reach the client as "09:30:00". Fixtures written as "09:30" passed while production fell
+  back to consecutive pairing on every row, because the shift never parsed — so the day
+  fixture now carries seconds exactly as the database sends them.
+*/
+const DAY = { startTime: "09:30:00", endTime: "17:30:00" } as const;
 
 const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8");
 const strip = (s: string) =>
@@ -43,7 +49,12 @@ describe("reading a wall clock", () => {
   });
 
   it("refuses anything that is not one", () => {
-    for (const bad of ["", "—", "9:4", "24:00", "09:60", "abc", "09:40:12"]) {
+    /*
+      "09:40:12" is NOT in this list any more, and that is the fix rather than a relaxation:
+      a shift's start_time and end_time are Postgres `time` columns and arrive with seconds.
+      Rejecting them made `sessionsFromPunches` fall back to consecutive pairing on every row.
+    */
+    for (const bad of ["", "—", "9:4", "24:00", "09:60", "abc", "09:40:12:99"]) {
       expect(parseHm(bad), bad).toBeNull();
     }
   });
@@ -295,5 +306,52 @@ describe("the breakdown reconciles with the engine's worked figure", () => {
     const totals = sessionTotals(sessions, 0);
     expect(totals.open).toBe(true);
     expect(totals.offClockMinutes).toBe(0);
+  });
+});
+
+describe("the shift window as the database actually sends it", () => {
+  it("parses a Postgres time, seconds and all", () => {
+    // THE REGRESSION THIS EXISTS FOR: "17:30:00" returned null and disabled the whole rule.
+    expect(parseHm("17:30:00")).toBe(1050);
+    expect(parseHm("09:30:00")).toBe(570);
+    expect(parseHm("17:30")).toBe(1050);
+    expect(parseHm("00:00:00")).toBe(0);
+  });
+
+  it("still refuses something that is not a time", () => {
+    for (const bad of ["", "—", "24:00:00", "09:60:00", "9:4", "abc", "17:30:00:00"]) {
+      expect(parseHm(bad), bad).toBeNull();
+    }
+  });
+
+  it("keeps Meghana's day whole when the shift carries seconds", () => {
+    /*
+      The exact row from the dashboard: 08:30, 12:20, 12:40, 17:32 against 09:00:00-17:30:00.
+      With the seconds rejected this split at lunch into "Shift 08:30-12:20, Extra
+      12:40-17:32" — a sales manager finishing at lunchtime and starting a second day.
+    */
+    const sessions = sessionsFromPunches(at("08:30", "12:20", "12:40", "17:32"), {
+      startTime: "09:00:00",
+      endTime: "17:30:00",
+    });
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.inPunch.at).toBe("08:30");
+    expect(sessions[0]?.outPunch?.at).toBe("17:32");
+    expect(sessions[0]?.within.map((w) => w.at)).toEqual(["12:20", "12:40"]);
+  });
+
+  it("keeps a housekeeper's lunch inside one session too", () => {
+    // Ambresh, 123: 08:58, 13:04, 13:58, 17:32 on GRD 09:00:00-18:00:00.
+    const sessions = sessionsFromPunches(at("08:58", "13:04", "13:58", "17:32"), {
+      startTime: "09:00:00",
+      endTime: "18:00:00",
+    });
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.within.map((w) => w.at)).toEqual(["13:04", "13:58"]);
+  });
+
+  it("still splits a real evening return when the shift carries seconds", () => {
+    const sessions = sessionsFromPunches(at("09:40", "17:30", "20:40", "21:45"), DAY);
+    expect(sessions.map((s) => s.kind)).toEqual(["shift", "extra"]);
   });
 });

@@ -29,8 +29,9 @@
  *
  * @route /admin/attendance/punches
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { canonicalPunchLogParams, isOn } from "../punchLogParams";
 import { ScanFace, ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
@@ -100,14 +101,42 @@ export default function PunchLogPage() {
   const [params, setParams] = useSearchParams();
   const { employee } = useAuth();
 
+  /*
+    ── EVERY LINK INTO THIS PAGE WAS ARRIVING UNFILTERED ──────────────────────
+    "All scans for this person" on an employee's attendance page sends
+    `?employee=<uuid>`. This page read `?emp=`. The two were written separately and
+    never matched, so the button opened the whole log for every employee — which is
+    the one thing it promises not to do. Three other links in the app send `?date=`
+    to mean "the scans on this day", and that was read as nothing at all, so a
+    day-scoped link landed on the default 30-day range. The Command Palette's
+    "punches to review" sends `review=true` against a test for `"1"`.
+
+    None of them were broken by a rename: they never worked. So rather than teach the
+    reader four spellings and leave the URL ambiguous, an arriving alias is REWRITTEN
+    ONCE to the canonical form below. Reading both spellings instead looks simpler and
+    is worse — the dropdown writes `emp`, so `?employee=X` plus a dropdown change
+    leaves both in the URL, and clearing the dropdown would resurrect X instead of
+    clearing the filter.
+  */
+  useEffect(() => {
+    const next = canonicalPunchLogParams(params);
+    // `replace`, so normalising does not put a dead URL in the back button.
+    if (next !== null) setParams(next, { replace: true });
+  }, [params, setParams]);
+
   const today = nowIstDate();
-  const from = params.get("from") ?? addIstDays(today, -DEFAULT_DAYS_BACK);
-  const to = params.get("to") ?? today;
-  const employeeId = params.get("emp") ?? "";
+  const from = params.get("from") ?? params.get("date") ?? addIstDays(today, -DEFAULT_DAYS_BACK);
+  const to = params.get("to") ?? params.get("date") ?? today;
+  /*
+    `emp` is what the dropdown writes and the canonical key; `employee` is read here too
+    so the very first render — before the effect above has rewritten the URL — already
+    filters. Without it the page flashes the full log for every employee.
+  */
+  const employeeId = params.get("emp") ?? params.get("employee") ?? "";
   const deviceId = params.get("device") ?? "";
   const source = params.get("source") ?? "";
-  const onlyVoided = params.get("voided") === "1";
-  const onlyNeedsReview = params.get("review") === "1";
+  const onlyVoided = isOn(params.get("voided"));
+  const onlyNeedsReview = isOn(params.get("review"));
 
   const labels = useEmployeeLabels();
   const employeeChoices = useEmployeeOptions(labels.data);

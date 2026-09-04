@@ -278,10 +278,20 @@ function PunchChip({ punch }: { punch: PunchOnRoster | null }): React.JSX.Elemen
  * The sum is written out — 7h 50m + 1h 05m = 8h 55m — and only when there IS a second session.
  * A single pair is just a day, and spelling out "7h 50m = 7h 50m" would be noise on every row.
  */
-function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.JSX.Element {
-  const sessions = sessionsFromPunches(punches);
+function PunchesCell({
+  punches,
+  shift,
+  workedMinutes,
+}: {
+  punches: readonly PunchOnRoster[];
+  shift: RosterRow["shiftWindow"];
+  workedMinutes: number;
+}): React.JSX.Element {
+  const sessions = sessionsFromPunches(punches, shift);
   if (sessions.length === 0) return <span className="text-muted-foreground">—</span>;
-  const totals = sessionTotals(sessions);
+  const totals = sessionTotals(sessions, workedMinutes);
+  /* Spell the arithmetic out when there is arithmetic — a second session, or time off clock. */
+  const showSum = totals.hasExtra || totals.offClockMinutes > 0;
 
   return (
     <div className="min-w-[15rem]">
@@ -306,8 +316,27 @@ function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.
               >
                 {t(s.kind === "extra" ? "admin.roster.sess.extra" : "admin.roster.sess.shift")}
               </th>
-              <td><PunchChip punch={s.inPunch} /></td>
-              <td><PunchChip punch={s.outPunch} /></td>
+              <td>
+                <PunchChip punch={s.inPunch} />
+              </td>
+              {/*
+                Every scan that is not the day's one punch-in sits in this column, in the order
+                it was taken, because that is what the venue calls them: the arrival, and then
+                a series of outs of which the LAST is the one that ended the day. The earlier
+                ones are dimmed rather than dropped — a reader who can see four scans on the
+                tablet and two here would fairly conclude the column had lost two — and the
+                closing scan carries the weight so it is obvious which one the hours run to.
+              */}
+              <td>
+                <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                  {s.within.map((w, j) => (
+                    <span key={`w-${w.at}-${j}`} className="opacity-45">
+                      <PunchChip punch={w} />
+                    </span>
+                  ))}
+                  <PunchChip punch={s.outPunch} />
+                </span>
+              </td>
               <td className="whitespace-nowrap text-right tabular-nums">
                 {s.minutes === null ? (
                   <span className="text-muted-foreground">{t("admin.roster.sess.open")}</span>
@@ -326,13 +355,37 @@ function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.
         The sum, in the reader's own words. Rendered only for a day with a second session —
         that is the day the number in the next column needs explaining.
       */}
-      {totals.hasExtra ? (
+      {showSum ? (
         <p className="mt-1 border-t pt-1 text-right text-[11px] tabular-nums text-muted-foreground">
-          {fmtDurationHm(totals.shiftMinutes)}
-          <span className="mx-1">+</span>
-          <span className="text-success">{fmtDurationHm(totals.extraMinutes)}</span>
-          <span className="mx-1">=</span>
-          <span className="font-medium text-foreground">{fmtDurationHm(totals.totalMinutes)}</span>
+          {totals.hasExtra ? (
+            <>
+              {fmtDurationHm(totals.shiftMinutes)}
+              <span className="mx-1">+</span>
+              <span className="text-success">{fmtDurationHm(totals.extraMinutes)}</span>
+              <span className="mx-1">=</span>
+              <span className={totals.offClockMinutes > 0 ? undefined : "font-medium text-foreground"}>
+                {fmtDurationHm(totals.totalMinutes)}
+              </span>
+            </>
+          ) : (
+            <span>{fmtDurationHm(totals.totalMinutes)}</span>
+          )}
+          {/*
+            The deduction, stated. These minutes were spent on site and are not in the worked
+            figure beside them, and a breakdown that silently disagreed with the next column by
+            twenty minutes is how a reader stops trusting either number.
+          */}
+          {totals.offClockMinutes > 0 ? (
+            <>
+              <span className="mx-1">&minus;</span>
+              <span className="text-warning">{fmtDurationHm(totals.offClockMinutes)}</span>
+              <span className="mx-1">=</span>
+              <span className="font-medium text-foreground">
+                {fmtDurationHm(totals.workedMinutes)}
+              </span>
+              <span className="ml-1">{t("admin.roster.sess.worked")}</span>
+            </>
+          ) : null}
           {totals.open ? <span className="ml-1">{t("admin.roster.sess.open")}</span> : null}
         </p>
       ) : null}
@@ -583,7 +636,13 @@ function Group({
                 <td className="px-3 py-2.5 tabular-nums">
                   {row.lastOutHm ?? <span className="text-muted-foreground">—</span>}
                 </td>
-                <td className="px-3 py-2.5"><PunchesCell punches={row.punches} /></td>
+                <td className="px-3 py-2.5">
+                  <PunchesCell
+                    punches={row.punches}
+                    shift={row.shiftWindow}
+                    workedMinutes={row.workedMinutes}
+                  />
+                </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">
                   <WorkedCell row={row} nowMs={nowMs} />
                 </td>

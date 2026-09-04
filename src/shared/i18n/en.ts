@@ -1709,6 +1709,11 @@ export const en = catalogue({
   "admin.roster.sess.open": "still in",
   /** The sum, written out: 7h 50m + 1h 05m = 8h 55m. */
   "admin.roster.sess.total": "Total",
+  /* The scans a session swallowed — movement inside the venue, not a departure. */
+  "admin.roster.sess.within": "also",
+  /* The gap between an out and the next in: on site, off the clock. */
+  "admin.roster.sess.offclock": "break",
+  "admin.roster.sess.worked": "worked",
   "admin.roster.loc.viaGate": "At the gate camera",
   "admin.roster.loc.viaWeb": "From the web or a phone",
   "admin.roster.loc.accuracy": "accurate to about {m} m",

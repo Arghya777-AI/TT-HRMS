@@ -25,6 +25,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { minutesBetween, parseHm, sessionsFromPunches, sessionTotals } from "./punchSessions";
 
+/** The 09:30–17:30 general shift most of the venue is on. */
+const DAY = { startTime: "09:30", endTime: "17:30" } as const;
+
 const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8");
 const strip = (s: string) =>
   s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
@@ -180,7 +183,117 @@ describe("what the cell renders", () => {
   });
 
   it("derives the sessions rather than re-pairing them inline", () => {
-    expect(roster).toContain("sessionsFromPunches(punches)");
-    expect(roster).toContain("sessionTotals(sessions)");
+    expect(roster).toContain("sessionsFromPunches(punches, shift)");
+    expect(roster).toContain("sessionTotals(sessions, workedMinutes)");
+  });
+});
+
+
+/*
+ * ── THE REGRESSION THIS RULE EXISTS FOR ──────────────────────────────────────
+ * Consecutive pairing read Meghana's 08:30 · 12:20 · 12:40 · 17:32 as two sessions and called
+ * the afternoon "extra", as though she had finished at lunchtime and come back. The shift
+ * boundary is what separates her midday movement from Arghya's evening return, and these are
+ * the two rows that must come out differently under the same rule.
+ */
+describe("the shift boundary decides what is a return", () => {
+  it("keeps a day of midday movement as ONE session", () => {
+    const sessions = sessionsFromPunches(at("08:30", "12:20", "12:40", "17:32"), {
+      startTime: "09:00",
+      endTime: "17:30",
+    });
+    expect(sessions).toHaveLength(1);
+    const [only] = sessions;
+    expect(only?.kind).toBe("shift");
+    expect(only?.inPunch.at).toBe("08:30");
+    expect(only?.outPunch?.at).toBe("17:32");
+    expect(only?.minutes).toBe(542);
+    /* The midday scans are kept and shown, not dropped. */
+    expect(only?.within.map((w) => w.at)).toEqual(["12:20", "12:40"]);
+  });
+
+  it("still splits a genuine evening return", () => {
+    const sessions = sessionsFromPunches(at("09:40", "17:30", "20:40", "21:45"), DAY);
+    expect(sessions.map((s) => s.kind)).toEqual(["shift", "extra"]);
+    expect(sessions[0]?.minutes).toBe(470);
+    expect(sessions[1]?.inPunch.at).toBe("20:40");
+    expect(sessions[1]?.minutes).toBe(65);
+    /* The scan AT the shift end closes the shift; it is not swallowed. */
+    expect(sessions[0]?.outPunch?.at).toBe("17:30");
+    expect(sessions[0]?.within).toHaveLength(0);
+  });
+
+  it("does not turn an early arrival into an extra session", () => {
+    const sessions = sessionsFromPunches(at("07:00", "17:35"), DAY);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.kind).toBe("shift");
+    expect(sessions[0]?.minutes).toBe(635);
+  });
+
+  it("reads a day that never reached the shift end as still open", () => {
+    const sessions = sessionsFromPunches(at("09:30", "12:00", "12:30"), DAY);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.outPunch).toBeNull();
+    expect(sessions[0]?.minutes).toBeNull();
+  });
+
+  it("closes an early leaver at their last scan", () => {
+    const sessions = sessionsFromPunches(at("09:30", "16:00"), DAY);
+    expect(sessions[0]?.outPunch?.at).toBe("16:00");
+    expect(sessions[0]?.minutes).toBe(390);
+  });
+
+  it("puts a whole evening call-out under extra, never under shift", () => {
+    const sessions = sessionsFromPunches(at("19:00", "21:00"), DAY);
+    expect(sessions.map((s) => s.kind)).toEqual(["extra"]);
+    expect(sessions[0]?.minutes).toBe(120);
+  });
+
+  it("handles a night shift without calling the whole thing extra", () => {
+    const night = { startTime: "19:00", endTime: "07:00" } as const;
+    const sessions = sessionsFromPunches(at("18:50", "07:10"), night);
+    expect(sessions.map((s) => s.kind)).toEqual(["shift"]);
+    expect(sessions[0]?.minutes).toBe(740);
+  });
+
+  it("falls back to consecutive pairing when no shift is assigned", () => {
+    const sessions = sessionsFromPunches(at("09:40", "17:30", "20:40", "21:45"), null);
+    expect(sessions.map((s) => s.kind)).toEqual(["shift", "extra"]);
+    expect(sessions[1]?.inPunch.at).toBe("20:40");
+  });
+});
+
+describe("the breakdown reconciles with the engine's worked figure", () => {
+  it("states the gap the engine holds off the clock", () => {
+    const sessions = sessionsFromPunches(at("08:30", "12:20", "12:40", "17:32"), {
+      startTime: "09:00",
+      endTime: "17:30",
+    });
+    /* 9h 02m on site; the engine counts 8h 42m, so twenty minutes are off the clock. */
+    const totals = sessionTotals(sessions, 522);
+    expect(totals.totalMinutes).toBe(542);
+    expect(totals.offClockMinutes).toBe(20);
+    expect(totals.workedMinutes).toBe(522);
+  });
+
+  it("claims no deduction when the sessions already agree", () => {
+    const sessions = sessionsFromPunches(at("09:40", "17:30", "20:40", "21:45"), DAY);
+    const totals = sessionTotals(sessions, 535);
+    expect(totals.offClockMinutes).toBe(0);
+    expect(totals.shiftMinutes + totals.extraMinutes).toBe(535);
+  });
+
+  it("never reports a NEGATIVE break when the engine counts MORE than the scans show", () => {
+    /* A regularised day carries minutes the scans cannot account for. That is not a break. */
+    const sessions = sessionsFromPunches(at("09:30", "17:30"), DAY);
+    const totals = sessionTotals(sessions, 600);
+    expect(totals.offClockMinutes).toBe(0);
+  });
+
+  it("does not deduct against a running day", () => {
+    const sessions = sessionsFromPunches(at("09:30"), DAY);
+    const totals = sessionTotals(sessions, 0);
+    expect(totals.open).toBe(true);
+    expect(totals.offClockMinutes).toBe(0);
   });
 });

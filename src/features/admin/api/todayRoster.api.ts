@@ -84,6 +84,14 @@ export interface RosterRow {
   readonly lateMinutes: number;
   readonly punchCount: number;
   /**
+   * The shift these punches are read against, or null where no shift is assigned.
+   *
+   * Null is honest and the punch column falls back to consecutive pairing on it: without the
+   * window there is no way to know which scan closed the working session, and guessing 09:30
+   * for somebody on nights would put their whole evening under "extra".
+   */
+  readonly shiftWindow: { readonly startTime: string; readonly endTime: string } | null;
+  /**
    * WHERE the day's punches were taken, and how far from the venue.
    *
    * Null when today's punches carry no coordinates. That is the normal state for the 27 gate
@@ -247,9 +255,18 @@ const venueSchema = z.object({
   geofence_radius_m: z.number().int().nullable(),
 });
 
+/*
+ * The window as well as the paid length.
+ *
+ * `duration_minutes` alone was enough while the punch column paired scans in order. It is not
+ * enough to say which scan ENDED the working session, which is what separates Meghana's midday
+ * movement from Arghya's evening return — see punchSessions.ts.
+ */
 const shiftDurationSchema = z.object({
   id: z.string().uuid(),
   duration_minutes: z.number().int().nullable(),
+  start_time: z.string().nullable(),
+  end_time: z.string().nullable(),
 });
 
 /**
@@ -364,7 +381,7 @@ export async function fetchTodayRoster(
       ...(signal ? { signal } : {}),
     }),
     selectMany("shifts", shiftDurationSchema, {
-      columns: "id, duration_minutes",
+      columns: "id, duration_minutes, start_time, end_time",
       ...(signal ? { signal } : {}),
     }),
     selectMany(V_PUNCH_DETAIL, punchFixSchema, {
@@ -419,6 +436,11 @@ export async function fetchTodayRoster(
   );
   const departmentByEmployee = new Map(designations.map((d) => [d.id, d.department_id]));
   const durationByShift = new Map(shifts.map((sh) => [sh.id, sh.duration_minutes ?? 0]));
+  const windowByShift = new Map(
+    shifts
+      .filter((sh) => sh.start_time !== null && sh.end_time !== null)
+      .map((sh) => [sh.id, { startTime: sh.start_time as string, endTime: sh.end_time as string }]),
+  );
 
   const punchesByEmployee = new Map<string, PunchOnRoster[]>();
   for (const row of fixes) {
@@ -517,6 +539,7 @@ export async function fetchTodayRoster(
       varianceMinutes: expected > 0 ? row.worked_minutes - expected : null,
       lateMinutes: row.late_minutes,
       punchCount: row.punch_count,
+      shiftWindow: windowByShift.get(row.shift_id ?? "") ?? null,
       punches: punchesByEmployee.get(row.employee_id) ?? [],
       awaitingApproval: (punchesByEmployee.get(row.employee_id) ?? [])
         .filter((punch) => punch.awaitingApproval).length,

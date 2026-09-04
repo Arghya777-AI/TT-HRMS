@@ -668,16 +668,23 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
     punchState.data?.needsOffHoursReason === true &&
     offHoursReason.trim().length < MIN_OFF_HOURS_REASON;
   /*
-    The photograph is required for the same punches the note is. Gated on the DOCUMENT ID, not
-    on a file having been picked: a chosen file whose upload failed is not proof of anything,
-    and letting it through would mean the approver sees "proof attached" with nothing behind it.
+    ── THE PHOTOGRAPH IS REQUIRED, UNTIL IT CANNOT BE ─────────────────────────
+    Gated on the DOCUMENT ID, not on a file having been picked: a chosen file whose upload
+    failed is not proof of anything, and letting it through would show an approver "proof
+    attached" with nothing behind it.
 
-    The SERVER does not refuse a proofless punch — it records and flags it — so this gate is
-    the venue's "mandatory" and the server's flag is the safety net for a failed upload at
-    9 pm on a weak signal.
+    BUT A FAILED UPLOAD MUST NOT COST SOMEBODY THEIR ATTENDANCE. It already did: an employee
+    starting at 8 am — before her 09:30 shift, so off-hours — could not punch at all because
+    the photograph would not upload, and the button stayed disabled. The server was built to
+    record a proofless off-hours punch and flag it for exactly this reason, and the client gate
+    meant that safety net was never reached.
+
+    So the gate lifts once an upload has been ATTEMPTED AND FAILED. Not when one was never
+    tried: somebody who ignores the field still gets the requirement. The distinction is the
+    whole point — mandatory for anyone who can, never a locked door for anyone who cannot.
   */
   const proofMissing =
-    punchState.data?.needsOffHoursReason === true && proofDocId === null;
+    punchState.data?.needsOffHoursReason === true && proofDocId === null && proofError === null;
   const cameraLive =
     phase.name === "camera" || phase.name === "capturing" || phase.name === "sending";
   const today = istToday();

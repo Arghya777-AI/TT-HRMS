@@ -260,12 +260,13 @@ export const keysPunchProof = {
   "me.punch.offHours.proof.unavailable":
     "Proof cannot be attached on this account yet. Punch anyway — an administrator will be asked to confirm your hours.",
   /*
-    NOT a dead end. The punch still goes through: the server records a proofless off-hours
-    punch and flags it, because this venue has already lost attendance to a hard gate — people
-    concluded the app was broken and stopped punching altogether.
+    NOT a dead end, and now true rather than merely intended. The copy always said the punch
+    could still go through; the BUTTON stayed disabled, so it could not. An employee starting
+    at 8 am lost her punch to exactly that. The gate now lifts once an upload has been tried
+    and failed, and this sentence is what tells her she may go ahead.
   */
   "me.punch.offHours.proof.failed":
-    "That did not upload — the signal may be weak. Try again, or punch without it and an administrator will ask you for it.",
+    "That did not upload — the signal may be weak. Try again if you can, or punch now without it: your hours are recorded either way and an administrator will ask you for the picture.",
 } as const;
 
 /** The proof, on the administrator's off-hours queue. */

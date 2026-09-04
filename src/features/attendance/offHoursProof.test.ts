@@ -70,13 +70,38 @@ const uploader = strip(read("src", "features", "attendance", "api", "attendanceP
 const schema = strip(read("supabase", "migrations", "20260903180000_an_off_hours_punch_carries_its_proof.sql"));
 
 describe("the form makes it mandatory", () => {
+  it("lifts the block once an upload has been TRIED and FAILED", () => {
+    /*
+      ── THE FAILURE THIS COST SOMEBODY ──────────────────────────────────────
+      An employee starting at 8 am — before her 09:30 shift, so off-hours — could not punch at
+      all, because the proof photograph would not upload and the button stayed disabled. Her
+      hours were lost to a hard gate.
+
+      The server was built to record a proofless off-hours punch and flag it for exactly this
+      reason. The client gate meant that safety net was never reached: the request was never
+      sent. Intent in the server is worth nothing if the client refuses to call it.
+
+      `proofError === null` is the whole fix. Somebody who has not TRIED still faces the
+      requirement; somebody whose upload failed may go ahead.
+    */
+    expect(card).toContain("proofDocId === null && proofError === null");
+  });
+
+  it("still requires it from somebody who has not tried", () => {
+    // Mandatory, not optional. The gate lifts on FAILURE, never on inaction.
+    const line = card.split("\n").find((l) => l.includes("const proofMissing ="));
+    expect(line).toBeDefined();
+    const clause = card.slice(card.indexOf("const proofMissing ="), card.indexOf("const cameraLive"));
+    expect(clause).toContain("needsOffHoursReason === true");
+  });
+
   it("blocks the punch button until the document id exists", () => {
     /*
       Gated on the ID, not on a file having been picked: a chosen file whose upload failed is
       not proof of anything, and letting it through would show the approver "proof attached"
       with nothing behind it.
     */
-    expect(card).toContain("punchState.data?.needsOffHoursReason === true && proofDocId === null");
+    expect(card).toContain("proofDocId === null");
     expect(card).toContain("disabled={busy || reasonTooShort || proofMissing}");
   });
 

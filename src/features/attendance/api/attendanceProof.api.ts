@@ -138,10 +138,21 @@ export async function uploadAttendanceProof(
         virus_scan_status: "pending",
         is_system_generated: false,
         /*
-          Marked confidential: it is a photograph of where somebody was, taken outside working
-          hours. It should not surface in the general document browser alongside their PAN card.
+          ── FALSE, AND IT HAS TO BE ────────────────────────────────────────────
+          This was `true`, reasoning that a photograph of where somebody was should not sit in
+          the general document browser. `documents__self__insert` requires
+          `is_confidential = false`, so every upload was refused by RLS — 42501, after the
+          bytes had already been written and were then cleaned up by the catch below. An
+          employee starting at 8 am could not punch at all because of it, and the failure
+          looked like a network problem rather than a rule.
+
+          The policy is right and I was wrong: letting an employee mark their OWN upload
+          confidential would let them hide it from the very people who have to review it.
+          Confidentiality belongs to the TYPE, not to the uploader — and it is already there:
+          ATTENDANCE_PROOF carries `is_sensitive = true`, which is the flag that keeps it out
+          of the general browser. Nothing is lost by this line except the refusal.
         */
-        is_confidential: true,
+        is_confidential: false,
         requires_acknowledgement: false,
         uploaded_by: input.profileId,
         issue_date: null,

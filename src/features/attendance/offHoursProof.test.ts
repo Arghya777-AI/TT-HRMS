@@ -176,10 +176,42 @@ describe("the approver sees whether a proof exists", () => {
 });
 
 describe("the stored document", () => {
-  it("is marked confidential", () => {
-    // A photograph of where somebody was, outside working hours. It must not sit in the
-    // general document browser beside their PAN card.
-    expect(uploader).toContain("is_confidential: true");
+  it("does NOT set is_confidential, because RLS forbids the uploader setting it", () => {
+    /*
+      ── THIS TEST WAS ASSERTING THE BUG ────────────────────────────────────────
+      It read `is_confidential: true` and passed, because the flag was there. What it could
+      not see is that `documents__self__insert` requires `is_confidential = false`, so every
+      single upload was refused with 42501 AFTER the bytes had been written and were then
+      cleaned up by the catch. An employee starting at 8 am could not punch at all, and the
+      failure looked like a network problem rather than a rule. Probed against the live
+      policy as the employee: `true` -> REFUSED [42501], `false` -> ACCEPTED, one flag the
+      only difference.
+
+      The policy is right. Letting employees mark their OWN uploads confidential would let
+      them hide a photograph from the very people who have to review it. Confidentiality is
+      a property of the TYPE, asserted below.
+    */
+    expect(uploader).toContain("is_confidential: false");
+    expect(uploader).not.toContain("is_confidential: true");
+  });
+
+  it("is kept out of the general browser by its document TYPE instead", () => {
+    /*
+      Which is where it belonged all along: ATTENDANCE_PROOF carries is_sensitive = true, so
+      every document of the type is handled that way regardless of what the uploading client
+      claimed on the row.
+
+      This is now the ONLY thing doing that job, so it is asserted rather than assumed. The
+      original upsert's DO UPDATE re-asserted is_active, employee_uploadable and
+      visible_to_employee but not this, which left it free to drift on any re-run.
+    */
+    const sensitive = strip(
+      read("supabase", "migrations", "20260905160000_the_proof_photo_is_sensitive_by_type.sql"),
+    );
+    expect(sensitive).toContain("SET is_sensitive = true");
+    expect(sensitive).toContain("code = 'ATTENDANCE_PROOF'");
+    // And it refuses to finish if the type could not both take the upload and hide it.
+    expect(sensitive).toContain("RAISE EXCEPTION");
   });
 
   it("does not go to a second approval queue of its own", () => {

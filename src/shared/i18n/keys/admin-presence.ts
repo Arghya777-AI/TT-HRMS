@@ -25,6 +25,12 @@ export const keysAdminPresence = {
   "admin.cc.calendar.subtitle":
     "Every employee's approved and pending leave, by day. Change the month or the year to look ahead or back.",
   "admin.cc.calendar.openFull": "Open the full calendar",
+  /*
+    Each name in the day popover opens the cancel picker. The label says "manage", not
+    "cancel": pressing it opens a dialog where days are chosen, and a button that said
+    "cancel" would imply the leave went the moment it was clicked.
+  */
+  "admin.cc.calendar.manageAria": "Manage {name}'s leave on this day",
   "admin.cc.calendar.empty": "Nobody is on leave this month.",
   "admin.cc.calendar.peopleOnLeave": "{n} on leave",
   "admin.cc.calendar.today": "Today",

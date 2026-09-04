@@ -32,6 +32,8 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DayDetailDialog } from "@/shared/ui/DayDetailDialog";
+import { CancelLeaveDaysDialog } from "./CancelLeaveDaysDialog";
+import { Notice } from "./Notice";
 import { cn } from "@/lib/utils";
 import { t } from "@/shared/i18n/en";
 import { isHalfDay, portionText } from "@/features/leave/leavePortion";
@@ -90,6 +92,19 @@ export function LeaveCalendarBand() {
   const today = istToday();
   const [month, setMonth] = useState<IstMonthKey>(nowIstMonth() as IstMonthKey);
   const [openDate, setOpenDate] = useState<string | null>(null);
+
+  /*
+    ── THE NAMES IN THIS POPOVER ARE THE ACTION ───────────────────────────────
+    The Command Centre is where an administrator SEES "five on leave on the 2nd". Reading it
+    and then going elsewhere to do something about it is the long way round, so each name
+    opens the same day picker the leave calendar and the requests queue use. One dialog and
+    one guarded database path behind all three, because a second route to the same record is
+    how two screens end up disagreeing.
+  */
+  const [cancelTarget, setCancelTarget] = useState<
+    { requestId: string; requestNumber: string; name: string | null } | null
+  >(null);
+  const [cancelDone, setCancelDone] = useState<string | null>(null);
 
   const year = Number.parseInt(month.slice(0, 4), 10);
   const monthIndex = Number.parseInt(month.slice(5, 7), 10) - 1;
@@ -343,46 +358,107 @@ export function LeaveCalendarBand() {
               <p className="text-sm text-muted-foreground">{t("admin.cc.calendar.noneOnDay")}</p>
             ) : (
               <ul className="space-y-1.5">
-                {openCell.rows.map((row) => (
-                  <li
-                    key={row.leave_request_day_id}
-                    className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2"
-                  >
-                    <span
-                      aria-hidden
-                      className="size-2.5 shrink-0 rounded-full ring-2 ring-background"
-                      style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {row.display_name}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {row.leave_type_name}
-                        {row.department_name === null ? "" : ` · ${row.department_name}`}
-                      </span>
-                      {/*
-                        Half or full, on its own line rather than appended to the type. Whether
-                        somebody is in this afternoon is a different question from what kind of
-                        leave they took, and a reader scanning five names should not have to
-                        parse to the end of a sentence to answer it.
-                      */}
+                {openCell.rows.map((row) => {
+                  /*
+                    Only an APPROVED day may be taken back here. A pending one is decided in
+                    the approvals queue, and a quiet cancel on a calendar would be a second way
+                    to refuse something without it reading as a rejection to the person who
+                    asked. Those rows still render — they are on leave in the plan — they just
+                    are not buttons.
+                  */
+                  const actionable = row.status === "approved";
+                  const body = (
+                    <>
                       <span
-                        className={cn(
-                          "mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
-                          isHalfDay(row.portion)
-                            ? "bg-warning/15 text-warning"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {portionText(row.portion)}
+                        aria-hidden
+                        className="size-2.5 shrink-0 rounded-full ring-2 ring-background"
+                        style={{ backgroundColor: row.colour_hex ?? "currentColor" }}
+                      />
+                      <span className="min-w-0 flex-1 text-left">
+                        <span className="block truncate text-sm font-medium">
+                          {row.display_name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {row.leave_type_name}
+                          {row.department_name === null ? "" : ` · ${row.department_name}`}
+                        </span>
+                        {/*
+                          Half or full, on its own line rather than appended to the type.
+                          Whether somebody is in this afternoon is a different question from
+                          what kind of leave they took, and a reader scanning five names should
+                          not have to parse to the end of a sentence to answer it.
+                        */}
+                        <span
+                          className={cn(
+                            "mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            isHalfDay(row.portion)
+                              ? "bg-warning/15 text-warning"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {portionText(row.portion)}
+                        </span>
                       </span>
-                    </span>
-                  </li>
-                ))}
+                      {actionable ? (
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      ) : null}
+                    </>
+                  );
+
+                  return (
+                    <li key={row.leave_request_day_id}>
+                      {actionable ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCancelTarget({
+                              requestId: row.leave_request_id,
+                              requestNumber: row.request_number,
+                              name: row.display_name,
+                            })
+                          }
+                          aria-label={t("admin.cc.calendar.manageAria", {
+                            name: row.display_name ?? "",
+                          })}
+                          className="flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2 text-left hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {body}
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2">
+                          {body}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </DayDetailDialog>
+
+          {/*
+            Mounted beside the day popover rather than inside it: the popover closes when the
+            picker opens, and a dialog unmounted mid-flight would take a half-typed reason and
+            an in-flight request with it.
+          */}
+          <CancelLeaveDaysDialog
+            open={cancelTarget !== null}
+            onOpenChange={(next) => { if (!next) setCancelTarget(null); }}
+            requestId={cancelTarget?.requestId ?? null}
+            requestNumber={cancelTarget?.requestNumber ?? ""}
+            employeeName={cancelTarget?.name ?? null}
+            onDone={(message) => {
+              setCancelTarget(null);
+              setOpenDate(null);
+              setCancelDone(message);
+            }}
+          />
+
+          {cancelDone !== null ? (
+            <Notice tone="success" className="mt-3">
+              {cancelDone}
+            </Notice>
+          ) : null}
         </StateBoundary>
       </div>
     </section>

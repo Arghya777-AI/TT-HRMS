@@ -43,6 +43,7 @@ const hook = strip(read("src", "features", "admin", "hooks", "useAdminLeave.ts")
 const queue = strip(read("src", "features", "admin", "pages", "LeaveRequests.page.tsx"));
 const cal = strip(read("src", "features", "admin", "pages", "OrgLeaveCalendar.page.tsx"));
 const dialog = strip(read("src", "features", "admin", "components", "CancelLeaveDaysDialog.tsx"));
+const band = strip(read("src", "features", "admin", "components", "LeaveCalendarBand.tsx"));
 const daysSql = strip(
   read("supabase", "migrations", "20260906180000_a_leave_can_be_taken_back_a_day_at_a_time.sql"),
 );
@@ -147,10 +148,32 @@ describe("where an administrator can reach it", () => {
     expect(cal).not.toContain('row.status === "pending"');
   });
 
-  it("opens the SAME dialog from both screens", () => {
-    // Two routes to one record is how two screens end up disagreeing.
+  it("makes every name in the Command Centre day popover a button", () => {
+    /*
+      THE ONE THAT WAS MISSED. The Command Centre's calendar band is a DIFFERENT component
+      from the full leave calendar, and wiring one left the other a read-only list — which is
+      the screen an administrator actually looks at first.
+    */
+    expect(band).toContain('const actionable = row.status === "approved";');
+    expect(band).toContain("setCancelTarget({");
+    expect(band).toContain("<CancelLeaveDaysDialog");
+  });
+
+  it("leaves a pending row unclickable in the Command Centre too", () => {
+    /*
+      Decided in the queue, where refusing reads as a rejection. Asserted on the BUTTON, not
+      on `{actionable ? (` — that appears twice, once for the chevron, so a check on the bare
+      ternary passes while the row is a plain span.
+    */
+    expect(band).toMatch(/\{actionable \? \(\s*<button/);
+    expect(band).toContain("<span className=\"flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2\">");
+  });
+
+  it("opens the SAME dialog from all three screens", () => {
+    // Two routes to one record is how screens end up disagreeing; three is worse.
     expect(queue).toContain('from "../components/CancelLeaveDaysDialog"');
     expect(cal).toContain('from "../components/CancelLeaveDaysDialog"');
+    expect(band).toContain('from "./CancelLeaveDaysDialog"');
   });
 
   it("asks for a reason before acting on a click", () => {

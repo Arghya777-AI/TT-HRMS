@@ -25,9 +25,13 @@ import {
   cancelLeaveRequest,
   cancelLeaveDays,
   decideLeaveRequest,
+  editLeaveDates,
+  sendLeaveBack,
   fetchLeaveRequestDays,
   type LeaveCancelResult,
   type LeaveDaysCancelResult,
+  type LeaveEditResult,
+  type LeaveSendBackResult,
   type LeaveRequestDay,
   fetchCompOffBalances,
   fetchCompOffLedger,
@@ -271,6 +275,42 @@ export function useLeaveRequestDays(
     queryFn: ({ signal }) => fetchLeaveRequestDays(requestId ?? "", signal),
     enabled: requestId !== null,
     retry: shouldRetryQuery,
+  });
+}
+
+export interface EditDatesInput {
+  readonly requestId: string;
+  readonly requestNumber: string;
+  readonly from: string;
+  readonly to: string;
+  readonly portion: string;
+}
+
+/** Move an approved leave. Attendance changes on BOTH the old dates and the new ones. */
+export function useEditLeaveDates(
+  onDone?: (input: EditDatesInput, result: LeaveEditResult) => void,
+): AuditedMutationResult<LeaveEditResult, EditDatesInput> {
+  return useAuditedMutation<LeaveEditResult, EditDatesInput>({
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    invalidate: [qk.admin.leaveAll(), qk.admin.attendanceAll(), qk.attendance.all],
+    mutationFn: (input, reason) =>
+      editLeaveDates(
+        { requestId: input.requestId, from: input.from, to: input.to, portion: input.portion },
+        reason,
+      ),
+    ...(onDone ? { onSuccess: (d: LeaveEditResult, i: EditDatesInput) => onDone(i, d) } : {}),
+  });
+}
+
+/** Hand it back to the employee: pending again, and theirs to change or withdraw. */
+export function useSendLeaveBack(
+  onDone?: (input: CancelInput, result: LeaveSendBackResult) => void,
+): AuditedMutationResult<LeaveSendBackResult, CancelInput> {
+  return useAuditedMutation<LeaveSendBackResult, CancelInput>({
+    minReasonLength: SENSITIVE_REASON_LENGTH,
+    invalidate: [qk.admin.leaveAll(), qk.admin.attendanceAll(), qk.attendance.all],
+    mutationFn: (input, reason) => sendLeaveBack(input.requestId, reason),
+    ...(onDone ? { onSuccess: (d: LeaveSendBackResult, i: CancelInput) => onDone(i, d) } : {}),
   });
 }
 

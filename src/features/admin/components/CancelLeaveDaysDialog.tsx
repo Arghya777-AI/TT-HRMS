@@ -38,7 +38,12 @@ import { cn } from "@/lib/utils";
 import { fmtCivilDayMonthWeekday, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
-import { useCancelLeaveDays, useLeaveRequestDays } from "../hooks/useAdminLeave";
+import {
+  useCancelLeaveDays,
+  useEditLeaveDates,
+  useLeaveRequestDays,
+  useSendLeaveBack,
+} from "../hooks/useAdminLeave";
 
 export interface CancelLeaveDaysDialogProps {
   readonly open: boolean;
@@ -71,7 +76,10 @@ export function CancelLeaveDaysDialog({
   */
   const [acknowledged, setAcknowledged] = useState(false);
   /** "view" is the booking as it stands; "cancel" is the picker. Always opens on "view". */
-  const [step, setStep] = useState<"view" | "cancel">("view");
+  const [step, setStep] = useState<"view" | "cancel" | "edit" | "sendBack">("view");
+  /* The edit form's own fields, seeded from the booking when the step opens. */
+  const [editFrom, setEditFrom] = useState("");
+  const [editTo, setEditTo] = useState("");
 
   const cancellable = useMemo(
     () => (days.data ?? []).filter((d) => d.status === "approved"),
@@ -89,7 +97,32 @@ export function CancelLeaveDaysDialog({
     // Re-armed for every request: an acknowledgement is for the days in front of you.
     setAcknowledged(false);
     setStep("view");
+    /*
+      Seeded from the days themselves rather than from a from/to on the request, because the
+      day rows are what the server will rebuild against — and a range that disagreed with them
+      would silently move the booking on save.
+    */
+    const first = cancellable[0]?.leave_date ?? "";
+    setEditFrom(first);
+    setEditTo(cancellable[cancellable.length - 1]?.leave_date ?? first);
   }, [cancellable, requestId]);
+
+  const edit = useEditLeaveDates((input, result) => {
+    onOpenChange(false);
+    onDone(
+      t("adminLeave.cancelDays.doneEdited", {
+        number: input.requestNumber,
+        from: result.from_date,
+        to: result.to_date,
+        days: String(result.total_days),
+      }),
+    );
+  });
+
+  const sendBack = useSendLeaveBack((input) => {
+    onOpenChange(false);
+    onDone(t("adminLeave.cancelDays.doneSentBack", { number: input.requestNumber }));
+  });
 
   const cancel = useCancelLeaveDays((input, result) => {
     onOpenChange(false);
@@ -165,6 +198,7 @@ export function CancelLeaveDaysDialog({
             onRetry={() => void days.refetch()}
             skeletonRows={3}
           >
+            {step === "view" || step === "cancel" ? (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -250,8 +284,59 @@ export function CancelLeaveDaysDialog({
                   : t("adminLeave.cancelDays.releasing", { days: releasing.toFixed(2) })}
               </p>
             </div>
+            ) : null}
 
-            {step === "cancel" ? (
+            {/*
+              ── THE EDIT FORM ─────────────────────────────────────────────────
+              Dates only. Changing the leave TYPE would change which balance it comes out of
+              and which rules it is judged against — that is a different request, not an edit
+              of this one, and the venue has not set a rule for carrying an approval across.
+            */}
+            {step === "edit" ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="edit-from" className="block text-sm font-medium">
+                    {t("adminLeave.cancelDays.editFrom")}
+                  </label>
+                  <input
+                    id="edit-from"
+                    type="date"
+                    value={editFrom}
+                    onChange={(e) => setEditFrom(e.target.value)}
+                    className="mt-1.5 w-full rounded-md border bg-background px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-to" className="block text-sm font-medium">
+                    {t("adminLeave.cancelDays.editTo")}
+                  </label>
+                  <input
+                    id="edit-to"
+                    type="date"
+                    value={editTo}
+                    onChange={(e) => setEditTo(e.target.value)}
+                    className="mt-1.5 w-full rounded-md border bg-background px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                {editTo !== "" && editFrom !== "" && editTo < editFrom ? (
+                  <p className="text-xs text-destructive sm:col-span-2">
+                    {t("adminLeave.cancelDays.editOrder")}
+                  </p>
+                ) : null}
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  {t("adminLeave.cancelDays.editNote")}
+                </p>
+              </div>
+            ) : null}
+
+            {/* Handing it back needs only the sentence the employee will read. */}
+            {step === "sendBack" ? (
+              <p className="mt-4 rounded-md border border-info/40 bg-info/5 px-3 py-2 text-xs text-foreground">
+                {t("adminLeave.cancelDays.sendBackNote")}
+              </p>
+            ) : null}
+
+            {step !== "view" ? (
             <div className="mt-4">
               <label htmlFor="cancel-days-reason" className="block text-sm font-medium">
                 {t("adminLeave.cancelDays.reasonLabel")}
@@ -314,9 +399,9 @@ export function CancelLeaveDaysDialog({
               whole — arrive here and are shown rather than swallowed. Each names something the
               administrator has to go and do.
             */}
-            {cancel.userMessage !== undefined ? (
+            {(cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage) !== undefined ? (
               <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {cancel.userMessage}
+                {cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage}
               </p>
             ) : null}
 
@@ -328,6 +413,26 @@ export function CancelLeaveDaysDialog({
                     the row that opened the dialog: clicking a name on a calendar is a look,
                     and only this is a decision.
                   */}
+                  {/*
+                    Three ways forward, in the order an administrator is most likely to want
+                    them: change it, hand it to the person it belongs to, or take it back.
+                    Only the last is styled destructive — the other two are reversible.
+                  */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={cancellable.length === 0}
+                    onClick={() => setStep("edit")}
+                  >
+                    {t("adminLeave.cancelDays.startEdit")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setStep("sendBack")}
+                  >
+                    {t("adminLeave.cancelDays.startSendBack")}
+                  </Button>
                   <Button
                     type="button"
                     variant="destructive"
@@ -341,6 +446,58 @@ export function CancelLeaveDaysDialog({
                       {t("adminLeave.cancelDays.close")}
                     </Button>
                   </Dialog.Close>
+                </>
+              ) : step === "edit" ? (
+                <>
+                  <Button
+                    type="button"
+                    disabled={
+                      !reasonOk || editFrom === "" || editTo === "" || editTo < editFrom ||
+                      edit.isPending
+                    }
+                    onClick={() =>
+                      requestId !== null &&
+                      edit.save(
+                        {
+                          requestId,
+                          requestNumber,
+                          from: editFrom,
+                          to: editTo,
+                          // Portion follows the booking; the picker changes dates, not halves.
+                          portion: days.data?.[0]?.portion ?? "full_day",
+                        },
+                        reason.trim(),
+                      )
+                    }
+                  >
+                    {edit.isPending ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                    ) : null}
+                    {t("adminLeave.cancelDays.confirmEdit")}
+                  </Button>
+                  {/* Back to looking, without closing and losing the fetch. */}
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setStep("view")}>
+                    {t("adminLeave.cancelDays.back")}
+                  </Button>
+                </>
+              ) : step === "sendBack" ? (
+                <>
+                  <Button
+                    type="button"
+                    disabled={!reasonOk || sendBack.isPending}
+                    onClick={() =>
+                      requestId !== null &&
+                      sendBack.save({ requestId, requestNumber }, reason.trim())
+                    }
+                  >
+                    {sendBack.isPending ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                    ) : null}
+                    {t("adminLeave.cancelDays.confirmSendBack")}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setStep("view")}>
+                    {t("adminLeave.cancelDays.back")}
+                  </Button>
                 </>
               ) : (
                 <>
@@ -360,7 +517,6 @@ export function CancelLeaveDaysDialog({
                       ? t("adminLeave.cancelDays.confirmAll")
                       : t("adminLeave.cancelDays.confirmSome", { n: String(picked.length) })}
                   </Button>
-                  {/* Back to looking, without closing and losing the fetch. */}
                   <Button type="button" variant="ghost" size="sm" onClick={() => setStep("view")}>
                     {t("adminLeave.cancelDays.back")}
                   </Button>

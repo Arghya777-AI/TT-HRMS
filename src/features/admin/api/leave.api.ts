@@ -496,6 +496,88 @@ export async function cancelLeaveDays(
   return row;
 }
 
+/** What `admin_edit_leave_dates` hands back. */
+export const leaveEditResultSchema = z.object({
+  leave_request_id: dbUuid,
+  request_number: z.string(),
+  employee_id: dbUuid,
+  from_date: z.string(),
+  to_date: z.string(),
+  total_days: dbNumeric,
+  status: z.string(),
+});
+export type LeaveEditResult = z.infer<typeof leaveEditResultSchema>;
+
+/**
+ * Move an approved leave to different dates.
+ *
+ * The database does it as un-apply, rebuild, re-apply — the debit is reversed, the day rows
+ * are rebuilt for the new range, and the approval is re-applied through the same trigger an
+ * ordinary approval uses. So an edited leave and a freshly approved one are indistinguishable
+ * in the ledger, and nothing here has to know how a debit is written.
+ *
+ * It also checks the balance, which nothing else would: the submit guard only fires when a
+ * DRAFT becomes pending, so stretching two days to ten would otherwise pass every balance
+ * rule in the system.
+ */
+export async function editLeaveDates(
+  input: { requestId: string; from: string; to: string; portion: string },
+  reason: string,
+  signal?: AbortSignal,
+): Promise<LeaveEditResult> {
+  const rows = await rpcAudited(
+    "admin_edit_leave_dates",
+    {
+      p_request_id: input.requestId,
+      p_from: input.from,
+      p_to: input.to,
+      p_portion: input.portion,
+      p_reason: reason.trim(),
+    },
+    leaveEditResultSchema,
+    { reason, minReasonLength: SENSITIVE_REASON_LENGTH, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error("admin_edit_leave_dates returned no row");
+  return row;
+}
+
+/** What `admin_send_leave_back` hands back. */
+export const leaveSendBackResultSchema = z.object({
+  leave_request_id: dbUuid,
+  request_number: z.string(),
+  employee_id: dbUuid,
+  status: z.string(),
+});
+export type LeaveSendBackResult = z.infer<typeof leaveSendBackResultSchema>;
+
+/**
+ * Hand an approved leave back to the employee.
+ *
+ * Sets it to `pending`, which reverses the debit and restores the day rows — and, because
+ * `leave_requests__self_update` admits the owner on a pending row, gives the employee back
+ * exactly the control they had before it was approved: change it, or withdraw it.
+ *
+ * The previous approver's name and timestamp are cleared. Leaving them on a request that is
+ * no longer approved would read, months later, as though they had approved whatever it
+ * eventually became.
+ */
+export async function sendLeaveBack(
+  requestId: string,
+  reason: string,
+  signal?: AbortSignal,
+): Promise<LeaveSendBackResult> {
+  const rows = await rpcAudited(
+    "admin_send_leave_back",
+    { p_request_id: requestId, p_reason: reason.trim() },
+    leaveSendBackResultSchema,
+    { reason, minReasonLength: SENSITIVE_REASON_LENGTH, ...(signal ? { signal } : {}) },
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error("admin_send_leave_back returned no row");
+  return row;
+}
+
 /** What `admin_cancel_leave_request` hands back — the summary, not the row. */
 export const leaveCancelResultSchema = z.object({
   leave_request_id: dbUuid,

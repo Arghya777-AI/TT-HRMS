@@ -47,6 +47,9 @@ const band = strip(read("src", "features", "admin", "components", "LeaveCalendar
 const daysSql = strip(
   read("supabase", "migrations", "20260906180000_a_leave_can_be_taken_back_a_day_at_a_time.sql"),
 );
+const editSql = strip(
+  read("supabase", "migrations", "20260906210000_an_approved_leave_can_be_edited_or_handed_back.sql"),
+);
 
 describe("only an administrator, and only an approved request", () => {
   it("re-asserts admin and scope inside the definer", () => {
@@ -194,7 +197,8 @@ describe("it opens read-only, and Cancel is a second press", () => {
       Opening straight into a form with every box already ticked is how somebody cancels a
       leave they only meant to read.
     */
-    expect(dialog).toContain('const [step, setStep] = useState<"view" | "cancel">("view");');
+    // Four steps now — view, cancel, edit, sendBack — and it always opens on the first.
+    expect(dialog).toMatch(/useState<"view" \| "cancel" \| "edit" \| "sendBack">\("view"\)/);
     expect(dialog).toContain('setStep("view");');
   });
 
@@ -202,8 +206,12 @@ describe("it opens read-only, and Cancel is a second press", () => {
     expect(dialog).toContain('{step === "cancel" ? (\n                        <input');
   });
 
-  it("asks for no reason and shows no warning until Cancel is pressed", () => {
-    expect(dialog).toContain('{step === "cancel" ? (\n            <div className="mt-4">');
+  it("asks for no reason and shows no warning while you are only looking", () => {
+    /*
+      The reason box appears for EVERY acting step — cancel, edit and send-back all ask why —
+      and for none of them while the dialog is read-only.
+    */
+    expect(dialog).toContain('{step !== "view" ? (');
     expect(dialog).toContain('{step === "cancel" && needsAck ? (');
   });
 
@@ -307,5 +315,85 @@ describe("the per-day function keeps the ledger honest", () => {
   it("keeps paid and unpaid within the days constraint", () => {
     // ck_lr__days requires paid + unpaid <= total; shrinking total alone is refused.
     expect(daysSql).toContain("paid_days     = GREATEST(0, LEAST(paid_days - v_release, v_left))");
+  });
+});
+
+describe("changing the dates, and handing it back", () => {
+  it("offers all three from the read-only view", () => {
+    // "The option should be given everywhere where the Cancel button is."
+    expect(dialog).toContain('onClick={() => setStep("edit")}');
+    expect(dialog).toContain('onClick={() => setStep("sendBack")}');
+    expect(dialog).toContain('onClick={() => setStep("cancel")}');
+  });
+
+  it("styles only the destructive one destructively", () => {
+    /*
+      Changing dates and handing it back are both reversible; cancelling releases the days and
+      rewrites the attendance record. The colours should not say they are the same act.
+    */
+    const view = dialog.slice(dialog.indexOf('step === "view" ? ('), dialog.indexOf('") : step === "edit"'));
+    expect(view).toContain('variant="outline"');
+    expect(view).toContain('variant="destructive"');
+  });
+
+  it("asks for a reason on every one of them", () => {
+    expect(dialog).toContain('{step !== "view" ? (');
+  });
+
+  it("surfaces whichever refusal came back", () => {
+    // A locked period refuses all three, and the message names what to do about it.
+    expect(dialog).toContain("cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage");
+  });
+
+  it("refuses a range that ends before it starts, in the form and the function", () => {
+    expect(dialog).toContain("editTo < editFrom");
+    expect(editSql).toContain("The last day cannot be before the first.");
+  });
+});
+
+describe("un-approving reverses, whatever it is un-approved to", () => {
+  it("teaches the trigger the word 'pending'", () => {
+    /*
+      THE GAP THIS CLOSES. The trigger reversed on approved -> cancelled/rejected/withdrawn
+      and NOT on approved -> pending. Handing a leave back therefore left the debit standing
+      while the request sat pending; a later withdrawal reversed nothing, because OLD.status
+      was no longer 'approved'. An orphaned debit and a permanently short balance.
+    */
+    expect(editSql).toContain("NEW.status IN ('cancelled','rejected','withdrawn','pending')");
+  });
+
+  it("clears the approver from a request that is no longer approved", () => {
+    // Their name on it would read, months later, as approving whatever it became.
+    expect(editSql).toContain("decided_by          = NULL");
+    expect(editSql).toContain("decided_at          = NULL");
+  });
+
+  it("edits by un-applying and re-applying, never by writing a ledger row itself", () => {
+    expect(editSql).toContain("UPDATE public.leave_requests SET status = 'pending' WHERE id = r.id;");
+    expect(editSql).toContain("public.rebuild_leave_request_days(");
+    expect(editSql).toContain("UPDATE public.leave_requests SET status = 'approved' WHERE id = r.id;");
+  });
+
+  it("checks the balance itself, because nothing else will", () => {
+    /*
+      `leave_requests_submit_guard` fires only when a DRAFT becomes pending, so an edit
+      stretching two days to ten would otherwise pass every balance rule in the system.
+    */
+    expect(editSql).toContain("has % available. The change was not applied.");
+  });
+
+  it("checks locks and payroll over the OLD range as well as the new", () => {
+    // Moving a leave OUT of a settled week changes that week too.
+    expect(editSql).toContain("daterange(v_old_from, v_old_to, '[]')");
+    expect(editSql).toContain("d2.ist_date BETWEEN v_old_from AND v_old_to OR d2.ist_date BETWEEN p_from AND p_to");
+  });
+
+  it("recomputes every day that changed meaning, released and taken", () => {
+    expect(editSql).toContain("LEAST(v_old_from, p_from), GREATEST(v_old_to, p_to)");
+  });
+
+  it("refuses to move a comp-off booking", () => {
+    // It is booked against specific earned credits; moving it is a different request.
+    expect(editSql).toContain("Comp-off is booked against specific earned credits");
   });
 });

@@ -3935,6 +3935,26 @@ export const en = catalogue({
   */
   "adminLeave.cancelDays.days": "Days in this leave",
   "adminLeave.cancelDays.totals": "{days} day(s) of balance · {n} still approved",
+  /*
+    Three ways out of the read-only view. Only cancelling is destructive; changing dates and
+    handing it back are both reversible, and the labels and colours say so.
+  */
+  "adminLeave.cancelDays.startEdit": "Change dates",
+  "adminLeave.cancelDays.startSendBack": "Send back to the employee",
+  "adminLeave.cancelDays.editFrom": "First day",
+  "adminLeave.cancelDays.editTo": "Last day",
+  "adminLeave.cancelDays.editOrder": "The last day cannot be before the first.",
+  "adminLeave.cancelDays.editNote":
+    "The days are rebuilt for the new range and the balance is adjusted by the difference. "
+    + "Holidays and weekly offs inside the range still cost nothing.",
+  "adminLeave.cancelDays.sendBackNote":
+    "It goes back to pending and the days return to the balance. The employee can then change "
+    + "the dates or withdraw it themselves, and it will need approving again.",
+  "adminLeave.cancelDays.confirmEdit": "Save the new dates",
+  "adminLeave.cancelDays.confirmSendBack": "Send it back",
+  "adminLeave.cancelDays.doneEdited": "{number} moved to {from} – {to} ({days} day(s)).",
+  "adminLeave.cancelDays.doneSentBack":
+    "{number} is back with the employee. It needs approving again.",
   "adminLeave.cancelDays.startCancel": "Cancel this leave",
   "adminLeave.cancelDays.back": "Back",
   "adminLeave.cancelDays.pick": "Days in this request",

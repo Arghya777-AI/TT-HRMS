@@ -3902,6 +3902,22 @@ export const en = catalogue({
   "admin.leaveReq.daysWithPortion": "{days} ({portion})",
   "admin.leaveReq.action.approve": "Approve",
   "admin.leaveReq.action.reject": "Reject",
+  /*
+    ── TAKING BACK AN APPROVED LEAVE ─────────────────────────────────────────
+    Offered only on a row that is already approved. The wording says what actually happens —
+    the days go back to the balance and the attendance record is re-derived — because an
+    administrator pressing this is undoing somebody's approved absence, and "Cancel" alone
+    reads like closing the dialog.
+  */
+  "admin.leaveReq.action.cancel": "Cancel leave",
+  "admin.leaveReq.dialog.cancelTitle": "Cancel approved leave {number}?",
+  "admin.leaveReq.dialog.cancelDescription":
+    "The days go back to the employee's balance and their attendance for those dates is "
+    + "recomputed. The employee sees your reason. This is refused if the period is locked or "
+    + "the leave has already been paid.",
+  "admin.leaveReq.done.cancelled": "{number} cancelled. The days are back in the balance.",
+  /** The per-person cancel on the leave calendar's day list. */
+  "adminLeave.cal.cancelAria": "Cancel {name}'s leave on {date}",
   "admin.leaveReq.status.draft": "Draft",
   "admin.leaveReq.status.pending": "Awaiting approval",
   "admin.leaveReq.status.partially_approved": "Partly approved",

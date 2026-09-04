@@ -20,6 +20,7 @@
  */
 import { z } from "zod";
 import {
+  rpcAudited,
   SENSITIVE_REASON_LENGTH,
   dbDate,
   dbDateNullable,
@@ -422,28 +423,53 @@ export function decideLeaveRequest(
   );
 }
 
+/** What `admin_cancel_leave_request` hands back — the summary, not the row. */
+export const leaveCancelResultSchema = z.object({
+  leave_request_id: dbUuid,
+  request_number: z.string(),
+  employee_id: dbUuid,
+  from_date: z.string(),
+  to_date: z.string(),
+  days_released: z.number().int(),
+  status: z.string(),
+});
+export type LeaveCancelResult = z.infer<typeof leaveCancelResultSchema>;
+
 /**
- * Cancel an approved request (§7.3). The ledger credit is the trigger's job; a
- * paid period becomes arrears, never an edited payslip.
+ * Cancel an APPROVED leave, through the database function that guards it.
+ *
+ * This was a bare `updateRow` on `leave_requests` with `[eq("id", requestId)]` and nothing
+ * else — no status check, no period check, no payroll check. It leaned entirely on RLS, which
+ * answers "may this administrator touch this employee" and cannot answer "is this leave safe
+ * to take back". Three ways that went wrong, all of them silent:
+ *
+ *   · cancelling something already cancelled, or never approved, wrote a status change and
+ *     reversed nothing, because the reversal trigger only fires on approved -> cancelled;
+ *   · cancelling inside a hard attendance lock rewrote a settled period;
+ *   · cancelling a leave already carried into payroll credited the balance back while the
+ *     payslip that consumed it stayed as it was, and the two never agreed again.
+ *
+ * `admin_cancel_leave_request` refuses all three by name and does the single status write, so
+ * the ledger reversal, the comp-off restoration and the attendance recompute still ride on
+ * the triggers that were already there rather than being reimplemented here.
  */
-export function cancelLeaveRequest(
+export async function cancelLeaveRequest(
   requestId: string,
-  cancelledBy: string,
+  _cancelledBy: string,
   reason: string,
   signal?: AbortSignal,
-): Promise<LeaveRequest> {
-  return updateRow(
-    LEAVE_REQUESTS_TABLE,
-    [eq("id", requestId)],
-    {
-      status: "cancelled",
-      cancelled_by: cancelledBy,
-      cancelled_at: nowInstantIso(),
-      cancellation_reason: reason.trim(),
-    },
-    leaveRequestSchema,
+): Promise<LeaveCancelResult> {
+  const rows = await rpcAudited(
+    "admin_cancel_leave_request",
+    { p_request_id: requestId, p_reason: reason.trim() },
+    leaveCancelResultSchema,
     { reason, minReasonLength: SENSITIVE_REASON_LENGTH, ...(signal ? { signal } : {}) },
   );
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error("admin_cancel_leave_request returned no row");
+  }
+  return row;
 }
 
 // -----------------------------------------------------------------------------

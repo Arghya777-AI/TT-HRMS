@@ -33,12 +33,17 @@
  *
  * @route /admin/leave/calendar
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CalendarRange, Users } from "lucide-react";
+import { CalendarRange, Users, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { ReasonDialog } from "@/shared/ui/ReasonDialog";
+import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
+import { useAuth } from "@/app/auth/AuthProvider";
+import { useReasonPrompt } from "../hooks/useReasonPrompt";
+import { useCancelLeaveRequest, type CancelTarget } from "../hooks/useAdminLeave";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import {
@@ -95,6 +100,21 @@ export default function AdminOrgLeaveCalendarPage() {
 
   const range = useMemo(() => istMonthRange(month), [month]);
   const today = nowIstDate();
+
+  /*
+    Cancelling from the calendar uses the same guarded path as the requests queue — the
+    database function that refuses a locked period or a leave already paid. A second, looser
+    route to the same record is how the two screens end up disagreeing.
+  */
+  const { user } = useAuth();
+  const profileId = user?.id ?? null;
+  const prompt = useReasonPrompt<CancelTarget>();
+  const { ask, close: closePrompt, target, isOpen } = prompt;
+  const [done, setDone] = useState<string | null>(null);
+  const cancel = useCancelLeaveRequest(profileId, (input) => {
+    closePrompt();
+    setDone(t("admin.leaveReq.done.cancelled", { number: input.requestNumber }));
+  });
 
   const departments = useRefOptions("departments");
   const types = useAdminLeaveTypes();
@@ -417,23 +437,86 @@ export default function AdminOrgLeaveCalendarPage() {
                         })}
                   </span>
                 </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {/*
+                  ── THE DAY, AND WHAT CAN BE DONE ABOUT IT ────────────────────
+                  The grid above has room for a name and a colour. THIS list has room for the
+                  action, so an administrator looking at "three people off on the 14th" can
+                  take one of them back without first working out which request it was and
+                  going to find it. The badge still opens the request; the button beside it
+                  cancels it after asking why.
+                */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   {cell.rows.map((row) => (
-                    <Link
+                    <span
                       key={row.leave_request_day_id}
-                      to={`/admin/leave/requests?emp=${row.employee_id}`}
+                      className="inline-flex items-center gap-1 rounded-full border bg-background py-0.5 pl-0.5 pr-1"
                     >
-                      <Badge variant="info">
-                        {row.display_name ?? t("admin.common.unknownPerson")} ·{" "}
-                        {row.leave_type_code} · {portionShort(row.portion)}
-                      </Badge>
-                    </Link>
+                      <Link to={`/admin/leave/requests?emp=${row.employee_id}`}>
+                        <Badge variant="info">
+                          {row.display_name ?? t("admin.common.unknownPerson")} ·{" "}
+                          {row.leave_type_code} · {portionShort(row.portion)}
+                        </Badge>
+                      </Link>
+                      {/*
+                        Only an APPROVED day may be taken back. A pending one is decided in the
+                        queue, and offering "cancel" on it here would be a second, quieter way
+                        to reject something without it reading as a rejection.
+                      */}
+                      {row.status === "approved" && profileId !== null ? (
+                        <button
+                          type="button"
+                          disabled={cancel.isPending}
+                          onClick={() =>
+                            ask({
+                              requestId: row.leave_request_id,
+                              requestNumber: row.request_number,
+                              decision: "cancelled",
+                            })
+                          }
+                          title={t("adminLeave.cal.cancelAria", {
+                            name: row.display_name ?? "",
+                            date: fmtCivilDayMonthWeekday(cell.date),
+                          })}
+                          aria-label={t("adminLeave.cal.cancelAria", {
+                            name: row.display_name ?? "",
+                            date: fmtCivilDayMonthWeekday(cell.date),
+                          })}
+                          className="rounded-full p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                        >
+                          <X className="size-3.5" aria-hidden />
+                        </button>
+                      ) : null}
+                    </span>
                   ))}
                 </div>
               </li>
             ))}
           </ul>
         </div>
+
+        {done !== null ? (
+          <Notice tone="success" className="mt-4">
+            {done}
+          </Notice>
+        ) : null}
+
+        <ReasonDialog
+          open={isOpen}
+          title={t("admin.leaveReq.dialog.cancelTitle", { number: target?.requestNumber ?? "" })}
+          description={t("admin.leaveReq.dialog.cancelDescription")}
+          actorName={user?.email ?? null}
+          minLength={SENSITIVE_REASON_LENGTH}
+          confirmLabel={t("admin.leaveReq.action.cancel")}
+          pending={cancel.isPending}
+          errorMessage={cancel.userMessage}
+          onConfirm={(reason) => {
+            if (target !== null) cancel.save(target, reason);
+          }}
+          onCancel={() => {
+            cancel.reset();
+            closePrompt();
+          }}
+        />
 
         <p className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
           <Users className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

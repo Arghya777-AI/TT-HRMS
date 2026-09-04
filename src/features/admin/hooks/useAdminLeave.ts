@@ -24,6 +24,7 @@ import {
 import {
   cancelLeaveRequest,
   decideLeaveRequest,
+  type LeaveCancelResult,
   fetchCompOffBalances,
   fetchCompOffLedger,
   fetchLeaveBalances,
@@ -257,17 +258,38 @@ export interface CancelInput {
   readonly requestNumber: string;
 }
 
-/** Cancel an approved request. The ledger credit is the trigger's job, not ours. */
+/**
+ * A cancel as the shared reason-prompt carries it.
+ *
+ * `decision: "cancelled"` is what tells the one dialog which verb it is running, so approve,
+ * reject and cancel can share a prompt without a second piece of state to keep in step.
+ */
+export interface CancelTarget extends CancelInput {
+  readonly decision: "cancelled";
+}
+
+/**
+ * Cancel an APPROVED request.
+ *
+ * The ledger credit, the comp-off restoration and the attendance recompute are the triggers'
+ * job, not ours — this only records the intent, and `admin_cancel_leave_request` refuses the
+ * cases where recording it would do harm: a locked period, a leave already paid, or a request
+ * that was never approved in the first place.
+ */
 export function useCancelLeaveRequest(
   cancelledBy: string | null,
   onDone?: (input: CancelInput) => void,
-): AuditedMutationResult<LeaveRequest, CancelInput> {
-  return useAuditedMutation<LeaveRequest, CancelInput>({
+): AuditedMutationResult<LeaveCancelResult, CancelInput> {
+  return useAuditedMutation<LeaveCancelResult, CancelInput>({
     minReasonLength: SENSITIVE_REASON_LENGTH,
-    invalidate: [qk.admin.leaveAll()],
+    /*
+      Attendance as well as leave: cancelling an approved day re-derives that day's record,
+      so a roster or calendar left on the old figure would contradict the balance beside it.
+    */
+    invalidate: [qk.admin.leaveAll(), qk.admin.attendanceAll(), qk.attendance.all],
     mutationFn: (input, reason) =>
       cancelLeaveRequest(input.requestId, cancelledBy ?? "", reason),
-    ...(onDone ? { onSuccess: (_data: LeaveRequest, input: CancelInput) => onDone(input) } : {}),
+    ...(onDone ? { onSuccess: (_data: LeaveCancelResult, input: CancelInput) => onDone(input) } : {}),
   });
 }
 

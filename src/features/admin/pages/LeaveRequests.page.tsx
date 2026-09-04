@@ -45,7 +45,9 @@ import {
   LEAVE_ROW_CAP,
   useAdminLeaveRequests,
   useAdminLeaveTypes,
+  useCancelLeaveRequest,
   useDecideLeaveRequest,
+  type CancelTarget,
   useLeaveTypeMap,
   type DecisionInput,
 } from "../hooks/useAdminLeave";
@@ -96,9 +98,22 @@ export default function AdminLeaveRequestsPage() {
     to,
   });
 
-  const prompt = useReasonPrompt<DecisionInput>();
+  /*
+    One prompt for three verbs. `decision` carries which: approve and reject go to
+    `useDecideLeaveRequest`, and "cancel" — only offered on an already-approved row — goes to
+    `useCancelLeaveRequest`, which calls the guarded database function.
+  */
+  const prompt = useReasonPrompt<DecisionInput | CancelTarget>();
   const { ask, close: closePrompt, target, isOpen } = prompt;
   const [done, setDone] = useState<string | null>(null);
+  const isCancel = (x: DecisionInput | CancelTarget | null): x is CancelTarget =>
+    x !== null && x.decision === "cancelled";
+
+  const cancel = useCancelLeaveRequest(profileId, (input) => {
+    closePrompt();
+    setDone(t("admin.leaveReq.done.cancelled", { number: input.requestNumber }));
+  });
+
   const decide = useDecideLeaveRequest(profileId, (input) => {
     closePrompt();
     setDone(
@@ -206,6 +221,37 @@ export default function AdminLeaveRequestsPage() {
         width: "13rem",
         align: "right",
         render: (row) => {
+          /*
+            An approved request is not decidable any more, but it IS cancellable — that is the
+            whole point of this action. Taking back an approved absence releases the day to the
+            balance and re-derives the attendance record, so it asks for a reason like every
+            other consequential change here.
+          */
+          if (row.status === "approved" || row.status === "partially_approved") {
+            if (profileId === null) {
+              return (
+                <span className="text-xs text-muted-foreground">
+                  {t("admin.leaveReq.noSession")}
+                </span>
+              );
+            }
+            return (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={cancel.isPending}
+                onClick={() =>
+                  ask({
+                    requestId: row.id,
+                    requestNumber: row.request_number,
+                    decision: "cancelled",
+                  })
+                }
+              >
+                {t("admin.leaveReq.action.cancel")}
+              </Button>
+            );
+          }
           if (!isDecidable(row.status)) return dash(null);
           if (profileId === null) {
             return (
@@ -249,7 +295,7 @@ export default function AdminLeaveRequestsPage() {
         },
       },
     ],
-    [labels.data, typeMap, profileId, decide.isPending, ask],
+    [labels.data, typeMap, profileId, decide.isPending, cancel.isPending, ask],
   );
 
   return (
@@ -340,27 +386,43 @@ export default function AdminLeaveRequestsPage() {
       <ReasonDialog
         open={isOpen}
         title={
-          target?.decision === "rejected"
-            ? t("admin.leaveReq.dialog.rejectTitle", { number: target.requestNumber })
-            : t("admin.leaveReq.dialog.approveTitle", {
-                number: target?.requestNumber ?? "",
-              })
+          isCancel(target)
+            ? t("admin.leaveReq.dialog.cancelTitle", { number: target.requestNumber })
+            : target?.decision === "rejected"
+              ? t("admin.leaveReq.dialog.rejectTitle", { number: target.requestNumber })
+              : t("admin.leaveReq.dialog.approveTitle", {
+                  number: target?.requestNumber ?? "",
+                })
         }
-        description={t("admin.leaveReq.dialog.description")}
+        description={
+          isCancel(target)
+            ? t("admin.leaveReq.dialog.cancelDescription")
+            : t("admin.leaveReq.dialog.description")
+        }
         actorName={actorName}
         minLength={SENSITIVE_REASON_LENGTH}
         confirmLabel={
-          target?.decision === "rejected"
-            ? t("admin.leaveReq.action.reject")
-            : t("admin.leaveReq.action.approve")
+          isCancel(target)
+            ? t("admin.leaveReq.action.cancel")
+            : target?.decision === "rejected"
+              ? t("admin.leaveReq.action.reject")
+              : t("admin.leaveReq.action.approve")
         }
-        pending={decide.isPending}
-        errorMessage={decide.userMessage}
+        pending={decide.isPending || cancel.isPending}
+        errorMessage={decide.userMessage ?? cancel.userMessage}
         onConfirm={(reason) => {
-          if (target !== null) decide.save(target, reason);
+          if (target === null) return;
+          /*
+            The refusals from `admin_cancel_leave_request` — a locked period, a leave already
+            in payroll — arrive as `cancel.userMessage` and are shown in this dialog rather
+            than swallowed, because each one names something the administrator must go and do.
+          */
+          if (isCancel(target)) cancel.save(target, reason);
+          else decide.save(target, reason);
         }}
         onCancel={() => {
           decide.reset();
+          cancel.reset();
           closePrompt();
         }}
       />

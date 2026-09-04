@@ -208,6 +208,21 @@ export function sessionsFromPunches<P extends SessionPunch>(
       break;
     }
   }
+  /*
+    ── A RETURN CANNOT HAPPEN BEFORE THE PERSON HAS LEFT ──────────────────────
+    If the split lands on index 1, the working session keeps only the arrival and the day's
+    ONE other scan becomes a "return" — so the shift never closes, both halves read "still
+    in", and the breakdown totals zero beside a Worked column saying ten hours.
+
+    A guard scanning 07:00 and 18:52 against a 09:00-18:00 shift did exactly that: 18:52 is
+    fifty-two minutes past the end, beyond the grace, so it was read as coming back. He never
+    left. It is his departure, late.
+
+    Whatever the clock says, a second session cannot begin until the first has an out — so
+    the earliest a return may start is the third scan, and the second scan always closes the
+    working day.
+  */
+  if (split < 2) split = Math.min(2, punches.length);
 
   const working = punches.slice(0, split);
   const returns = punches.slice(split);

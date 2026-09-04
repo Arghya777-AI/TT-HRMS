@@ -355,3 +355,37 @@ describe("the shift window as the database actually sends it", () => {
     expect(sessions.map((s) => s.kind)).toEqual(["shift", "extra"]);
   });
 });
+
+describe("a late departure is not a return", () => {
+  const GRD = { startTime: "09:00:00", endTime: "18:00:00" } as const;
+
+  it("closes a guard's long day on his own last scan", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. Rupak Singh, S19: 07:00 and 18:52 on a 09:00-18:00
+      shift. 18:52 is fifty-two minutes past the end, beyond the grace, so it was read as a
+      RETURN — leaving the shift with only an arrival. Both halves rendered "still in" and
+      the breakdown totalled 0h 00m beside a Worked column reading 10h 52m.
+    */
+    const sessions = sessionsFromPunches(at("07:00", "18:52"), GRD);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.kind).toBe("shift");
+    expect(sessions[0]?.outPunch?.at).toBe("18:52");
+    expect(sessions[0]?.minutes).toBe(712);
+    expect(sessionTotals(sessions).open).toBe(false);
+  });
+
+  it("still lets a THIRD scan be a genuine return", () => {
+    // The rule only guarantees the working day can close; it does not swallow real returns.
+    const sessions = sessionsFromPunches(at("07:00", "18:52", "20:30", "21:30"), GRD);
+    expect(sessions.map((s) => s.kind)).toEqual(["shift", "extra"]);
+    expect(sessions[0]?.outPunch?.at).toBe("18:52");
+    expect(sessions[1]?.inPunch.at).toBe("20:30");
+  });
+
+  it("leaves a single scan open rather than inventing an out", () => {
+    const sessions = sessionsFromPunches(at("07:00"), GRD);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.outPunch).toBeNull();
+    expect(sessionTotals(sessions).open).toBe(true);
+  });
+});

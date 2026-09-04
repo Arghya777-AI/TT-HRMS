@@ -1703,6 +1703,14 @@ export const en = catalogue({
     "Recorded from the web or a phone outside the employee's working hours. The hours show on their day already; they are not counted in the monthly total until you approve them.",
   "admin.offHours.empty.title": "Nothing waiting",
   "admin.offHours.empty.hint": "Off-hours web punches appear here for a decision. Gate scans never do.",
+  /*
+    The panel collapses itself when nothing is waiting — it is a queue, and an empty queue
+    should not take up the top third of the screen. These label the header's toggle so it
+    is still reachable, and so a screen reader is told what the chevron does.
+  */
+  "admin.offHours.toggle.expand": "Show the empty queue",
+  "admin.offHours.toggle.collapse": "Hide the queue",
+  "admin.offHours.collapsedEmpty": "Nothing waiting",
   "admin.offHours.viaWeb": "Web or phone",
   "admin.offHours.noLocation": "no location recorded",
   "admin.offHours.venueUnset": "venue location not set",

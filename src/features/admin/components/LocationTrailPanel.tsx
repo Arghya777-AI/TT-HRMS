@@ -25,7 +25,7 @@ import { qk } from "@/shared/api/keys";
 import { shouldRetryQuery } from "@/shared/api/query";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { Notice } from "./Notice";
-import { fmtDateTime } from "@/lib/datetime";
+import { fmtTime } from "@/lib/datetime";
 import { formatDistance } from "@/lib/venueDistance";
 import { formatCoordinates, openStreetMapUrl, roundAccuracy } from "@/lib/punchPlace";
 import { t } from "@/shared/i18n/en";
@@ -59,8 +59,15 @@ function PingRow({ ping }: { ping: LocationPing }) {
 
   return (
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b py-1.5 last:border-b-0">
+      {/*
+        `fmtTime`, not `fmtDateTime(...).slice(-5)`. That slice was written to take the
+        trailing "HH:MM" off the full instant, but `fmtDateTime` renders
+        "25-Jul-2026 09:05 IST" — so the last five characters are "5 IST", and every point
+        on this panel displayed a single digit of the minute followed by the timezone.
+        Reported as "what is this timing?", which is the only sane reaction to "3 IST".
+      */}
       <span className="num w-16 shrink-0 text-sm tabular-nums">
-        {fmtDateTime(ping.captured_at).slice(-5)}
+        {fmtTime(ping.captured_at)}
       </span>
 
       {fix === null ? (
@@ -160,13 +167,22 @@ export function LocationTrailPanel({ employeeId, istDate }: LocationTrailPanelPr
         ) : (
           <>
             <p className="mt-3 flex flex-wrap items-baseline gap-x-3 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <Navigation className="size-3" aria-hidden />
-                {t("admin.trail.window", {
-                  from: fmtDateTime(summary.firstAt ?? "").slice(-5),
-                  to: fmtDateTime(summary.lastAt ?? "").slice(-5),
-                })}
-              </span>
+              {/*
+                Rendered only when both ends exist, rather than passed through `?? ""` to
+                satisfy the type. An empty string reaches `new Date("")`, which is an Invalid
+                Date, and the window would have read "NaN:NaN" — the same class of mistake as
+                the slice this replaced, where a formatting shortcut produced confident
+                nonsense instead of nothing.
+              */}
+              {summary.firstAt !== null && summary.lastAt !== null ? (
+                <span className="inline-flex items-center gap-1">
+                  <Navigation className="size-3" aria-hidden />
+                  {t("admin.trail.window", {
+                    from: fmtTime(summary.firstAt),
+                    to: fmtTime(summary.lastAt),
+                  })}
+                </span>
+              ) : null}
               {summary.outsideShift > 0 ? (
                 <span>{t("admin.trail.outsideShift", { n: String(summary.outsideShift) })}</span>
               ) : null}

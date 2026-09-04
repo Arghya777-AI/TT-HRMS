@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { COARSE_ABOVE_M, summariseTrail, type LocationPing } from "./api/locationTrail.api";
+import { fmtDateTime, fmtTime } from "@/lib/datetime";
 
 const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8");
 const strip = (s: string) =>
@@ -193,5 +194,50 @@ describe("a replayed fix is marked, not disguised", () => {
     const s = summariseTrail([ping({ captured_offline: true, accuracy_m: 8, distance_m: 4064 })]);
     expect(s.coarse).toBe(0);
     expect(s.furthestMetres).toBe(4064);
+  });
+});
+
+describe("the clock on each point reads as a time", () => {
+  /*
+    ── REPORTED AS "WHAT IS THIS TIMING?" ──────────────────────────────────────
+    Every point rendered `fmtDateTime(captured_at).slice(-5)`. The slice was meant to lift the
+    trailing "HH:MM" off the full instant, but `fmtDateTime` returns
+    "25-Jul-2026 09:05 IST" — so the last five characters are one digit of the MINUTE plus the
+    timezone. The panel showed "3 IST", and the window above it read "3 IST to 3 IST".
+
+    These two assertions are the fix and the bug, side by side, so nobody re-derives the
+    shortcut later.
+  */
+  const at = "2026-09-03T12:00:00.000Z"; // 17:30 IST
+
+  it("formats the wall clock with the helper that exists for it", () => {
+    expect(fmtTime(at)).toBe("17:30");
+  });
+
+  it("proves the old slice could not have worked", () => {
+    // Not a stylistic preference — it produced a different string entirely.
+    expect(fmtDateTime(at).slice(-5)).toBe("0 IST");
+    expect(fmtDateTime(at).slice(-5)).not.toBe(fmtTime(at));
+  });
+
+  it("no longer slices a formatted instant anywhere on the panel", () => {
+    expect(panel).not.toContain("slice(-5)");
+    expect(panel).not.toContain("fmtDateTime");
+    expect(panel).toContain("fmtTime(ping.captured_at)");
+  });
+
+  it("says IST once for the window, not once per end", () => {
+    const keys = read("src", "shared", "i18n", "keys", "claim-evidence.ts");
+    expect(keys).toContain('"admin.trail.window": "{from} to {to} IST"');
+  });
+
+  it("renders no window at all rather than a NaN one", () => {
+    /*
+      `firstAt`/`lastAt` are nullable and were passed through `?? ""`, which reaches
+      `new Date("")` — an Invalid Date formatting as "NaN:NaN". Confident nonsense is the
+      same defect as the slice, so both ends are checked instead.
+    */
+    expect(panel).toContain("summary.firstAt !== null && summary.lastAt !== null");
+    expect(panel).not.toContain('firstAt ?? ""');
   });
 });

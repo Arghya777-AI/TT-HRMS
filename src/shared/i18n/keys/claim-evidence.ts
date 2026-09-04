@@ -345,7 +345,7 @@ export const keysLocationTrail = {
     "Recorded only while the app was open — a phone cannot report its position in the background. A gap means the app was closed, not that the person was elsewhere.",
   "admin.trail.empty": "No points for this day. The app was not open, or location was not granted.",
   "admin.trail.count": "{n} point(s)",
-  "admin.trail.window": "{from} to {to}",
+  "admin.trail.window": "{from} to {to} IST",
   "admin.trail.furthest": "furthest {d} from the venue",
   "admin.trail.fromVenue": "{d} away",
   "admin.trail.accuracy": "±{m} m",

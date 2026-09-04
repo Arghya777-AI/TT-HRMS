@@ -627,7 +627,14 @@ function Group({
                 <td className="px-3 py-2.5"><StateCell row={row} /></td>
                 <td className="px-3 py-2.5 tabular-nums">
                   {row.firstInHm ?? <span className="text-muted-foreground">—</span>}
-                  {row.lateMinutes > 0 ? (
+                  {/*
+                    `isLate`, not `lateMinutes > 0`. The engine measures from shift start and
+                    lets GRACE decide whether it counts, so a 09:31 scan against a 09:30 shift
+                    stores one minute and is NOT late. Rendering the minutes announced
+                    "+0h 01m late" over somebody who was on time by the venue's own rule — and
+                    a warning nobody has earned is worse than no warning at all.
+                  */}
+                  {row.isLate && row.lateMinutes > 0 ? (
                     <span className="ml-1.5 text-[11px] text-warning">
                       {t("admin.roster.lateBy", { value: fmtDurationHm(row.lateMinutes) })}
                     </span>

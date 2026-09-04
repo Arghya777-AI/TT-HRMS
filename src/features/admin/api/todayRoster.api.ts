@@ -82,6 +82,16 @@ export interface RosterRow {
    */
   readonly varianceMinutes: number | null;
   readonly lateMinutes: number;
+  /**
+   * Whether the day is actually late, which is NOT `lateMinutes > 0`.
+   *
+   * The engine measures lateness from shift start and lets GRACE decide whether it counts —
+   * `is_late = late_minutes > grace_in_minutes` — so a scan at 09:31 against a 09:30 shift
+   * with ten minutes of grace stores one minute and is not late. The roster was rendering the
+   * minutes and ignoring the verdict, so it announced "+0h 01m late" for somebody who was on
+   * time by the venue's own rule.
+   */
+  readonly isLate: boolean;
   readonly punchCount: number;
   /**
    * The shift these punches are read against, or null where no shift is assigned.
@@ -244,6 +254,8 @@ const dayRosterRowSchema = z.object({
   last_out_at: z.string().nullable(),
   total_worked_minutes: z.number().int(),
   late_minutes: z.number().int(),
+  /** The engine's verdict AFTER grace, not a re-derivation of it. */
+  is_late: z.boolean(),
   shift_id: z.string().uuid().nullable(),
 });
 
@@ -337,6 +349,7 @@ interface NormalisedRow {
   readonly last_out_at: string | null;
   readonly worked_minutes: number;
   readonly late_minutes: number;
+  readonly is_late: boolean;
   readonly shift_id: string | null;
 }
 
@@ -367,7 +380,7 @@ export async function fetchTodayRoster(
         columns:
           "employee_id, employee_code, display_name, department_name, status, punch_count, " +
           "first_in_hm, last_out_hm, first_in_at, last_out_at, total_worked_minutes, " +
-          "late_minutes, shift_id",
+          "late_minutes, is_late, shift_id",
         filters: [eq("ist_date", date)],
         // The venue is under a hundred people; a cap above that is a guard, not a page.
         limit: 500,
@@ -502,6 +515,7 @@ export async function fetchTodayRoster(
         last_out_at: row.last_out_at,
         worked_minutes: row.total_worked_minutes,
         late_minutes: row.late_minutes,
+        is_late: row.is_late,
         shift_id: row.shift_id,
       },
   );
@@ -538,6 +552,7 @@ export async function fetchTodayRoster(
       expectedMinutes: expected,
       varianceMinutes: expected > 0 ? row.worked_minutes - expected : null,
       lateMinutes: row.late_minutes,
+      isLate: row.is_late,
       punchCount: row.punch_count,
       shiftWindow: windowByShift.get(row.shift_id ?? "") ?? null,
       punches: punchesByEmployee.get(row.employee_id) ?? [],

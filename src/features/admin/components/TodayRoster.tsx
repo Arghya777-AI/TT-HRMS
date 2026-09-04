@@ -31,6 +31,7 @@ import { useNavigate } from "react-router-dom";
 import { CalendarOff, Globe, ScanFace, UserCheck, UserX } from "lucide-react";
 import { formatDistance } from "@/lib/venueDistance";
 import { formatElapsed } from "../liveWorked";
+import { sessionsFromPunches, sessionTotals } from "../punchSessions";
 import { workedDisplay } from "../workedDisplay";
 import { useTick } from "../hooks/useTick";
 import { openStreetMapUrl } from "@/lib/punchPlace";
@@ -196,78 +197,146 @@ function Blocks({
  * The chips wrap rather than scroll. A day with eight punches is unusual and worth seeing
  * whole; a horizontal scrollbar inside a table cell is where information goes to hide.
  */
+/**
+ * One scan, rendered as a time that carries its own evidence.
+ *
+ * The icon says which door it came through, the number beside a web punch says how far from
+ * the venue, and the star says an administrator has still to accept it. The hover text spells
+ * all of that out, and a punch with coordinates links to the map.
+ */
+function PunchChip({ punch }: { punch: PunchOnRoster | null }): React.JSX.Element {
+  if (punch === null) return <span className="text-muted-foreground">—</span>;
+
+  const away = punch.via === "web" && punch.distance !== null && !punch.distance.withinFence;
+  const href =
+    punch.latitude === null || punch.longitude === null
+      ? null
+      : openStreetMapUrl({
+        latitude: punch.latitude,
+        longitude: punch.longitude,
+        accuracyMetres: punch.accuracyMetres,
+      });
+
+  const title = [
+    punch.via === "web" ? t("admin.roster.loc.viaWeb") : t("admin.roster.loc.viaGate"),
+    punch.distance === null
+      ? t("admin.roster.loc.noVenue")
+      : t("admin.roster.loc.away", { d: formatDistance(punch.distance.metres) }),
+    punch.accuracyMetres === null
+      ? null
+      : t("admin.roster.loc.accuracy", { m: String(Math.round(punch.accuracyMetres)) }),
+    punch.awaitingApproval ? t("admin.roster.loc.awaiting") : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
+
+  const body = (
+    <>
+      {punch.via === "web" ? (
+        <Globe className="size-3 shrink-0" aria-hidden />
+      ) : (
+        <ScanFace className="size-3 shrink-0" aria-hidden />
+      )}
+      <span className="tabular-nums">{punch.at}</span>
+      {punch.via === "web" && punch.distance !== null ? (
+        <span className="opacity-80">{formatDistance(punch.distance.metres)}</span>
+      ) : null}
+      {punch.awaitingApproval ? <span className="text-warning">*</span> : null}
+    </>
+  );
+
+  const chip = cn(
+    "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px]",
+    away ? "border-warning/50 bg-warning/10 text-warning" : "text-muted-foreground",
+  );
+
+  return href === null ? (
+    <span className={chip} title={title}>{body}</span>
+  ) : (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      // The row itself opens the person, so a map link must not also trigger that.
+      onClick={(e) => e.stopPropagation()}
+      className={cn(chip, "underline decoration-dotted underline-offset-2 hover:decoration-solid")}
+      title={title}
+    >
+      {body}
+    </a>
+  );
+}
+
+/**
+ * The day's scans as IN and OUT columns, one row per session, with the arithmetic.
+ *
+ * Four chips in a row could not say which scan was an arrival, which a departure, or which
+ * pair was the shift and which was somebody returning at night. `sessionsFromPunches` pairs
+ * them the way the attendance engine does, so the figures here add up to the worked total in
+ * the next column rather than being a second opinion about it.
+ *
+ * The sum is written out — 7h 50m + 1h 05m = 8h 55m — and only when there IS a second session.
+ * A single pair is just a day, and spelling out "7h 50m = 7h 50m" would be noise on every row.
+ */
 function PunchesCell({ punches }: { punches: readonly PunchOnRoster[] }): React.JSX.Element {
-  if (punches.length === 0) return <span className="text-muted-foreground">—</span>;
+  const sessions = sessionsFromPunches(punches);
+  if (sessions.length === 0) return <span className="text-muted-foreground">—</span>;
+  const totals = sessionTotals(sessions);
 
   return (
-    <span className="flex flex-wrap gap-1">
-      {punches.map((punch, i) => {
-        const away = punch.via === "web" && punch.distance !== null && !punch.distance.withinFence;
-        const href =
-          punch.latitude === null || punch.longitude === null
-            ? null
-            : openStreetMapUrl({
-              latitude: punch.latitude,
-              longitude: punch.longitude,
-              accuracyMetres: punch.accuracyMetres,
-            });
+    <div className="min-w-[15rem]">
+      <table className="w-full border-separate border-spacing-x-2 border-spacing-y-0.5 text-[11px]">
+        <thead>
+          <tr className="text-left uppercase tracking-wide text-muted-foreground">
+            <th scope="col" className="font-medium">&nbsp;</th>
+            <th scope="col" className="font-medium">{t("admin.roster.sess.in")}</th>
+            <th scope="col" className="font-medium">{t("admin.roster.sess.out")}</th>
+            <th scope="col" className="text-right font-medium">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map((s, i) => (
+            <tr key={`${s.inPunch.at}-${i}`}>
+              <th
+                scope="row"
+                className={cn(
+                  "whitespace-nowrap text-left font-medium",
+                  s.kind === "extra" ? "text-success" : "text-muted-foreground",
+                )}
+              >
+                {t(s.kind === "extra" ? "admin.roster.sess.extra" : "admin.roster.sess.shift")}
+              </th>
+              <td><PunchChip punch={s.inPunch} /></td>
+              <td><PunchChip punch={s.outPunch} /></td>
+              <td className="whitespace-nowrap text-right tabular-nums">
+                {s.minutes === null ? (
+                  <span className="text-muted-foreground">{t("admin.roster.sess.open")}</span>
+                ) : (
+                  <span className={s.kind === "extra" ? "font-medium text-success" : undefined}>
+                    {fmtDurationHm(s.minutes)}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-        const chip = cn(
-          "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px]",
-          away ? "border-warning/50 bg-warning/10 text-warning" : "text-muted-foreground",
-        );
-
-        const title = [
-          punch.via === "web" ? t("admin.roster.loc.viaWeb") : t("admin.roster.loc.viaGate"),
-          punch.distance === null
-            ? t("admin.roster.loc.noVenue")
-            : t("admin.roster.loc.away", { d: formatDistance(punch.distance.metres) }),
-          punch.accuracyMetres === null
-            ? null
-            : t("admin.roster.loc.accuracy", { m: String(Math.round(punch.accuracyMetres)) }),
-          punch.awaitingApproval ? t("admin.roster.loc.awaiting") : null,
-        ]
-          .filter((part): part is string => part !== null)
-          .join(" · ");
-
-        const body = (
-          <>
-            {punch.via === "web" ? (
-              <Globe className="size-3 shrink-0" aria-hidden />
-            ) : (
-              <ScanFace className="size-3 shrink-0" aria-hidden />
-            )}
-            <span className="tabular-nums">{punch.at}</span>
-            {/* Only a web punch gets a number — see the note above. */}
-            {punch.via === "web" && punch.distance !== null ? (
-              <span className="opacity-80">{formatDistance(punch.distance.metres)}</span>
-            ) : null}
-            {/* Which punch is waiting, not just that the day has one. */}
-            {punch.awaitingApproval ? <span className="text-warning">*</span> : null}
-          </>
-        );
-
-        // Keyed on time AND index: two punches can share a minute, and the index alone would
-        // reshuffle chips if the list ever arrived unsorted.
-        const key = `${punch.at}-${i}`;
-        return href === null ? (
-          <span key={key} className={chip} title={title}>{body}</span>
-        ) : (
-          <a
-            key={key}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            // The row itself opens the person, so a map link must not also trigger that.
-            onClick={(e) => e.stopPropagation()}
-            className={cn(chip, "underline decoration-dotted underline-offset-2 hover:decoration-solid")}
-            title={title}
-          >
-            {body}
-          </a>
-        );
-      })}
-    </span>
+      {/*
+        The sum, in the reader's own words. Rendered only for a day with a second session —
+        that is the day the number in the next column needs explaining.
+      */}
+      {totals.hasExtra ? (
+        <p className="mt-1 border-t pt-1 text-right text-[11px] tabular-nums text-muted-foreground">
+          {fmtDurationHm(totals.shiftMinutes)}
+          <span className="mx-1">+</span>
+          <span className="text-success">{fmtDurationHm(totals.extraMinutes)}</span>
+          <span className="mx-1">=</span>
+          <span className="font-medium text-foreground">{fmtDurationHm(totals.totalMinutes)}</span>
+          {totals.open ? <span className="ml-1">{t("admin.roster.sess.open")}</span> : null}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

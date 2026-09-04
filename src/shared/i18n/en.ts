@@ -1693,7 +1693,22 @@ export const en = catalogue({
     them still could not say where the OUT punch happened — they described one fix per person.
     Each chip now carries its own time, method and distance.
   */
-  "admin.roster.col.punches": "Punches · where",
+  "admin.roster.col.punches": "Punches · in and out",
+  /*
+    ── THE BREAKDOWN INSIDE THE PUNCHES CELL ─────────────────────────────────
+    Four chips in a row could not say which scan was an arrival, which a departure, or which
+    pair was the shift and which was somebody coming back at night. These label a small
+    two-column table — In and Out — with one row per session and the arithmetic spelled out,
+    so "8h 55m" beside it stops being a number the reader has to take on trust.
+  */
+  "admin.roster.sess.in": "In",
+  "admin.roster.sess.out": "Out",
+  "admin.roster.sess.shift": "Shift",
+  "admin.roster.sess.extra": "Extra",
+  /** Somebody is still inside: the pair has no closing scan yet. */
+  "admin.roster.sess.open": "still in",
+  /** The sum, written out: 7h 50m + 1h 05m = 8h 55m. */
+  "admin.roster.sess.total": "Total",
   "admin.roster.loc.viaGate": "At the gate camera",
   "admin.roster.loc.viaWeb": "From the web or a phone",
   "admin.roster.loc.accuracy": "accurate to about {m} m",

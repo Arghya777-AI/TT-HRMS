@@ -187,6 +187,36 @@ describe("where an administrator can reach it", () => {
   });
 });
 
+describe("it opens read-only, and Cancel is a second press", () => {
+  it("starts on the view step every time it opens", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. Clicking a name on a calendar means "show me this".
+      Opening straight into a form with every box already ticked is how somebody cancels a
+      leave they only meant to read.
+    */
+    expect(dialog).toContain('const [step, setStep] = useState<"view" | "cancel">("view");');
+    expect(dialog).toContain('setStep("view");');
+  });
+
+  it("shows no checkboxes while you are only looking", () => {
+    expect(dialog).toContain('{step === "cancel" ? (\n                        <input');
+  });
+
+  it("asks for no reason and shows no warning until Cancel is pressed", () => {
+    expect(dialog).toContain('{step === "cancel" ? (\n            <div className="mt-4">');
+    expect(dialog).toContain('{step === "cancel" && needsAck ? (');
+  });
+
+  it("offers Cancel as the way out of read-only, and Back as the way in", () => {
+    expect(dialog).toContain('onClick={() => setStep("cancel")}');
+    expect(dialog).toContain('onClick={() => setStep("view")}');
+  });
+
+  it("cannot start a cancellation on a leave with nothing left to cancel", () => {
+    expect(dialog).toContain("disabled={cancellable.length === 0}");
+  });
+});
+
 describe("picking which days", () => {
   it("ticks every cancellable day, because the whole booking is the ordinary case", () => {
     expect(dialog).toContain("setPicked(cancellable.map((d) => d.leave_date));");

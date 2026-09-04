@@ -3928,6 +3928,15 @@ export const en = catalogue({
   "adminLeave.cancelDays.body":
     "Pick the days to cancel from {number}. They go back to the balance and those dates "
     + "become working days again. Anything you leave ticked off stays approved.",
+  /*
+    The dialog opens READ-ONLY: clicking a name on a calendar means "show me this", not "let
+    me start unpicking it". `days` heads the list while you are looking; `pick` replaces it
+    once Cancel has been pressed and the boxes appear.
+  */
+  "adminLeave.cancelDays.days": "Days in this leave",
+  "adminLeave.cancelDays.totals": "{days} day(s) of balance · {n} still approved",
+  "adminLeave.cancelDays.startCancel": "Cancel this leave",
+  "adminLeave.cancelDays.back": "Back",
   "adminLeave.cancelDays.pick": "Days in this request",
   "adminLeave.cancelDays.selectAll": "Select all",
   "adminLeave.cancelDays.selectNone": "Clear",

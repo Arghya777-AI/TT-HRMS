@@ -1,5 +1,13 @@
 /**
- * Cancel an approved leave — all of it, or the days you pick.
+ * Look at a leave, then cancel all of it or the days you pick.
+ *
+ * ── TWO STEPS, AND THE FIRST ONE IS READ-ONLY ────────────────────────────────
+ * Clicking a name on a calendar means "show me this", not "let me start unpicking it". The
+ * first step is therefore the booking as it stands — every day, the type, what it cost — with
+ * nothing checked and nothing to submit. Only pressing Cancel moves to the picker.
+ *
+ * Opening straight into a form full of ticked boxes is how somebody cancels a leave they only
+ * meant to read.
  *
  * ── WHY A DAY PICKER AND NOT A CONFIRM ───────────────────────────────────────
  * A three-day booking is rarely wrong in all three. Somebody asks for Monday to Wednesday,
@@ -62,6 +70,8 @@ export function CancelLeaveDaysDialog({
     That is not a thing to do by reflex, so it must be acknowledged before the button works.
   */
   const [acknowledged, setAcknowledged] = useState(false);
+  /** "view" is the booking as it stands; "cancel" is the picker. Always opens on "view". */
+  const [step, setStep] = useState<"view" | "cancel">("view");
 
   const cancellable = useMemo(
     () => (days.data ?? []).filter((d) => d.status === "approved"),
@@ -78,6 +88,7 @@ export function CancelLeaveDaysDialog({
     setReason("");
     // Re-armed for every request: an acknowledgement is for the days in front of you.
     setAcknowledged(false);
+    setStep("view");
   }, [cancellable, requestId]);
 
   const cancel = useCancelLeaveDays((input, result) => {
@@ -157,8 +168,9 @@ export function CancelLeaveDaysDialog({
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {t("adminLeave.cancelDays.pick")}
+                  {t(step === "view" ? "adminLeave.cancelDays.days" : "adminLeave.cancelDays.pick")}
                 </span>
+                {step === "cancel" ? (
                 <Button
                   type="button"
                   size="sm"
@@ -171,10 +183,11 @@ export function CancelLeaveDaysDialog({
                     )
                   }
                 >
-                  {picked.length === cancellable.length
-                    ? t("adminLeave.cancelDays.selectNone")
-                    : t("adminLeave.cancelDays.selectAll")}
-                </Button>
+                    {picked.length === cancellable.length
+                      ? t("adminLeave.cancelDays.selectNone")
+                      : t("adminLeave.cancelDays.selectAll")}
+                  </Button>
+                ) : null}
               </div>
 
               <ul className="divide-y rounded-lg border">
@@ -183,14 +196,17 @@ export function CancelLeaveDaysDialog({
                   const free = !d.is_counted;
                   return (
                     <li key={d.id} className="flex items-center gap-3 px-3 py-2">
-                      <input
-                        type="checkbox"
-                        id={`day-${d.id}`}
-                        checked={picked.includes(d.leave_date)}
-                        disabled={done}
-                        onChange={() => toggle(d.leave_date)}
-                        className="size-4 shrink-0 accent-destructive"
-                      />
+                      {/* Nothing to tick while you are only looking at it. */}
+                      {step === "cancel" ? (
+                        <input
+                          type="checkbox"
+                          id={`day-${d.id}`}
+                          checked={picked.includes(d.leave_date)}
+                          disabled={done}
+                          onChange={() => toggle(d.leave_date)}
+                          className="size-4 shrink-0 accent-destructive"
+                        />
+                      ) : null}
                       <label
                         htmlFor={`day-${d.id}`}
                         className={cn(
@@ -224,10 +240,18 @@ export function CancelLeaveDaysDialog({
               </ul>
 
               <p className="mt-2 text-xs text-muted-foreground">
-                {t("adminLeave.cancelDays.releasing", { days: releasing.toFixed(2) })}
+                {step === "view"
+                  ? t("adminLeave.cancelDays.totals", {
+                    days: (days.data ?? [])
+                      .reduce((sum, d) => sum + (d.is_counted ? Number(d.day_value) : 0), 0)
+                      .toFixed(2),
+                    n: String(cancellable.length),
+                  })
+                  : t("adminLeave.cancelDays.releasing", { days: releasing.toFixed(2) })}
               </p>
             </div>
 
+            {step === "cancel" ? (
             <div className="mt-4">
               <label htmlFor="cancel-days-reason" className="block text-sm font-medium">
                 {t("adminLeave.cancelDays.reasonLabel")}
@@ -252,6 +276,7 @@ export function CancelLeaveDaysDialog({
                 })}
               </p>
             </div>
+            ) : null}
 
             {/*
               ── THE WARNING, AND THE OK ─────────────────────────────────────
@@ -260,7 +285,7 @@ export function CancelLeaveDaysDialog({
               because the administrator may have ticked a range without noticing that two of
               them were last week.
             */}
-            {needsAck ? (
+            {step === "cancel" && needsAck ? (
               <div className="mt-4 rounded-md border border-warning/50 bg-warning/10 p-3">
                 <p className="flex items-start gap-2 text-xs font-medium text-foreground">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
@@ -296,28 +321,53 @@ export function CancelLeaveDaysDialog({
             ) : null}
 
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={!canSubmit}
-                onClick={() => {
-                  if (requestId === null) return;
-                  cancel.save({ requestId, requestNumber, dates: picked }, reason.trim());
-                }}
-              >
-                {cancel.isPending ? (
-                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                ) : null}
-                {picked.length === cancellable.length && cancellable.length > 0
-                  ? t("adminLeave.cancelDays.confirmAll")
-                  : t("adminLeave.cancelDays.confirmSome", { n: String(picked.length) })}
-              </Button>
-              <Dialog.Close asChild>
-                <Button type="button" variant="ghost" size="sm">
-                  {t("adminLeave.cancelDays.keep")}
-                </Button>
-              </Dialog.Close>
+              {step === "view" ? (
+                <>
+                  {/*
+                    The way OUT of read-only. Destructive styling starts here rather than on
+                    the row that opened the dialog: clicking a name on a calendar is a look,
+                    and only this is a decision.
+                  */}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={cancellable.length === 0}
+                    onClick={() => setStep("cancel")}
+                  >
+                    {t("adminLeave.cancelDays.startCancel")}
+                  </Button>
+                  <Dialog.Close asChild>
+                    <Button type="button" variant="ghost" size="sm">
+                      {t("adminLeave.cancelDays.close")}
+                    </Button>
+                  </Dialog.Close>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={!canSubmit}
+                    onClick={() => {
+                      if (requestId === null) return;
+                      cancel.save({ requestId, requestNumber, dates: picked }, reason.trim());
+                    }}
+                  >
+                    {cancel.isPending ? (
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                    ) : null}
+                    {picked.length === cancellable.length && cancellable.length > 0
+                      ? t("adminLeave.cancelDays.confirmAll")
+                      : t("adminLeave.cancelDays.confirmSome", { n: String(picked.length) })}
+                  </Button>
+                  {/* Back to looking, without closing and losing the fetch. */}
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setStep("view")}>
+                    {t("adminLeave.cancelDays.back")}
+                  </Button>
+                </>
+              )}
             </div>
+
           </StateBoundary>
         </Dialog.Content>
       </Dialog.Portal>

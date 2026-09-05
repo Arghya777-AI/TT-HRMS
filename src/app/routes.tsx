@@ -15,6 +15,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import PageStub from "@/shared/ui/PageStub";
 import { PAGE_REGISTRY } from "@/features/registry";
+import { lazyWithRecovery } from "./lazyWithRecovery";
 import { ROUTES, REDIRECTS, type RouteMeta } from "./route-manifest";
 import { AppShell } from "./shell/AppShell";
 import { SectionNav } from "./shell/SectionNav";
@@ -49,7 +50,12 @@ function RouteFallback() {
 function useRouteElement(meta: RouteMeta): ComponentType {
   return useMemo(() => {
     const loader = PAGE_REGISTRY[meta.path];
-    if (loader) return lazy(loader);
+    /*
+      A deploy renames every chunk, so a tab opened before it holds a module graph naming
+      files this deployment no longer serves. `lazyWithRecovery` reloads once on that failure
+      rather than leaving somebody on a dead page they cannot fix.
+    */
+    if (loader) return lazyWithRecovery(loader);
     const Stub = () => (
       <PageStub icon={meta.icon} title={meta.title} subtitle={meta.subtitle} hint={meta.hint} phase={meta.phase} />
     );

@@ -115,6 +115,24 @@ const DEFAULT_TASKS: readonly Task[] = ["verify_chain", "seal", "orphans", "part
 /** `verifyDevice` tolerance (auth.ts DEVICE_MAX_SKEW_SECONDS); past it a kiosk cannot punch at all. */
 const MAX_DEVICE_SKEW_SECONDS = 120;
 
+/*
+  HOW LONG A SILENT GATE IS STILL NEWS.
+
+  A device that stopped reporting an hour ago is an incident. One that stopped three weeks ago
+  is a decommissioned tablet, and saying so again every hour is not information — it is the
+  reason nobody reads this feed.
+
+  Measured on 5 Sep 2026: `public.notifications` held 58,762 rows and 57,803 of them were
+  KIOSK_OFFLINE, addressed to administrators who by then had 17,890 unread apiece. Eighteen
+  devices were registered, seventeen of them abandoned test registrations, and each was
+  re-reported every hour to every admin for six weeks.
+
+  So the notification now describes a TRANSITION and stops. `system_health` is unaffected and
+  still carries every device's true state on every run, so /admin/kiosk keeps showing a gate
+  as down for as long as it is down.
+*/
+const OFFLINE_ALERT_GIVE_UP_MINUTES = 7 * 24 * 60;
+
 /** Fallback when `settings['kiosk.offline_alert_minutes']` is absent. */
 const DEFAULT_OFFLINE_ALERT_MINUTES = 10;
 
@@ -890,17 +908,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
               }. Punches may be queuing on the tablet.`
               : `Kiosk ${device.device_code} clock is ${skew}s off; over ${MAX_DEVICE_SKEW_SECONDS}s every punch is refused.`,
           });
-          if (offline) {
-            const p = istParts(nowIso());
+          /*
+            Still reported to `system_health` above either way — this only decides whether a
+            person is told. `silent === null` is a device that has NEVER checked in: it is not
+            a gate that went down, it is a registration nobody completed, so it never notifies.
+          */
+          const worthTelling = offline && silent !== null &&
+            silent < OFFLINE_ALERT_GIVE_UP_MINUTES;
+
+          if (worthTelling) {
             notifications.push({
               eventCode: "KIOSK_OFFLINE",
               title: `Kiosk offline: ${device.device_code}`,
               body: `Kiosk ${device.device_code} (${device.label}) has been silent for ${
                 silent === null ? "an unknown period — it has never checked in" : `${silent} minute(s)`
               }. Attendance punches may be queuing on the device.`,
-              priority: "high",
-              // One alert per device per IST hour: this task runs every 5 minutes.
-              dedupeKey: `kiosk_offline:${device.id}:${istToday()}T${String(p.hour).padStart(2, "0")}`,
+              priority: "normal",
+              /*
+                ONE ALERT PER DEVICE PER IST DAY, not per hour.
+
+                Hourly was 24 rows per device per admin per day, and with six administrators
+                and a stale device list that is where 57,803 of the table's 58,762 rows came
+                from. A gate that is down at 09:00 is still down at 10:00; the second telling
+                carries nothing the first did not.
+              */
+              dedupeKey: `kiosk_offline:${device.id}:${istToday()}`,
               payload: detail,
               roles: ["admin", "super_admin"],
               deepLink: "/kiosk/devices",

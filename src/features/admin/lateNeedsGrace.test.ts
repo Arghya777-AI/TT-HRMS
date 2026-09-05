@@ -30,12 +30,20 @@ const strip = (s: string) =>
   rather than the code, and a mutation that deleted the real clamp still passed.
 */
 const sql = strip(read("supabase", "migrations", "20260906150000_a_part_minute_is_not_a_minute.sql"));
+const split = strip(
+  read("supabase", "migrations", "20260906230000_worked_time_rounds_lateness_floors.sql"),
+);
+const ticker = strip(read("src", "features", "home", "hooks", "useHomeUi.ts"));
 const api = strip(read("src", "features", "admin", "api", "todayRoster.api.ts"));
 const cell = strip(read("src", "features", "admin", "components", "TodayRoster.tsx"));
 
 describe("a part-minute floors", () => {
   it("floors rather than casting, because the cast rounded", () => {
-    // THE REGRESSION: `(EXTRACT(EPOCH ...) / 60)::integer` rounds 0.9 up to 1.
+    /*
+      THE ORIGINAL REGRESSION: `(EXTRACT(EPOCH ...) / 60)::integer` rounds 0.9 up to 1. This
+      migration introduced the floor; the LATER one splits it — durations went back to
+      rounding, and only punctuality kept the floor. See the split describe below.
+    */
     expect(sql).toContain("floor(EXTRACT(EPOCH FROM (p_to - p_from)) / 60)::integer");
     /*
       A lookbehind, because the FLOORED expression contains the old one as a substring —
@@ -80,5 +88,49 @@ describe("grace decides whether lateness counts", () => {
   it("still shows a real lateness rather than hiding all of it", () => {
     // The fix is to respect grace, not to stop reporting lateness.
     expect(cell).toContain('t("admin.roster.lateBy"');
+  });
+});
+
+describe("a part-minute never counts against the employee", () => {
+  it("rounds a DURATION, because flooring it only ever fell one way", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR, reported as "why are you deducting 1 minute from each
+      employee". Measured: Anuj S worked 512.99 minutes and was paid 512; across 230 closed
+      days the floor cost 115 minutes, always in the same direction. Rounding averages to
+      nothing — the same 230 days now net +1.5.
+    */
+    expect(split).toContain("round(EXTRACT(EPOCH FROM (p_to - p_from)) / 60.0)::integer");
+  });
+
+  it("keeps the FLOOR for punctuality, in a function of its own", () => {
+    // 54 seconds past the shift start is not a minute late, and 1m 32s is one, not two.
+    expect(split).toContain("CREATE OR REPLACE FUNCTION util.minutes_late");
+    expect(split).toContain("floor(EXTRACT(EPOCH FROM (p_to - p_from)) / 60.0)::integer");
+  });
+
+  it("clamps both to zero on a reversed interval", () => {
+    expect(split.match(/GREATEST\(0,/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe("the clock on screen is the clock in your hand", () => {
+  it("wakes at the minute boundary rather than on a fixed period", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. It fired every 30s from whenever the component mounted,
+      which is not the same as being right to the minute: mount at 09:02:59 and the ticks land
+      at 09:03:29 and 09:03:59, so between 09:03:00 and 09:03:29 the header still said 09:02.
+      Reported as the app running a minute behind a phone.
+    */
+    expect(ticker).toContain("60_000 - (now % 60_000)");
+    expect(ticker).not.toContain("intervalMs = 30_000");
+  });
+
+  it("re-arms from the new clock each time, so drift and sleep both heal", () => {
+    expect(ticker).toContain("setTick(Date.now());\n        arm();");
+  });
+
+  it("still repaints once a minute, not once a second", () => {
+    // The display unit is whole minutes; a per-second timer repaints sixty times for nothing.
+    expect(ticker).not.toContain("setInterval(() => setTick");
   });
 });

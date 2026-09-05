@@ -28,6 +28,9 @@ import {
   fetchAlertFeed,
   fetchGateFeed,
   fetchLatestPayrollRun,
+  countFaceAsksAwaitingEmployee,
+  countFaceCapturesAwaitingApproval,
+  countOpenHelpdeskTickets,
   fetchMyAdminTasks,
   fetchMySlaBreaches,
   type AdminTask,
@@ -139,6 +142,36 @@ export function usePunchReviewCount(): Count {
   return useQuery({
     queryKey: qk.admin.punches({ review: true, agg: "count" }),
     queryFn: ({ signal }) => countPunchesNeedingReview(signal),
+    retry: shouldRetryQuery,
+    refetchInterval: REFRESH.fiveMinutes,
+  });
+}
+
+/** HR asked for a face and the person has not come to the camera yet. */
+export function useFaceAskCount(): Count {
+  return useQuery({
+    queryKey: qk.admin.detail("face-asks-open"),
+    queryFn: ({ signal }) => countFaceAsksAwaitingEmployee(signal),
+    retry: shouldRetryQuery,
+    refetchInterval: REFRESH.fiveMinutes,
+  });
+}
+
+/** A capture exists and is waiting for an administrator to approve it. */
+export function useFaceCaptureCount(): Count {
+  return useQuery({
+    queryKey: qk.admin.detail("face-captures-pending"),
+    queryFn: ({ signal }) => countFaceCapturesAwaitingApproval(signal),
+    retry: shouldRetryQuery,
+    refetchInterval: REFRESH.fiveMinutes,
+  });
+}
+
+/** Help tickets nobody has closed, inside this administrator's scope. */
+export function useOpenHelpdeskCount(): Count {
+  return useQuery({
+    queryKey: qk.admin.detail("helpdesk-open"),
+    queryFn: ({ signal }) => countOpenHelpdeskTickets(signal),
     retry: shouldRetryQuery,
     refetchInterval: REFRESH.fiveMinutes,
   });

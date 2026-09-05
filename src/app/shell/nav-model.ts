@@ -46,7 +46,14 @@ export type BadgeKey =
   | "documents.unacked"
   | "assets.handover"
   | "helpdesk.unread"
-  | "admin.alerts";
+  | "admin.alerts"
+  /*
+    Separate from `admin.alerts`, which the Command Centre row already carries. The workflow
+    inbox is approvals waiting on a decision; alerts are the venue's problems. Sharing one key
+    put the alert count on the approvals row, where it read as "12 things to approve" and was
+    never true.
+  */
+  | "admin.approvals";
 
 export interface NavItem {
   /** i18n key — never a literal label. */
@@ -274,7 +281,7 @@ const ADMIN_ITEMS: readonly NavItem[] = [
   // and Workflow (5). 28 screens reachable only by typing a URL, on top of the 7 under
   // Time & policy. Each points at the screen an admin comes to the section for.
   { labelKey: "shell.nav.admin.org", to: "/admin/org/departments", icon: Building2, cap: "admin.access" },
-  { labelKey: "shell.nav.admin.workflow", to: "/admin/workflow/inbox", icon: Workflow, cap: "admin.access", badge: "admin.alerts" },
+  { labelKey: "shell.nav.admin.workflow", to: "/admin/workflow/inbox", icon: Workflow, cap: "admin.access", badge: "admin.approvals" },
   { labelKey: "shell.nav.admin.comms", to: "/admin/comms/announcements", icon: Bell, cap: "admin.access" },
   { labelKey: "shell.nav.admin.assets", to: "/admin/assets/master", icon: Package, cap: "admin.access" },
   // Face & kiosk. Nine screens live under /admin/kiosk/* — enrolment, devices,

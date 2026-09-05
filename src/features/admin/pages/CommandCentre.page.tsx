@@ -40,6 +40,7 @@ import { fmtDateWeekday, nowInstantIso } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { t } from "@/shared/i18n/en";
 import { AlertList } from "../components/AlertList";
+import { AttentionBanner } from "../components/AttentionBanner";
 import { AlertSeverityBar } from "../components/AlertSeverityBar";
 import { LeaveCalendarBand } from "../components/LeaveCalendarBand";
 import { CommandKpiStrip } from "../components/CommandKpiStrip";
@@ -48,6 +49,7 @@ import { Notice } from "../components/Notice";
 import { QuickActions } from "../components/QuickActions";
 import { ADMIN_ROUTES } from "../command-vocab";
 import { useAlertCount, useAlertFeed, useIstToday } from "../hooks/useCommandCentre";
+import { useAdminAttention } from "../hooks/useAdminAttention";
 import { useEmployeeLabels } from "../hooks/useEmployeeLabels";
 
 /** How many alerts the Command Centre shows before "view all". */
@@ -58,6 +60,8 @@ export default function CommandCentrePage() {
   const feed = useAlertFeed({}, FEED_PREVIEW);
   const openCount = useAlertCount({});
   const labels = useEmployeeLabels();
+
+  const attention = useAdminAttention();
 
   const rows = feed.data ?? [];
   const total = openCount.error === null ? openCount.data : undefined;
@@ -76,6 +80,16 @@ export default function CommandCentrePage() {
       />
 
       <div className="space-y-6">
+        {/*
+          FIRST, BEFORE THE MONTH AND BEFORE THE COUNTERS.
+
+          Everything else on this page answers "what is true of the venue right now". This
+          answers "what is undone and has your name on it", which is the question somebody
+          opens the console to ask at 9am. It was previously answerable only by visiting six
+          separate screens and counting.
+        */}
+        <AttentionBanner attention={attention} />
+
         {/*
           The month leads. The counters below it answer "what is true right now"; the
           calendar answers "what is the shape of this month", which is the question a

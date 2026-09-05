@@ -201,6 +201,55 @@ export function countCompOffExpiring(signal?: AbortSignal): Promise<number> {
   });
 }
 
+// -----------------------------------------------------------------------------
+// The queues that WAIT ON A PERSON — what "needs your attention" is counted from
+// -----------------------------------------------------------------------------
+
+/*
+  These three are separate from the tiles above because they answer a different
+  question. A tile says what is TRUE of the venue ("39 people are in"); these say
+  what is UNDONE and has somebody's name against it.
+
+  They are counted the same way as everything else on this console — a `HEAD` with
+  `count=exact` over the same predicate the destination screen uses — so the
+  banner and the screen it opens cannot disagree.
+*/
+
+export const FACE_ENROLMENT_REQUESTS_TABLE = "face_enrolment_requests";
+export const HELPDESK_TICKETS_TABLE = "helpdesk_tickets";
+
+/**
+ * HR has asked this person to present their face and it has not happened yet.
+ *
+ * `draft` is the ask itself; `pending` below is a capture waiting on an approver.
+ * They are deliberately two lines in the banner: the first is chased, the second
+ * is decided, and rolling them together would hide which of the two an
+ * administrator is actually being asked to do.
+ */
+export const FACE_ASK_OPEN_STATUS = "draft";
+export const FACE_CAPTURE_PENDING_STATUS = "pending";
+
+export function countFaceAsksAwaitingEmployee(signal?: AbortSignal): Promise<number> {
+  return selectCount(FACE_ENROLMENT_REQUESTS_TABLE, [eq("status", FACE_ASK_OPEN_STATUS)], {
+    ...(signal ? { signal } : {}),
+  });
+}
+
+export function countFaceCapturesAwaitingApproval(signal?: AbortSignal): Promise<number> {
+  return selectCount(FACE_ENROLMENT_REQUESTS_TABLE, [eq("status", FACE_CAPTURE_PENDING_STATUS)], {
+    ...(signal ? { signal } : {}),
+  });
+}
+
+/** Tickets nobody has closed. RLS narrows this to the admin's own scope. */
+export const HELPDESK_OPEN_STATUS = "open";
+
+export function countOpenHelpdeskTickets(signal?: AbortSignal): Promise<number> {
+  return selectCount(HELPDESK_TICKETS_TABLE, [eq("status", HELPDESK_OPEN_STATUS)], {
+    ...(signal ? { signal } : {}),
+  });
+}
+
 /** Tile 12 · employees who cannot use the gate yet (no template, or no consent). */
 export function countEnrolmentGaps(signal?: AbortSignal): Promise<number> {
   return selectCount(V_ENROLMENT_COVERAGE, [], { ...(signal ? { signal } : {}) });

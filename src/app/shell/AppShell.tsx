@@ -8,7 +8,7 @@
  *  - <768px: no rail; 5-slot bottom tab bar (4 nav + More sheet).
  * Top bar is 56px everywhere. /kiosk never renders this shell.
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   Bell,
@@ -54,6 +54,8 @@ import {
   type NavItem,
 } from "./nav-model";
 import { IstClock } from "./IstClock";
+import { useNavBadges } from "./useNavBadges";
+import { AttentionPopup } from "@/features/admin/components/AttentionPopup";
 import { CommandPalette } from "./CommandPalette";
 
 const RAIL_KEY = "tt_rail";
@@ -64,7 +66,7 @@ function initials(name: string | null): string {
   return parts.map((p) => p.charAt(0).toUpperCase()).join("") || "TT";
 }
 
-/** Badge counts arrive from the feature layer later; nothing renders at 0. */
+/** Nothing renders at 0 — see `useNavBadges` for why absence beats a zero here. */
 type BadgeCounts = Partial<Record<NonNullable<NavItem["badge"]>, number>>;
 
 function NavRow({
@@ -277,8 +279,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     applyUpdate: serviceWorker.applyUpdate,
   };
 
-  // Counts are wired by the feature layer; empty means "render no badges".
-  const counts = useMemo<BadgeCounts>(() => ({}), []);
+  /* Was `useMemo(() => ({}), [])` — the badge machinery existed and was fed nothing, so no
+     row has ever shown a count. See `useNavBadges`. */
+  const counts = useNavBadges();
 
   const toggleRail = useCallback(() => {
     setCollapsed((prev) => {
@@ -515,6 +518,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             {children}
           </main>
         </div>
+
+        {/*
+          What is waiting, said once after signing in. Mounted in the shell rather than on the
+          Command Centre so it finds an administrator wherever they land — most of them arrive
+          on a deep link from an email, not on `/admin`. It renders nothing for anyone without
+          `admin.access`, and nothing at all when no queue has anything in it.
+        */}
+        <AttentionPopup />
 
         {/*
           ── MOBILE BOTTOM BAR — 4 slots + More ────────────────────────────────────────

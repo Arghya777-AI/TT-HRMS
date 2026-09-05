@@ -98,6 +98,9 @@ export const ADMIN_ROUTES = {
    */
   alertsBySeverity: (severity: string) => `/admin/alerts?severity=${severity}`,
   tasks: "/admin/tasks",
+  helpdesk: "/admin/comms/helpdesk",
+  /** The console itself — where the full attention list lives. */
+  command: "/admin",
 } as const;
 
 // -----------------------------------------------------------------------------

@@ -819,6 +819,57 @@ export async function fetchCountableDates(
  * Approved only. A pending request is not a fact, and rendering "Ravi is on leave" for a day
  * nobody has granted would be wrong on a screen people plan around.
  */
+/**
+ * The statuses that hold a date. Exactly the set `leave_requests_no_overlap` polices — a
+ * PENDING request reserves its dates just as firmly as an approved one, so a screen that
+ * showed only approved leave would advise somebody into a refusal they cannot see coming.
+ */
+export const LIVE_LEAVE_STATUSES = [
+  "pending",
+  "approved",
+  "partially_approved",
+  "cancellation_pending",
+] as const;
+
+export const myBookedLeaveSchema = z.object({
+  id: dbUuid,
+  request_number: z.string(),
+  status: z.string(),
+  from_date: z.string(),
+  to_date: z.string(),
+  portion: z.string(),
+  leave_type_id: dbUuid,
+});
+export type MyBookedLeaveRow = z.infer<typeof myBookedLeaveSchema>;
+
+/**
+ * This employee's live requests touching [from, to] — what the apply screen needs to say
+ * "you already hold the first half of that date".
+ *
+ * Read from `leave_requests` rather than `v_leave_roster`: that view is approved-only and
+ * carries no request number, and both omissions would make the advice wrong rather than
+ * merely thin. The range test mirrors the guard's `daterange && daterange`.
+ */
+export async function fetchMyBookedLeave(
+  employeeId: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<MyBookedLeaveRow[]> {
+  return selectMany(LEAVE_REQUESTS_TABLE, myBookedLeaveSchema, {
+    columns: "id, request_number, status, from_date, to_date, portion, leave_type_id",
+    filters: [
+      eq("employee_id", employeeId),
+      inList("status", [...LIVE_LEAVE_STATUSES]),
+      lte("from_date", to),
+      gte("to_date", from),
+    ],
+    order: [{ column: "from_date", ascending: true }],
+    limit: 100,
+    ...(signal ? { signal } : {}),
+  });
+}
+
 export const leaveRosterRowSchema = z.object({
   leave_request_day_id: z.string().uuid(),
   employee_id: z.string().uuid(),

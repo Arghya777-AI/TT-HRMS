@@ -27,6 +27,23 @@ export const keysLeaveApplication = {
   "leave.app.half.second": "Second half",
   "leave.app.whichHalfHint":
     "If you already have the other half of this date booked, choosing the opposite half here makes it a full day off.",
+  "leave.app.half.firstLower": "first half",
+  "leave.app.half.secondLower": "second half",
+
+  "leave.app.booked.takenHalf":
+    "You already have the {held} of {date} booked ({number}). Only the {free} is free — apply for that and the day becomes a full day off.",
+  "leave.app.booked.makesFullDay":
+    "You already have the {held} of {date} booked as {type} ({number}). This application takes the {free}, which makes it a full day off.",
+  "leave.app.booked.switchTo": "Apply for the {free}",
+  "leave.app.booked.makeItHalf": "Ask for 0.5 instead",
+  "leave.app.blocked.halfTaken":
+    "You already hold the {held} of this date — choose the {free} instead.",
+  "leave.app.blocked.dateFull":
+    "{date} is already fully booked ({number}). Pick another date.",
+  "leave.app.blocked.onlyHalfFree":
+    "Only the {free} of {date} is still free ({number}). Ask for 0.5 of a day to take it.",
+  "leave.app.blocked.rangeBooked":
+    "You already have leave booked on {date} ({number}). Choose dates that do not include it.",
 
   "leave.app.step2": "2 · Where should these days come from?",
   "leave.app.allPlaced": "All days placed",

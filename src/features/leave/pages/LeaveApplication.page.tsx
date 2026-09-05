@@ -52,7 +52,7 @@
  *
  * @route /me/leave/apply
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CalendarPlus, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,13 @@ import { SubmitAttemptScope, SubmitBlockers, blockerButtonProps, useSubmitAttemp
 import { fmtCivilDayMonthWeekday, nowIstDate } from "@/lib/datetime";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useColleagues, useCountableDates, useMyLeaveContext } from "../hooks/useLeaveApply";
+import {
+  useColleagues,
+  useCountableDates,
+  useLeaveTypeRules,
+  useMyBookedLeave,
+  useMyLeaveContext,
+} from "../hooks/useLeaveApply";
 import { LeaveRangeCalendar } from "../components/LeaveRangeCalendar";
 import {
   countedDatesOf,
@@ -80,6 +86,11 @@ import {
 } from "../leaveRange";
 import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
 import type { HalfPortion } from "../leavePortion";
+import {
+  adviseOnBooked,
+  endsInHalf as totalEndsInHalf,
+  type BookedAdvice,
+} from "../alreadyBooked";
 import {
   allocationProblems,
   reasonRequired,
@@ -142,6 +153,36 @@ function rangeProblemText(problem: RangeProblem): string {
  * half days of different types wanting the same date — a date cannot carry two requests past
  * `leave_requests_no_overlap` — so the sentence says what to do about it.
  */
+/** "first half" / "second half", lower case, for the middle of a sentence. */
+function halfName(portion: HalfPortion): string {
+  return portion === "first_half"
+    ? t("leave.app.half.firstLower")
+    : t("leave.app.half.secondLower");
+}
+
+/**
+ * Why these dates cannot be applied for, said so the employee knows what to do next.
+ *
+ * Each of the three carries the request number of what is in the way. Naming it is the whole
+ * point: an employee who has forgotten they filed something can go and look at it, and one who
+ * disagrees has something to quote to their approver.
+ */
+function bookedAdviceText(advice: Extract<BookedAdvice, { kind: "blocked" }>): string {
+  const date = fmtCivilDayMonthWeekday(advice.date);
+  switch (advice.why) {
+    case "fullDay":
+      return t("leave.app.blocked.dateFull", { date, number: advice.requestNumber });
+    case "needHalfDay":
+      return t("leave.app.blocked.onlyHalfFree", {
+        free: advice.suggestPortion === null ? "" : halfName(advice.suggestPortion),
+        date,
+        number: advice.requestNumber,
+      });
+    case "rangeCoversBooking":
+      return t("leave.app.blocked.rangeBooked", { date, number: advice.requestNumber });
+  }
+}
+
 function splitProblemText(problem: SplitProblem): string {
   return t("leave.app.range.problem.notEnoughDates", {
     needed: formatNumber(problem.datesNeeded),
@@ -220,9 +261,7 @@ export default function LeaveApplicationPage() {
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
 
   const total = Number.parseFloat(totalDays) || 0;
-  /* Floating point: 2.5 % 1 is 0.5 exactly, but a total assembled by repeated addition need
-     not be, so this asks whether the fraction is NEAR a half rather than equal to one. */
-  const endsInHalf = total > 0 && Math.abs((total % 1) - 0.5) < 1e-9;
+  const endsInHalf = totalEndsInHalf(total);
 
   /*
     THE CEILING PER TYPE.
@@ -266,6 +305,52 @@ export default function LeaveApplicationPage() {
      `rangeProblem` is answered without the server so an inverted range costs no round trip;
      `countable` is the server's per-date verdict and `summary` is arithmetic over it. */
   const badRange = rangeProblem(fromDate, toDate);
+  /*
+    WHAT THEY ALREADY HOLD ON THESE DATES.
+
+    Only the database can refuse an application, and it does — but "overlaps existing request
+    LV-2026-000042" is not something an employee can act on. Read alongside the countable
+    dates so the screen can name the half that is still free instead. See `alreadyBooked.ts`.
+  */
+  const booked = useMyBookedLeave(fromDate, toDate);
+  /* Every active type, not just the allocatable ones: the booking in the way may be of a type
+     this employee can no longer draw on, and it still has to be named. */
+  const allTypes = useLeaveTypeRules();
+  const bookedAdvice = useMemo(
+    () =>
+      adviseOnBooked({
+        fromDate,
+        toDate,
+        totalDays: total,
+        chosenHalf: halfPortion,
+        bookings: (booked.data ?? []).map((row) => ({
+          requestNumber: row.request_number,
+          fromDate: row.from_date,
+          toDate: row.to_date,
+          portion: row.portion,
+          typeName:
+            (allTypes.data ?? []).find((rule) => rule.id === row.leave_type_id)?.name ?? "",
+        })),
+      }),
+    [fromDate, toDate, total, halfPortion, booked.data, allTypes.data],
+  );
+
+  /*
+    PICK THE FREE HALF FOR THEM, ONCE.
+
+    Keyed on the date and the half they hold, so it fires when the situation is first seen and
+    not again — somebody who then deliberately selects the taken half gets the warning below
+    rather than having their choice silently reverted under the cursor.
+  */
+  const autoHalfKey =
+    bookedAdvice.kind === "complement" ? `${bookedAdvice.date}|${bookedAdvice.heldPortion}` : "";
+  const autoHalfDone = useRef("");
+  useEffect(() => {
+    if (autoHalfKey === "" || autoHalfDone.current === autoHalfKey) return;
+    autoHalfDone.current = autoHalfKey;
+    if (bookedAdvice.kind === "complement") setHalfPortion(bookedAdvice.suggestPortion);
+  }, [autoHalfKey, bookedAdvice]);
+
   const countable = useCountableDates(fromDate, toDate);
   const summary = useMemo(() => summariseRange(countable.data ?? []), [countable.data]);
   const mismatch = rangeMismatch(summary.countedDays, total);
@@ -329,6 +414,19 @@ export default function LeaveApplicationPage() {
   }
   if (split.problem !== null) blockers.push(splitProblemText(split.problem));
   if (total > 0 && split.segments.length === 0) blockers.push(t("leave.app.blocked.noSegments"));
+  /*
+    The dates are already spoken for. The database refuses these too — this only means the
+    refusal is legible, and arrives before the application is typed out rather than after.
+  */
+  if (bookedAdvice.kind === "blocked") blockers.push(bookedAdviceText(bookedAdvice));
+  if (bookedAdvice.kind === "complement" && !bookedAdvice.chosenIsFree) {
+    blockers.push(
+      t("leave.app.blocked.halfTaken", {
+        held: halfName(bookedAdvice.heldPortion),
+        free: halfName(bookedAdvice.suggestPortion),
+      }),
+    );
+  }
 
   /*
     `ready` is gone: the button no longer consults it. `blockers` IS the answer —
@@ -656,6 +754,71 @@ export default function LeaveApplicationPage() {
                                 holidays: formatNumber(summary.holidays),
                               })}
                       </p>
+
+                      {/* ── What they already hold on these dates ─────────────
+                          Placed with the range summary because it is a fact about the chosen
+                          dates, and it has to be read before the allocation below is filled
+                          in. `complement` is the only friendly one of the four; the rest also
+                          appear in `blockers`, so the button explains itself too. */}
+                      {bookedAdvice.kind === "complement" ? (
+                        <div
+                          className={cn(
+                            "mt-3 flex flex-wrap items-center gap-2 rounded-md border p-3 text-xs",
+                            bookedAdvice.chosenIsFree
+                              ? "border-success/40 bg-success/5"
+                              : "border-warning/40 bg-warning/5",
+                          )}
+                        >
+                          <span className="min-w-0 flex-1">
+                            {bookedAdvice.chosenIsFree
+                              ? t("leave.app.booked.makesFullDay", {
+                                  held: halfName(bookedAdvice.heldPortion),
+                                  date: fmtCivilDayMonthWeekday(bookedAdvice.date),
+                                  type: bookedAdvice.typeName,
+                                  number: bookedAdvice.requestNumber,
+                                  free: halfName(bookedAdvice.suggestPortion),
+                                })
+                              : t("leave.app.booked.takenHalf", {
+                                  held: halfName(bookedAdvice.heldPortion),
+                                  date: fmtCivilDayMonthWeekday(bookedAdvice.date),
+                                  number: bookedAdvice.requestNumber,
+                                  free: halfName(bookedAdvice.suggestPortion),
+                                })}
+                          </span>
+                          {bookedAdvice.chosenIsFree ? null : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setHalfPortion(bookedAdvice.suggestPortion)}
+                            >
+                              {t("leave.app.booked.switchTo", {
+                                free: halfName(bookedAdvice.suggestPortion),
+                              })}
+                            </Button>
+                          )}
+                        </div>
+                      ) : bookedAdvice.kind === "blocked" ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">
+                          <span className="min-w-0 flex-1">{bookedAdviceText(bookedAdvice)}</span>
+                          {/* The one case with an obvious next move: half the date is free and
+                              they asked for a whole day. Offering it beats explaining it. */}
+                          {bookedAdvice.why === "needHalfDay" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setTotalDays("0.5");
+                                setAllocations([]);
+                                if (bookedAdvice.suggestPortion !== null) {
+                                  setHalfPortion(bookedAdvice.suggestPortion);
+                                }
+                              }}
+                            >
+                              {t("leave.app.booked.makeItHalf")}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       {split.problem !== null ? (
                         <p className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs">

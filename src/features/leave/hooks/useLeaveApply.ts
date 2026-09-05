@@ -22,6 +22,7 @@ import {
   fetchMyLeaveContext,
   fetchColleagues,
   fetchCountableDates,
+  fetchMyBookedLeave,
   previewLeaveRequest,
   submitLeaveRequest,
   withdrawLeaveRequest,
@@ -29,6 +30,7 @@ import {
   type CalendarHoliday,
   fetchDepartmentIsOperational,
   type CountableDate,
+  type MyBookedLeaveRow,
   type LeaveAllocationDay,
   type EmployeeRef,
   type LeavePreview,
@@ -215,6 +217,33 @@ export function useCountableDates(
     enabled: ok,
     // The rota and the holiday calendar do not move during an application.
     staleTime: 5 * 60 * 1000,
+    retry: shouldRetryQuery,
+  });
+}
+
+/**
+ * What this employee already holds over the picked range.
+ *
+ * Same enable rule and same key shape as `useCountableDates`, so the two reads that describe
+ * a chosen range arrive together and neither fires on a half-typed date.
+ *
+ * `staleTime` is short where the countable dates' is long: a rota does not move during an
+ * application, but a booking can — the employee may have filed one in another tab, and an
+ * approver may have decided one a minute ago. Advice built on a stale answer sends somebody
+ * into a refusal.
+ */
+export function useMyBookedLeave(
+  fromDate: string,
+  toDate: string,
+): UseQueryResult<MyBookedLeaveRow[], Error> {
+  const employeeId = useEmployeeId();
+  const ok = employeeId !== null && rangeProblem(fromDate, toDate) === null;
+  return useQuery({
+    queryKey: qk.leave.detail(`booked:${employeeId ?? NO_EMPLOYEE}:${fromDate}:${toDate}`),
+    queryFn: ({ signal }) =>
+      fetchMyBookedLeave(requireEmployeeId(employeeId), fromDate, toDate, signal),
+    enabled: ok,
+    staleTime: 30 * 1000,
     retry: shouldRetryQuery,
   });
 }

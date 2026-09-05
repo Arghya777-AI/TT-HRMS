@@ -143,7 +143,10 @@ describe("the employee can say which half", () => {
 
   it("shows the control only when the total actually ends in .5", () => {
     expect(form).toContain("{endsInHalf ? (");
-    expect(form).toContain("Math.abs((total % 1) - 0.5) < 1e-9");
+    // The predicate itself lives in `alreadyBooked.ts`, which needs the same test.
+    expect(strip(read("src", "features", "leave", "alreadyBooked.ts")))
+      .toContain("Math.abs((total % 1) - 0.5) < 1e-9");
+    expect(form).toContain("const endsInHalf = totalEndsInHalf(total);");
   });
 
   it("sends the segment's own portion rather than casting it back to a first half", () => {

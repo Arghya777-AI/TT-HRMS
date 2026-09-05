@@ -37,6 +37,7 @@ import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { cn } from "@/lib/utils";
 import { fmtCivilDayMonthWeekday, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import type { LeavePortion } from "@/features/leave/leavePortion";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
 import {
   useCancelLeaveDays,
@@ -55,6 +56,15 @@ export interface CancelLeaveDaysDialogProps {
   readonly employeeName: string | null;
   readonly onDone: (message: string) => void;
 }
+
+
+/* The same three answers the on-behalf form offers, so an admin sees one vocabulary for
+   portions wherever they set one. */
+const PORTION_CHOICES: readonly { readonly value: LeavePortion; readonly label: string }[] = [
+  { value: "full_day", label: t("admin.leaveFor.portion.full") },
+  { value: "first_half", label: t("admin.leaveFor.portion.first") },
+  { value: "second_half", label: t("admin.leaveFor.portion.second") },
+];
 
 export function CancelLeaveDaysDialog({
   open,
@@ -80,6 +90,15 @@ export function CancelLeaveDaysDialog({
   /* The edit form's own fields, seeded from the booking when the step opens. */
   const [editFrom, setEditFrom] = useState("");
   const [editTo, setEditTo] = useState("");
+  /*
+    THE HALF IS EDITABLE TOO, not just the dates.
+
+    `admin_edit_leave_dates` has always taken `p_portion`; this dialog pinned it to whatever
+    the booking already had, so an approved half day could be moved to another date but never
+    grown into a full one. That is precisely what HD-2026-000007 asked for — "Convert this
+    into one day" — and there was no screen in the product that could do it.
+  */
+  const [editPortion, setEditPortion] = useState<LeavePortion>("full_day");
 
   const cancellable = useMemo(
     () => (days.data ?? []).filter((d) => d.status === "approved"),
@@ -105,6 +124,7 @@ export function CancelLeaveDaysDialog({
     const first = cancellable[0]?.leave_date ?? "";
     setEditFrom(first);
     setEditTo(cancellable[cancellable.length - 1]?.leave_date ?? first);
+    setEditPortion((cancellable[0]?.portion ?? "full_day") as LeavePortion);
   }, [cancellable, requestId]);
 
   const edit = useEditLeaveDates((input, result) => {
@@ -141,6 +161,9 @@ export function CancelLeaveDaysDialog({
     setPicked((prev) =>
       prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date],
     );
+
+  /* One date, so the half means something. Both fields are "YYYY-MM-DD" and compare as text. */
+  const editSingleDate = editFrom !== "" && editFrom === editTo;
 
   const reasonOk = reason.trim().length >= SENSITIVE_REASON_LENGTH;
   /*
@@ -318,6 +341,33 @@ export function CancelLeaveDaysDialog({
                     className="mt-1.5 w-full rounded-md border bg-background px-2.5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                 </div>
+                {/* ── Half or whole ─────────────────────────────────────────
+                    Offered only for a single-date booking, because that is the only shape in
+                    which it means anything: `rebuild_leave_request_days` stamps
+                    `CASE WHEN p_from = p_to THEN p_portion ELSE 'full_day' END`, so a half
+                    chosen across a range is discarded server-side. Showing a control whose
+                    answer the server throws away is worse than not showing it. */}
+                {editSingleDate ? (
+                  <div className="sm:col-span-2">
+                    <span className="block text-sm font-medium">
+                      {t("admin.leaveFor.portion")}
+                    </span>
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      {PORTION_CHOICES.map((choice) => (
+                        <Button
+                          key={choice.value}
+                          type="button"
+                          size="sm"
+                          variant={editPortion === choice.value ? "default" : "outline"}
+                          aria-pressed={editPortion === choice.value}
+                          onClick={() => setEditPortion(choice.value)}
+                        >
+                          {choice.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {editTo !== "" && editFrom !== "" && editTo < editFrom ? (
                   <p className="text-xs text-destructive sm:col-span-2">
                     {t("adminLeave.cancelDays.editOrder")}
@@ -463,8 +513,10 @@ export function CancelLeaveDaysDialog({
                           requestNumber,
                           from: editFrom,
                           to: editTo,
-                          // Portion follows the booking; the picker changes dates, not halves.
-                          portion: days.data?.[0]?.portion ?? "full_day",
+                          /* A range longer than a day is a full-day booking by construction —
+                             see the note on the control. Sending the stale half instead would
+                             have the server silently rewrite it anyway. */
+                          portion: editSingleDate ? editPortion : "full_day",
                         },
                         reason.trim(),
                       )

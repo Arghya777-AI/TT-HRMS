@@ -21,6 +21,15 @@ import { t } from "@/shared/i18n/en";
 
 export type LeavePortion = "full_day" | "first_half" | "second_half";
 
+/**
+ * The two halves, on their own — what somebody actually picks when they ask for 0.5 of a day.
+ *
+ * Separate from `LeavePortion` because the choice is binary at the point it is made: the form
+ * offering it has already established that the allocation ends in .5, so `full_day` is not one
+ * of the answers and a type that admits it would need a needless branch at every use.
+ */
+export type HalfPortion = "first_half" | "second_half";
+
 export function isHalfDay(portion: string): boolean {
   return portion === "first_half" || portion === "second_half";
 }

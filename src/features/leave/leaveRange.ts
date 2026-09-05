@@ -26,6 +26,7 @@
  */
 import { civilDayOffset } from "@/lib/datetime";
 import type { CountableDate } from "./api/leave-apply.api";
+import type { HalfPortion, LeavePortion } from "./leavePortion";
 
 /** Why a date in the chosen range costs nothing. */
 export type FreeDayReason = "weekly_off" | "holiday";
@@ -148,7 +149,7 @@ export interface LeaveSegment {
   readonly typeId: string;
   readonly fromDate: string;
   readonly toDate: string;
-  readonly portion: "full_day" | "first_half";
+  readonly portion: LeavePortion;
   /** What this segment should cost — for checking the server's answer against, not for writing. */
   readonly expectedDays: number;
 }
@@ -173,12 +174,21 @@ export interface SplitResult {
  * inside somebody's span and costs nothing, exactly as the engine prices it.
  *
  * `notEnoughDates` is reachable and is not a defensive nicety: two half-day allocations of
- * different types both need a whole date of their own (a date cannot hold two requests — see
- * the overlap guard), so 0.5 + 0.5 over a single counted day needs two dates and has one.
+ * different types both need a whole date of their own, so 0.5 + 0.5 over a single counted day
+ * needs two dates and has one. A date CAN now hold two requests, but only as opposite halves
+ * (migration 20260907090000), and this deal gives every allocation the same `halfPortion` —
+ * so two of them on one date would be the same half twice, which the guard still refuses.
  */
 export function splitAllocationsAcrossDates(
   countedDates: readonly string[],
   allocations: readonly { readonly typeId: string; readonly days: number }[],
+  /*
+    WHICH HALF, when an allocation ends in .5. It used to be hardcoded to `first_half`, which
+    is what made a date unshareable: somebody holding an approved first half could only ever
+    file another first half, and `leave_requests_no_overlap` refused it against its own
+    complement. Reported as HD-2026-000007 — "Not able to mark an other half day week off".
+  */
+  halfPortion: HalfPortion = "first_half",
 ): SplitResult {
   const segments: LeaveSegment[] = [];
   let cursor = 0;
@@ -221,7 +231,7 @@ export function splitAllocationsAcrossDates(
         typeId: allocation.typeId,
         fromDate: only,
         toDate: only,
-        portion: "first_half",
+        portion: halfPortion,
         expectedDays: 0.5,
       });
       cursor += 1;

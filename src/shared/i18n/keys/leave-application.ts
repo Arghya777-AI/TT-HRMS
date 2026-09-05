@@ -22,6 +22,11 @@ export const keysLeaveApplication = {
   "leave.app.suggest": "Fill from my balances",
   "leave.app.daysHint":
     "Half days are allowed. Pick your dates below and the weekly offs and holidays inside them are shown and excluded before you submit.",
+  "leave.app.whichHalf": "Which half of the day?",
+  "leave.app.half.first": "First half",
+  "leave.app.half.second": "Second half",
+  "leave.app.whichHalfHint":
+    "If you already have the other half of this date booked, choosing the opposite half here makes it a full day off.",
 
   "leave.app.step2": "2 · Where should these days come from?",
   "leave.app.allPlaced": "All days placed",

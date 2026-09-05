@@ -79,6 +79,7 @@ import {
   type SplitProblem,
 } from "../leaveRange";
 import { useAllocatableTypes } from "../hooks/useAllocatableTypes";
+import type { HalfPortion } from "../leavePortion";
 import {
   allocationProblems,
   reasonRequired,
@@ -175,6 +176,16 @@ export default function LeaveApplicationPage() {
   );
 
   const [totalDays, setTotalDays] = useState("1");
+  /*
+    WHICH HALF, when the total ends in .5.
+
+    This screen always sent `first_half`, because the splitter hardcoded it and nothing here
+    asked. That is what HD-2026-000007 is: an employee with an approved first half could file
+    only another first half, and the overlap guard refused it against his own morning. The
+    guard now permits opposite halves on one date (migration 20260907090000) — this is the
+    control that lets somebody name which one they mean.
+  */
+  const [halfPortion, setHalfPortion] = useState<HalfPortion>("first_half");
   const [fromDate, setFromDate] = useState(nowIstDate());
   const [toDate, setToDate] = useState(nowIstDate());
   /*
@@ -209,6 +220,9 @@ export default function LeaveApplicationPage() {
   const [done, setDone] = useState<LeaveApplicationResult | null>(null);
 
   const total = Number.parseFloat(totalDays) || 0;
+  /* Floating point: 2.5 % 1 is 0.5 exactly, but a total assembled by repeated addition need
+     not be, so this asks whether the fraction is NEAR a half rather than equal to one. */
+  const endsInHalf = total > 0 && Math.abs((total % 1) - 0.5) < 1e-9;
 
   /*
     THE CEILING PER TYPE.
@@ -260,8 +274,8 @@ export default function LeaveApplicationPage() {
      that cannot be made is shown BEFORE the button is pressed — two half days of different
      types need two dates and the overlap guard would otherwise refuse the second request. */
   const split = useMemo(
-    () => splitAllocationsAcrossDates(countedDatesOf(summary.dates), allocations),
-    [summary.dates, allocations],
+    () => splitAllocationsAcrossDates(countedDatesOf(summary.dates), allocations, halfPortion),
+    [summary.dates, allocations, halfPortion],
   );
 
   /* Submitting over a range the allocation does not match would hand the employee a refusal
@@ -371,7 +385,7 @@ export default function LeaveApplicationPage() {
         leaveTypeName: type?.name ?? "",
         fromDate: segment.fromDate,
         toDate: segment.toDate,
-        portion: segment.portion as "full_day" | "first_half" | "second_half",
+        portion: segment.portion,
       };
     });
 
@@ -523,6 +537,42 @@ export default function LeaveApplicationPage() {
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">{t("leave.app.daysHint")}</p>
+
+            {/* ── Which half ───────────────────────────────────────────────────
+                Shown only when the total actually ends in .5, because that is the only time
+                the answer is used — `splitAllocationsAcrossDates` stamps it on the one
+                half-day segment and nothing else reads it. Rendering it always would put a
+                dead control in front of the many people taking whole days.
+
+                It is deliberately NOT per allocation. One application can hold at most one
+                half-day date per type, and two types splitting one date would be the same
+                half twice, which the overlap guard still refuses — see `leaveRange.ts`. */}
+            {endsInHalf ? (
+              <div className="mt-3 rounded-md border bg-muted/30 p-3">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("leave.app.whichHalf")}
+                </span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(["first_half", "second_half"] as const).map((option) => (
+                    <Button
+                      key={option}
+                      type="button"
+                      size="sm"
+                      variant={halfPortion === option ? "default" : "outline"}
+                      aria-pressed={halfPortion === option}
+                      onClick={() => setHalfPortion(option)}
+                    >
+                      {option === "first_half"
+                        ? t("leave.app.half.first")
+                        : t("leave.app.half.second")}
+                    </Button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t("leave.app.whichHalfHint")}
+                </p>
+              </div>
+            ) : null}
 
             {/* ── The dates ────────────────────────────────────────────────────
                 Typed fields AND a calendar, both writing the same two pieces of state. The

@@ -47,7 +47,6 @@ import { SelfPunchCard } from "@/features/attendance/components/SelfPunchCard";
 import { useIsOnline, useIstTicker } from "../hooks/useHomeUi";
 import { HomeHeader } from "../components/HomeHeader";
 import { TodayCard } from "../components/TodayCard";
-import { EqualHeightRow } from "../components/EqualHeightRow";
 import { AttentionBar } from "../components/AttentionBar";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
@@ -202,11 +201,22 @@ export default function HomePage() {
       */}
       <AttentionBar query={attentionQuery} nowMs={nowMs} />
 
-      <EqualHeightRow className="sm:grid-cols-2">
+      {/*
+        ── NATURAL HEIGHTS, NO SCROLLING ──────────────────────────────────────
+        `EqualHeightRow` measured every card and capped them to the SHORTEST, scrolling the
+        overflow inside each one. That existed for the notification list, which has no natural
+        end and would otherwise have stretched the row to its own height.
+
+        That card is a bar now, and the two left are both bounded — a punch button and a day's
+        figures. Capping them only produced a scrollbar inside the Attendance card, which is
+        the one thing on this page nobody should have to scroll. `items-start` lets each be its
+        own height instead.
+      */}
+      <div className="grid items-start gap-4 sm:grid-cols-2">
         <SelfPunchCard />
         {/* Region B + C */}
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
-      </EqualHeightRow>
+      </div>
 
 
       {/*

@@ -389,6 +389,19 @@ export const en = catalogue({
   "home.today.mayRecalc.body":
     "Your scans currently pair as one finished session. If you are on site now, your next "
     + "scan opens the rest of the day and this figure is worked out again.",
+  /*
+    ── THE THREE RULES THAT GENERATE EVERY QUESTION ──────────────────────────
+    What the extra scans in the middle do, what arriving early does, and what coming back
+    after the shift does. Each is one sentence: this sits on a card, not in a policy, and a
+    paragraph here would be read by nobody and would push the figures off the top.
+  */
+  "home.today.rules.title": "How your day is counted",
+  "home.today.rules.inside":
+    "Scans around the site during your shift do not start a new day — the last one is your "
+    + "check-out.",
+  "home.today.rules.early": "Arriving before your shift still counts as your one check-in.",
+  "home.today.rules.late":
+    "Coming back after your shift has ended starts a separate session, shown as extra.",
   "home.today.awaitingCheckout":
     "One scan so far. Scan again at the gate when you leave, or ask for a correction.",
   "home.today.lateBy": "Late by {duration}",

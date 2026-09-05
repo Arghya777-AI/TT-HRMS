@@ -167,6 +167,37 @@ function TodayFacts({ day, nowMs }: { day: AttendanceDay; nowMs: number }) {
         </p>
       ) : null}
 
+      {/*
+        ── HOW THE DAY IS COUNTED, ON THE CARD ────────────────────────────────
+        Three rules, because these are the three that generate every question: what the
+        extra scans in the middle do, what an early arrival does, and what coming back
+        after the shift does. They were only ever explained after somebody complained.
+
+        It also fills this card. The row equalises to the SHORTEST card and scrolls the
+        overflow inside the others, so a Today card with four figures in it left the
+        Attendance card scrolling beside it. Answering the questions and filling the
+        column are the same fix.
+      */}
+      <div className="mt-auto border-t pt-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t("home.today.rules.title")}
+        </p>
+        <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+          <li className="flex gap-1.5">
+            <span aria-hidden>·</span>
+            <span>{t("home.today.rules.inside")}</span>
+          </li>
+          <li className="flex gap-1.5">
+            <span aria-hidden>·</span>
+            <span>{t("home.today.rules.early")}</span>
+          </li>
+          <li className="flex gap-1.5">
+            <span aria-hidden>·</span>
+            <span>{t("home.today.rules.late")}</span>
+          </li>
+        </ul>
+      </div>
+
       {shiftRunning && day.first_in_at !== null ? (
         <p className="rounded-md bg-info/10 px-3 py-2 text-sm text-info" role="status">
           <span className="font-medium">{t("home.today.running")}</span>{" "}

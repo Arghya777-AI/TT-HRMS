@@ -51,8 +51,19 @@ describe("nothing stands between the header and the punch card", () => {
   });
 
   it("keeps the punch card first in its row, so it is first on a phone", () => {
-    const row = home.slice(home.indexOf("<EqualHeightRow"), home.indexOf("</EqualHeightRow>"));
+    const row = home.slice(home.indexOf("sm:grid-cols-2"), home.indexOf("<MyMonthCalendar"));
     expect(row.indexOf("<SelfPunchCard")).toBeLessThan(row.indexOf("<TodayCard"));
+  });
+
+  it("lets each card be its own height, so neither scrolls", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. The row capped every card to the shortest and scrolled
+      the overflow inside — which put a scrollbar in the Attendance card, the one thing on
+      this page nobody should have to scroll. That capping existed for the notification list,
+      which is a bar now.
+    */
+    expect(home).not.toContain("<EqualHeightRow");
+    expect(home).toContain("items-start");
   });
 
   it("is a TWO-card row now, not three", () => {
@@ -60,7 +71,7 @@ describe("nothing stands between the header and the punch card", () => {
       A notification list is not a thing you do here. As a card it took a third of the first
       screen and, having no natural end, padded the other two to its own height.
     */
-    expect(home).toContain('<EqualHeightRow className="sm:grid-cols-2">');
+    expect(home).toContain('<div className="grid items-start gap-4 sm:grid-cols-2">');
     expect(home).not.toContain("<AttentionCard");
   });
 
@@ -176,6 +187,16 @@ describe("a day that looks short says why", () => {
   it("tells the employee the figure completes itself", () => {
     expect(today).toContain('t("home.today.mayRecalc.title")');
     expect(today).toContain('t("home.today.mayRecalc.body")');
+  });
+
+  it("states the three rules that generate every question", () => {
+    /*
+      What the extra scans in the middle do, what arriving early does, and what coming back
+      after the shift does. Each was only ever explained after somebody complained.
+    */
+    expect(today).toContain('t("home.today.rules.inside")');
+    expect(today).toContain('t("home.today.rules.early")');
+    expect(today).toContain('t("home.today.rules.late")');
   });
 
   it("actually RENDERS on that condition, not merely computes it", () => {

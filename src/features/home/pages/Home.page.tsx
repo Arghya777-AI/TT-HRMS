@@ -28,8 +28,8 @@ import { Home as HomeIcon, Lock, WifiOff } from "lucide-react";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { ErrorState } from "@/shared/ui/ErrorState";
-import { fmtDateWeekday, fmtTime, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
+import { istToday } from "@/lib/datetime";
 import {
   useAnnouncements,
   useAttendanceRealtime,
@@ -46,8 +46,7 @@ import {
 import { SelfPunchCard } from "@/features/attendance/components/SelfPunchCard";
 import { FaceEnrolmentAskCard } from "../components/FaceEnrolmentAskCard";
 import { useIsOnline, useIstTicker } from "../hooks/useHomeUi";
-import { greetingLine } from "../display";
-import { GreetingBand } from "../components/GreetingBand";
+import { HomeHeader } from "../components/HomeHeader";
 import { TodayCard } from "../components/TodayCard";
 import { EqualHeightRow } from "../components/EqualHeightRow";
 import { AttentionCard } from "../components/AttentionCard";
@@ -138,39 +137,31 @@ export default function HomePage() {
         </p>
       ) : null}
 
-      <PageHeader
-        icon={HomeIcon}
-        title={greetingLine(me?.first_name ?? null, nowMs)}
-        subtitle={t("home.greeting.subtitle", {
-          date: fmtDateWeekday(nowMs),
-          time: fmtTime(nowMs),
-        })}
-      />
+      {/*
+        ── ONE BAND, NOT THREE ───────────────────────────────────────────────────
+        This was a PageHeader carrying the greeting and the date, then a separate band
+        carrying the shift and the weekly off, then a paragraph about face enrolment —
+        three stacked full-width blocks before anything an employee could act on. The punch
+        button sat below the fold on a laptop and most of a screen down on a phone.
 
-      {/* Region A. On an identity read failure the band shows the error + retry
-          rather than a skeleton that never resolves. */}
+        `HomeHeader` merges the first two and puts the shift in the space the greeting was
+        wasting on the right, so the punch card now starts within the first screen. The
+        enrolment notice moved BELOW that row and became one clickable line.
+      */}
       {meQuery.isError ? (
-        <div className="mb-5">
+        <div className="mb-4">
           <ErrorState error={meQuery.error} retry={() => void meQuery.refetch()} />
         </div>
       ) : (
-        <GreetingBand
+        <HomeHeader
           me={me}
           shift={shiftQuery.data?.shift ?? null}
           shiftSource={shiftQuery.data?.source ?? null}
           weeklyOffRule={weeklyOffQuery.data ?? null}
           loading={meQuery.isPending || (me !== null && shiftQuery.isPending)}
+          nowMs={nowMs}
         />
       )}
-
-      {/*
-        Above the punch card deliberately: if HR has asked this person to enrol, the
-        punch card will tell them their face is not registered, and this is the sentence
-        that explains what to do about it. Reversing the order would show the symptom
-        before the cause. It stays FULL WIDTH — it is a paragraph of prose, and prose in
-        a one-third column is a column of two-word lines.
-      */}
-      <FaceEnrolmentAskCard />
 
       {/*
         ── ONE ROW, THREE COLUMNS ────────────────────────────────────────────────
@@ -206,6 +197,13 @@ export default function HomePage() {
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
         <AttentionCard query={attentionQuery} nowMs={nowMs} />
       </EqualHeightRow>
+
+      {/*
+        BELOW the punch card, deliberately. It used to sit above and pushed the button off
+        the first screen. It is one line now, and on a draft the whole row opens the helpdesk
+        — "see HR" is not something anybody can act on from a dashboard at 8am.
+      */}
+      <FaceEnrolmentAskCard />
 
       {/*
         The calendar sits directly under today's shift and the punch card, which is

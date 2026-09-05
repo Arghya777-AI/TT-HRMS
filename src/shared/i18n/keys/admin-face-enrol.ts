@@ -251,6 +251,14 @@ export const keysAdminFaceEnrol = {
   "me.faceAsk.pending.title": "Your face registration is awaiting approval",
   "me.faceAsk.pending.body": "The capture has been taken. An administrator has to approve it before it can be used at the gate or in this portal. Nothing more is needed from you.",
   "me.faceAsk.asked": "Asked {at}",
+  /*
+    One line each, for the row this became. The full paragraph moved behind a disclosure:
+    a notice that pushes the punch button off the first screen costs somebody the thing they
+    opened the page to do.
+  */
+  "me.faceAsk.draft.lead": "Tap to ask HR when to come — registration is done with you present.",
+  "me.faceAsk.pending.lead": "Your capture is with an administrator. Nothing for you to do.",
+  "me.faceAsk.more": "What happens, and what to bring",
   "admin.enrolCap.tooFar": "Come a little closer — your face needs to fill more of the frame.",
   "admin.enrolCap.tooDark": "It is too dark. Face a window or turn on a light.",
   "admin.enrolCap.tooBright": "Too bright — move out of direct light or away from the window.",

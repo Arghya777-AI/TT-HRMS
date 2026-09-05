@@ -44,12 +44,11 @@ import {
   useWeeklyOffRule,
 } from "../hooks/useHome";
 import { SelfPunchCard } from "@/features/attendance/components/SelfPunchCard";
-import { FaceEnrolmentAskCard } from "../components/FaceEnrolmentAskCard";
 import { useIsOnline, useIstTicker } from "../hooks/useHomeUi";
 import { HomeHeader } from "../components/HomeHeader";
 import { TodayCard } from "../components/TodayCard";
 import { EqualHeightRow } from "../components/EqualHeightRow";
-import { AttentionCard } from "../components/AttentionCard";
+import { AttentionBar } from "../components/AttentionBar";
 import { MyMonthCalendar } from "../components/MyMonthCalendar";
 import { InstallAppCard } from "@/shared/pwa/InstallAppCard";
 import { MonthStrip } from "../components/MonthStrip";
@@ -191,19 +190,24 @@ export default function HomePage() {
         the overflow scrolling inside each card under a sticky header, and one Expand
         control for when somebody wants the whole list at once.
       */}
-      <EqualHeightRow className="sm:grid-cols-2 lg:grid-cols-3">
+      {/*
+        ── THE THIRD CARD BECAME A BAR ────────────────────────────────────────
+        "Needs your attention" was a third of the first screen, and a notification list is not
+        a thing you DO here — it is a thing you check. As a card it was also the tallest in the
+        row, so the two cards that ARE actions were padded to match it.
+
+        One line now, with the count and the most urgent title, opening on a press. The two
+        action cards get half the row each. It also absorbs the face-enrolment ask, which was
+        its own full-width block — on a phone, a whole card of height for one sentence.
+      */}
+      <AttentionBar query={attentionQuery} nowMs={nowMs} />
+
+      <EqualHeightRow className="sm:grid-cols-2">
         <SelfPunchCard />
         {/* Region B + C */}
         <TodayCard query={todayQuery} nowMs={nowMs} today={today} />
-        <AttentionCard query={attentionQuery} nowMs={nowMs} />
       </EqualHeightRow>
 
-      {/*
-        BELOW the punch card, deliberately. It used to sit above and pushed the button off
-        the first screen. It is one line now, and on a draft the whole row opens the helpdesk
-        — "see HR" is not something anybody can act on from a dashboard at 8am.
-      */}
-      <FaceEnrolmentAskCard />
 
       {/*
         The calendar sits directly under today's shift and the punch card, which is

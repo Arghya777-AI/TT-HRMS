@@ -380,6 +380,15 @@ export const en = catalogue({
   "home.today.runningSince": "{elapsed} since your first scan at {time}",
   "home.today.runningHint":
     "This is the time since your first scan. Worked hours are computed by the attendance engine after your unpaid break and your shift's grace are applied.",
+  /*
+    The punched-at-home-then-at-the-gate case. Scans pair in order, so an arrival scan after a
+    morning worked elsewhere CLOSES that session and the day reads short until the next scan.
+    Said before somebody sees a low number and assumes hours have been lost.
+  */
+  "home.today.mayRecalc.title": "This may not be your whole day yet.",
+  "home.today.mayRecalc.body":
+    "Your scans currently pair as one finished session. If you are on site now, your next "
+    + "scan opens the rest of the day and this figure is worked out again.",
   "home.today.awaitingCheckout":
     "One scan so far. Scan again at the gate when you leave, or ask for a correction.",
   "home.today.lateBy": "Late by {duration}",
@@ -397,6 +406,8 @@ export const en = catalogue({
   "home.attention.empty.title": "You're all caught up",
   "home.attention.empty.hint": "Anything waiting on a decision from you shows up here.",
   "home.attention.viewAll": "All notifications",
+  /** The collapsed bar. The count is the headline; the top title sits beside it. */
+  "home.attention.count": "{n} need your attention",
   "home.attention.priority.critical": "Urgent",
   "home.attention.priority.high": "Soon",
   "home.attention.priority.normal": "To do",

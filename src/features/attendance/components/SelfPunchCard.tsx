@@ -910,13 +910,23 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
   } else {
     body = (
       <div className="space-y-3">
-        {/* The reason is HERE, above the button, so it has been read before the
-            browser's own permission dialog lands on top of it. */}
+        {/*
+          ── ONE LINE, WITH THE PARAGRAPH BEHIND IT ──────────────────────────
+          This was a four-line notice sitting between the card's own lead sentence and the
+          button. Both said roughly "we will ask for your location", and together they were
+          most of the card — on a phone the button was below them.
+
+          The reason still appears BEFORE the browser's own permission dialog, which is the
+          property that mattered: somebody who has read why is far likelier to say yes. It is
+          just a line now, with the full explanation for whoever opens it.
+        */}
         {phase.name === "idle" ? (
-          <AuthNotice tone="info" className="text-xs">
-            <p className="font-medium">{t("me.punch.location.title")}</p>
-            <p className="text-muted-foreground">{t("me.punch.location.reason")}</p>
-          </AuthNotice>
+          <details className="rounded-md border border-info/40 bg-info/5 px-2.5 py-2 text-xs">
+            <summary className="cursor-pointer font-medium">
+              {t("me.punch.location.short")}
+            </summary>
+            <p className="mt-1.5 text-muted-foreground">{t("me.punch.location.reason")}</p>
+          </details>
         ) : null}
 
         {locationNote !== null && phase.name !== "idle" ? (
@@ -1135,7 +1145,11 @@ export function SelfPunchCard({ className }: SelfPunchCardProps) {
         </Button>
       </div>
       <div className="space-y-3 p-4">
-        <p className="text-sm leading-relaxed text-muted-foreground">{t("me.punch.lead")}</p>
+        {/*
+          The lead sentence is gone. The card is headed ATTENDANCE and the button says "Punch
+          to log in"; a sentence between them explaining that this records attendance is text
+          nobody reads twice, and it cost a row of height on the first screen.
+        */}
         {body}
       </div>
 

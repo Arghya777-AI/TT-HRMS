@@ -29,23 +29,39 @@ const strip = (s: string) =>
 
 const home = strip(read("src", "features", "home", "pages", "Home.page.tsx"));
 const header = strip(read("src", "features", "home", "components", "HomeHeader.tsx"));
-const ask = strip(read("src", "features", "home", "components", "FaceEnrolmentAskCard.tsx"));
+const bar = strip(read("src", "features", "home", "components", "AttentionBar.tsx"));
+const punch = strip(read("src", "features", "attendance", "components", "SelfPunchCard.tsx"));
+const today = strip(read("src", "features", "home", "components", "TodayCard.tsx"));
 
 describe("nothing stands between the header and the punch card", () => {
-  it("puts the punch card immediately after the header", () => {
-    // THE REGRESSION THIS EXISTS FOR.
+  it("puts the punch card immediately after the header and the bar", () => {
+    /*
+      THE REGRESSION THIS EXISTS FOR. Only the one-line attention bar may sit between them —
+      the enrolment paragraph that used to is now an item INSIDE that bar, so it costs no
+      height of its own.
+    */
     const headerAt = home.indexOf("<HomeHeader");
+    const barAt = home.indexOf("<AttentionBar");
     const punchAt = home.indexOf("<SelfPunchCard");
-    const askAt = home.indexOf("<FaceEnrolmentAskCard");
     expect(headerAt).toBeGreaterThan(-1);
-    expect(punchAt).toBeGreaterThan(headerAt);
-    expect(askAt).toBeGreaterThan(punchAt);
+    expect(barAt).toBeGreaterThan(headerAt);
+    expect(punchAt).toBeGreaterThan(barAt);
+    // The standalone full-width block is gone entirely.
+    expect(home).not.toContain("<FaceEnrolmentAskCard");
   });
 
   it("keeps the punch card first in its row, so it is first on a phone", () => {
     const row = home.slice(home.indexOf("<EqualHeightRow"), home.indexOf("</EqualHeightRow>"));
     expect(row.indexOf("<SelfPunchCard")).toBeLessThan(row.indexOf("<TodayCard"));
-    expect(row.indexOf("<TodayCard")).toBeLessThan(row.indexOf("<AttentionCard"));
+  });
+
+  it("is a TWO-card row now, not three", () => {
+    /*
+      A notification list is not a thing you do here. As a card it took a third of the first
+      screen and, having no natural end, padded the other two to its own height.
+    */
+    expect(home).toContain('<EqualHeightRow className="sm:grid-cols-2">');
+    expect(home).not.toContain("<AttentionCard");
   });
 
   it("no longer renders a second full-width band above it", () => {
@@ -90,28 +106,83 @@ describe("two layouts, not one row bent", () => {
   });
 });
 
-describe("the enrolment notice can be acted on", () => {
-  it("is a link when there is something to do", () => {
-    expect(ask).toContain('<Link\n          to="/me/helpdesk"');
-  });
-
-  it("is NOT a link when the employee has nothing left to do", () => {
+describe("the enrolment ask lives in the bar now", () => {
+  it("is merged in rather than given a full-width block of its own", () => {
     /*
-      A `pending` row means a capture is already with an administrator. A button that leads
-      nowhere useful teaches people to stop pressing them.
+      On a phone that block was a whole card of vertical space for one sentence. It IS a
+      notification — "HR has asked you to do something" — so it belongs in the list.
     */
-    expect(ask).toContain("{awaitingApproval ? (");
-    expect(ask).toContain('<span className="flex items-start gap-2.5 px-3 py-2.5">{body}</span>');
+    expect(bar).toContain("useMyFaceEnrolmentAsk");
+    expect(bar).toContain("items.unshift(row);");
   });
 
-  it("shows one line, with the detail behind a disclosure", () => {
-    expect(ask).toContain("me.faceAsk.draft.lead");
-    expect(ask).toContain("<details");
-    expect(ask).toContain("me.faceAsk.more");
+  it("puts an actionable ask FIRST and a waiting one with the rest", () => {
+    // A `pending` capture is already with an administrator; nothing is owed by the employee.
+    expect(bar).toContain("if (awaiting) items.push(row);");
   });
 
-  it("still says when it was asked, and still says nothing when there is no ask", () => {
-    expect(ask).toContain("me.faceAsk.asked");
-    expect(ask).toContain("if (ask.data === undefined || ask.data === null) return null;");
+  it("links an actionable ask somewhere it can be acted on", () => {
+    // Not a capture screen: registration is admin-supervised, with the employee present.
+    expect(bar).toContain('href: awaiting ? null : "/me/helpdesk"');
+  });
+
+  it("says nothing at all when there is nothing to say", () => {
+    // A bar that renders on every visit to report calm trains people to stop reading it.
+    expect(bar).toContain("if (query.isPending || ask.isPending) return null;");
+  });
+
+  it("shows the most urgent title on the collapsed line", () => {
+    // "3 things need you" with no clue which makes everybody open it to find out.
+    expect(bar).toContain("{first.title}");
+  });
+});
+
+describe("the attendance card says less", () => {
+  it("drops the lead sentence that repeated its own heading", () => {
+    expect(punch).not.toContain('t("me.punch.lead")');
+  });
+
+  it("keeps the location reason BEFORE the browser prompt, but as one line", () => {
+    /*
+      The property that mattered was order, not length: somebody who has read why is far
+      likelier to grant it. The paragraph is behind a disclosure now.
+    */
+    expect(punch).toContain('t("me.punch.location.short")');
+    expect(punch).toContain("<details");
+    expect(punch).toContain('t("me.punch.location.reason")');
+  });
+});
+
+describe("a day that looks short says why", () => {
+  it("warns when the scans read as closed but the shift has not ended", () => {
+    /*
+      Punch from home at 08:30, scan in at the gate at 12:40: the arrival CLOSES the morning
+      session, so the day reads 08:30-12:40 and the figure looks like lost hours.
+    */
+    expect(today).toContain("const looksClosedMidShift =");
+    expect(today).toContain("day.punch_count % 2 === 0 && checkedOut && shiftNotEnded");
+  });
+
+  it("does NOT hang it on shiftRunning, which is the opposite condition", () => {
+    /*
+      THE BUG THIS EXISTS FOR. A first draft used `shiftRunning`, which requires that nobody
+      has scanned out — mutually exclusive with `checkedOut`. The notice could never have
+      appeared, and it would have shipped as dead code that read correctly.
+    */
+    expect(today).toContain("const shiftNotEnded =");
+    expect(today).not.toContain("=== 0 && shiftRunning &&");
+  });
+
+  it("tells the employee the figure completes itself", () => {
+    expect(today).toContain('t("home.today.mayRecalc.title")');
+    expect(today).toContain('t("home.today.mayRecalc.body")');
+  });
+
+  it("actually RENDERS on that condition, not merely computes it", () => {
+    /*
+      Asserting the derivation and the copy is not enough: both survive a change that stops
+      rendering the block, and the notice would silently never appear.
+    */
+    expect(today).toContain("{looksClosedMidShift ? (");
   });
 });

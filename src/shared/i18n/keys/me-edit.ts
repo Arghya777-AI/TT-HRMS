@@ -283,6 +283,8 @@ export const keysMeEdit = {
 
   // Location — the reason is on screen before the browser's prompt
   "me.punch.location.title": "Your location",
+  /** The one-line summary; the paragraph above sits behind a disclosure. */
+  "me.punch.location.short": "We ask for your location when you tap",
   // NOTE ON "marked for review": the function flags a punch (`needs_review`)
   // when it can SEE something to flag — outside the geofence, outside the venue
   // network, no liveness attestation. A punch with NO coordinates is recorded

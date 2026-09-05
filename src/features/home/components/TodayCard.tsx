@@ -102,6 +102,21 @@ function TodayFacts({ day, nowMs }: { day: AttendanceDay; nowMs: number }) {
     day.shift_end_at !== null &&
     isFutureInstant(day.shift_end_at, nowMs);
 
+  /*
+    ── THE DAY LOOKS FINISHED, AND THE SHIFT HAS NOT ─────────────────────────
+    An EVEN number of scans means the pairing currently reads the day as closed, so a figure
+    is shown as though it were final. If the shift end is still ahead, it is not: this is the
+    punched-at-home-then-at-the-gate case, where the arrival scan closed the morning session
+    and the afternoon has not opened yet.
+
+    Deliberately NOT `shiftRunning`, which requires the opposite — that nobody has scanned out.
+    A first draft used it and the notice could never have appeared: the two conditions are
+    mutually exclusive, and it would have shipped as dead code that looked right.
+  */
+  const shiftNotEnded = day.shift_end_at !== null && isFutureInstant(day.shift_end_at, nowMs);
+  const looksClosedMidShift =
+    day.punch_count > 0 && day.punch_count % 2 === 0 && checkedOut && shiftNotEnded;
+
   return (
     <div className="space-y-4">
       {/*
@@ -133,6 +148,24 @@ function TodayFacts({ day, nowMs }: { day: AttendanceDay; nowMs: number }) {
           </dd>
         </div>
       </dl>
+
+      {/*
+        ── WHY THE HOURS CAN LOOK SHORT, SAID BEFORE ANYBODY ASKS ────────────
+        Somebody punches from home at 08:30, travels in, and scans at the gate at 12:40. Scans
+        pair in order, so that gate scan is read as the CLOSE of the morning session — the day
+        reads 08:30 to 12:40 and the afternoon has not started. The figure is not wrong; it is
+        incomplete, and it completes itself on the next scan.
+
+        Shown only when it actually applies — an even number of scans, so the day currently
+        looks closed, while the shift has not ended. That is exactly the state in which a
+        correct-but-low number is alarming, and staying silent is what generates the ticket.
+      */}
+      {looksClosedMidShift ? (
+        <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs" role="status">
+          <span className="font-medium">{t("home.today.mayRecalc.title")}</span>{" "}
+          <span className="text-muted-foreground">{t("home.today.mayRecalc.body")}</span>
+        </p>
+      ) : null}
 
       {shiftRunning && day.first_in_at !== null ? (
         <p className="rounded-md bg-info/10 px-3 py-2 text-sm text-info" role="status">

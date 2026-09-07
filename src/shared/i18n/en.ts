@@ -3952,6 +3952,8 @@ export const en = catalogue({
     reads like closing the dialog.
   */
   "admin.leaveReq.action.cancel": "Cancel leave",
+  "admin.leaveReq.action.take": "Cancel or edit",
+  "admin.leaveReq.action.more": "Edit or send back",
   "admin.leaveReq.dialog.cancelTitle": "Cancel approved leave {number}?",
   "admin.leaveReq.dialog.cancelDescription":
     "The days go back to the employee's balance and their attendance for those dates is "
@@ -3983,6 +3985,8 @@ export const en = catalogue({
   */
   "adminLeave.cancelDays.startEdit": "Change dates",
   "adminLeave.cancelDays.startSendBack": "Send back to the employee",
+  "adminLeave.cancelDays.startSendBackPending":
+    "Send back to the employee as a draft",
   "adminLeave.cancelDays.editFrom": "First day",
   "adminLeave.cancelDays.editTo": "Last day",
   "adminLeave.cancelDays.editOrder": "The last day cannot be before the first.",

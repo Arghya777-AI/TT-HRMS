@@ -111,7 +111,13 @@ export default function AdminLeaveRequestsPage() {
     the notice period. Same dialog the leave calendar opens, so the two screens cannot drift.
   */
   const [cancelTarget, setCancelTarget] = useState<
-    { requestId: string; requestNumber: string; name: string | null } | null
+    {
+      requestId: string;
+      requestNumber: string;
+      name: string | null;
+      /* Carried so the dialog offers only what the server accepts for this status. */
+      status: LeaveRequestStatus;
+    } | null
   >(null);
 
   const decide = useDecideLeaveRequest(profileId, (input) => {
@@ -218,7 +224,8 @@ export default function AdminLeaveRequestsPage() {
       {
         key: "actions",
         header: t("admin.leaveReq.col.actions"),
-        width: "13rem",
+        /* Three controls on a pending row now, not two. */
+        width: "17rem",
         align: "right",
         render: (row) => {
           /*
@@ -244,10 +251,19 @@ export default function AdminLeaveRequestsPage() {
                     requestId: row.id,
                     requestNumber: row.request_number,
                     name: labels.data?.get(row.employee_id)?.name ?? null,
+                    status: row.status,
                   })
                 }
               >
-                {t("admin.leaveReq.action.cancel")}
+                {/*
+                  ONE BUTTON FOR THREE ACTIONS, named for all of them.
+
+                  It said "Cancel leave" while the dialog behind it has always offered cancel,
+                  edit and hand-back — so two of the three were unreachable to anybody who read
+                  the button and decided they did not want to cancel anything. The dialog is the
+                  menu; the button only has to admit that.
+                */}
+                {t("admin.leaveReq.action.take")}
               </Button>
             );
           }
@@ -288,6 +304,29 @@ export default function AdminLeaveRequestsPage() {
                 }
               >
                 {t("admin.leaveReq.action.reject")}
+              </Button>
+              {/*
+                THE OTHER TWO MOVES ON A PENDING REQUEST.
+
+                Approve and reject were the only ones offered, so an administrator reading an
+                application with the wrong dates on it had to reject it and ask the employee to
+                file the whole thing again. Both of these now accept a pending request
+                server-side (migration 20260907160000): edit corrects it in place and leaves it
+                pending, and hand-back returns it to the employee as a draft.
+              */}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setCancelTarget({
+                    requestId: row.id,
+                    requestNumber: row.request_number,
+                    name: labels.data?.get(row.employee_id)?.name ?? null,
+                    status: row.status,
+                  })
+                }
+              >
+                {t("admin.leaveReq.action.more")}
               </Button>
             </span>
           );
@@ -416,6 +455,7 @@ export default function AdminLeaveRequestsPage() {
         requestId={cancelTarget?.requestId ?? null}
         requestNumber={cancelTarget?.requestNumber ?? ""}
         employeeName={cancelTarget?.name ?? null}
+        status={cancelTarget?.status ?? "approved"}
         onDone={(message) => { setCancelTarget(null); setDone(message); }}
       />
     </div>

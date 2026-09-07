@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { fmtCivilDayMonthWeekday, istToday } from "@/lib/datetime";
 import { t } from "@/shared/i18n/en";
 import type { LeavePortion } from "@/features/leave/leavePortion";
+import type { LeaveRequestStatus } from "../api/leave.api";
 import { SENSITIVE_REASON_LENGTH } from "@/shared/api/query";
 import {
   useCancelLeaveDays,
@@ -54,6 +55,17 @@ export interface CancelLeaveDaysDialogProps {
   readonly requestNumber: string;
   /** Whose leave it is, so the title names a person rather than a number. */
   readonly employeeName: string | null;
+  /**
+   * The request's status, so the dialog offers only what the server will accept.
+   *
+   * `admin_cancel_leave_days` refuses anything that is not approved — "there is nothing to
+   * cancel" — while `admin_edit_leave_dates` and `admin_send_leave_back` now take a pending
+   * request too. Rendering all three regardless would put a button in front of somebody that
+   * answers with an error, which is worse than not offering it.
+   *
+   * Defaults to `"approved"` for the calendar surfaces, which only ever show granted leave.
+   */
+  readonly status?: LeaveRequestStatus;
   readonly onDone: (message: string) => void;
 }
 
@@ -66,14 +78,27 @@ const PORTION_CHOICES: readonly { readonly value: LeavePortion; readonly label: 
   { value: "second_half", label: t("admin.leaveFor.portion.second") },
 ];
 
+/** What the server will accept for this status — see the `status` prop. */
+function allowedActions(status: LeaveRequestStatus): {
+  readonly edit: boolean;
+  readonly sendBack: boolean;
+  readonly cancel: boolean;
+} {
+  const approved = status === "approved" || status === "partially_approved";
+  const pending = status === "pending";
+  return { edit: approved || pending, sendBack: approved || pending, cancel: approved };
+}
+
 export function CancelLeaveDaysDialog({
   open,
   onOpenChange,
   requestId,
   requestNumber,
   employeeName,
+  status = "approved",
   onDone,
 }: CancelLeaveDaysDialogProps): React.JSX.Element {
+  const allowed = allowedActions(status);
   const days = useLeaveRequestDays(open ? requestId : null);
   const [picked, setPicked] = useState<readonly string[]>([]);
   const [reason, setReason] = useState("");
@@ -468,29 +493,39 @@ export function CancelLeaveDaysDialog({
                     them: change it, hand it to the person it belongs to, or take it back.
                     Only the last is styled destructive — the other two are reversible.
                   */}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={cancellable.length === 0}
-                    onClick={() => setStep("edit")}
-                  >
-                    {t("adminLeave.cancelDays.startEdit")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setStep("sendBack")}
-                  >
-                    {t("adminLeave.cancelDays.startSendBack")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={cancellable.length === 0}
-                    onClick={() => setStep("cancel")}
-                  >
-                    {t("adminLeave.cancelDays.startCancel")}
-                  </Button>
+                  {allowed.edit ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={cancellable.length === 0}
+                      onClick={() => setStep("edit")}
+                    >
+                      {t("adminLeave.cancelDays.startEdit")}
+                    </Button>
+                  ) : null}
+                  {allowed.sendBack ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setStep("sendBack")}
+                    >
+                      {/* A pending leave goes all the way back to the employee's draft; an
+                          approved one only loses its decision. Different words for it. */}
+                      {status === "pending"
+                        ? t("adminLeave.cancelDays.startSendBackPending")
+                        : t("adminLeave.cancelDays.startSendBack")}
+                    </Button>
+                  ) : null}
+                  {allowed.cancel ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={cancellable.length === 0}
+                      onClick={() => setStep("cancel")}
+                    >
+                      {t("adminLeave.cancelDays.startCancel")}
+                    </Button>
+                  ) : null}
                   <Dialog.Close asChild>
                     <Button type="button" variant="ghost" size="sm">
                       {t("adminLeave.cancelDays.close")}

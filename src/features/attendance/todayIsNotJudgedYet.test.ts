@@ -35,9 +35,11 @@ import { describe, expect, it } from "vitest";
 import {
   dayVariance,
   expectedMinutesFor,
+  isGettingProcessed,
   periodVariance,
   type VarianceDay,
 } from "./lib/variance";
+import { varianceCoverageText } from "./lib/varianceCoverage";
 
 const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8");
 const strip = (s: string) =>
@@ -130,6 +132,163 @@ describe("processing versus tentative", () => {
     );
     expect(p.openDays).toBe(1);
     expect(p.unresolvedDays).toBe(1);
+  });
+});
+
+describe("a day that cannot change is available immediately", () => {
+  it("counts TODAY's holiday and weekly off at once — no waiting for midnight", () => {
+    /*
+      "If there is a holiday you can mark it as a full day ... you don't have to wait till the
+      end of the day." Nothing about a holiday can change by sitting through the afternoon, so
+      withholding it until 23:59:59 was over-applying the rule.
+    */
+    for (const key of ["is_holiday", "is_weekly_off"] as const) {
+      const v = dayVariance(d({ [key]: true }), TODAY);
+      expect(v.counts).toBe(true);
+      expect(v.reason).toBe(key === "is_holiday" ? "holiday" : "weekly_off");
+      expect(isGettingProcessed(d({ [key]: true }), TODAY)).toBe(false);
+    }
+  });
+
+  it("counts TODAY's full day of approved leave at once", () => {
+    const leave = d({ status: "on_leave", leave_type_id: "lt", leave_day_fraction: 1 });
+    expect(dayVariance(leave, TODAY).counts).toBe(true);
+    expect(isGettingProcessed(leave, TODAY)).toBe(false);
+  });
+
+  it("but a HALF day of leave today still waits — half the shift is still owed", () => {
+    const half = d({ status: "on_leave_half", leave_type_id: "lt", leave_day_fraction: 0.5 });
+    expect(dayVariance(half, TODAY).counts).toBe(false);
+    expect(isGettingProcessed(half, TODAY)).toBe(true);
+  });
+
+  it("and a holiday somebody is WORKING is measured after midnight like any other day", () => {
+    /* Surplus earned on a holiday accrues until the day ends, same as everywhere else. */
+    const worked = d({ is_holiday: true, first_in_at: `${TODAY}T04:00:00Z` });
+    expect(dayVariance(worked, TODAY).counts).toBe(false);
+    expect(isGettingProcessed(worked, TODAY)).toBe(true);
+  });
+
+  it("NEVER settles a FUTURE holiday or leave — those show, they do not count", () => {
+    /*
+      "It can show in the calendar, but it should not count it now; only count it on the day
+      when it comes." The early settlement above is strictly `ist_date === today`.
+    */
+    const next = { ist_date: "2026-09-30" } as const;
+    for (const over of [
+      { is_holiday: true },
+      { is_weekly_off: true },
+      { status: "on_leave" as const, leave_type_id: "lt", leave_day_fraction: 1 },
+    ]) {
+      const v = dayVariance(d({ ...next, ...over }), TODAY);
+      expect(v.counts).toBe(false);
+      expect(v.reason).toBe("future");
+    }
+  });
+
+  it("counts future leave as DAYS in the period breakdown, never as HOURS", () => {
+    /*
+      "It can show in leaves that in this month there is already 2 leaves ... but the hours
+      should be calculated only when the day comes."
+    */
+    const p = periodVariance(
+      [
+        d({ ist_date: "2026-09-20", status: "on_leave", leave_type_id: "lt", leave_day_fraction: 1 }),
+        d({ ist_date: "2026-09-21", status: "on_leave", leave_type_id: "lt", leave_day_fraction: 1 }),
+      ],
+      TODAY,
+    );
+    expect(p.futureDays).toBe(2);
+    expect(p.workedMinutes).toBe(0);
+    expect(p.expectedMinutes).toBe(0);
+    expect(p.varianceMinutes).toBe(0);
+    expect(p.unresolvedDays).toBe(0);
+  });
+});
+
+describe("the breakdown names today, and stops calling next week a fault", () => {
+  it("itemises the screenshot's nine days correctly", () => {
+    /* Six computed, today getting processed, two dates still to come. */
+    const computed = [1, 2, 3, 4, 5, 6].map((n) =>
+      d({
+        ist_date: `2026-09-0${n}`,
+        total_worked_minutes: 480,
+        payable_worked_minutes: 480,
+        last_out_at: `2026-09-0${n}T12:00:00Z`,
+      }),
+    );
+    const p = periodVariance(
+      [
+        ...computed,
+        d({ status: "half_day", first_in_at: `${TODAY}T02:59:00Z` }),
+        d({ ist_date: "2026-09-13", is_weekly_off: true }),
+        d({ ist_date: "2026-09-14", is_weekly_off: true }),
+      ],
+      TODAY,
+    );
+    expect(p.countedDays).toBe(6);
+    expect(p.openDays).toBe(1);
+    expect(p.futureDays).toBe(2);
+    expect(p.unresolvedDays).toBe(0);
+    expect(varianceCoverageText(p)).toBe(
+      "Over 6 computed days · 1 getting processed (today) · 2 still to come",
+    );
+  });
+
+  it("omits every part that is zero", () => {
+    const p = periodVariance(
+      [d({ ist_date: "2026-09-01", last_out_at: "2026-09-01T12:00:00Z",
+           total_worked_minutes: 480, payable_worked_minutes: 480 })],
+      TODAY,
+    );
+    expect(varianceCoverageText(p)).toBe("Over 1 computed days");
+  });
+
+  it("still names a genuinely stalled day as one, and names it last", () => {
+    const p = periodVariance(
+      [
+        d({ status: "half_day", first_in_at: `${TODAY}T02:59:00Z` }),
+        d({ ist_date: "2026-09-01", status: "pending" }),
+        d({ ist_date: "2026-09-30" }),
+      ],
+      TODAY,
+    );
+    expect(varianceCoverageText(p)).toBe(
+      "Over 0 computed days · 1 getting processed (today) · 1 still to come · 1 not processed yet",
+    );
+  });
+});
+
+describe("the star mark", () => {
+  it("is on today's date in both grids, driven by the shared predicate", () => {
+    expect(adminGrid).toContain("const open = isGettingProcessed(r);");
+    expect(myGrid).toContain("isGettingProcessed(row.day)");
+    for (const g of [adminGrid, myGrid]) expect(g).toContain('{" *"}');
+  });
+
+  it("carries a footnote in both grids, only when a row has the mark", () => {
+    expect(adminGrid).toContain("rows.some((r) => isGettingProcessed(r))");
+    expect(myGrid).toContain("visibleRows.some((row) => row.day !== null && isGettingProcessed(row.day))");
+    for (const g of [adminGrid, myGrid]) expect(g).toContain("attendance.variance.starNote");
+  });
+
+  it("says 'Getting processed' in the words asked for", () => {
+    const en = read("src", "shared", "i18n", "en.ts");
+    const at = en.indexOf('"attendance.variance.cell.inProgress"');
+    expect(en.slice(at, at + 120)).toContain("Getting processed");
+    const star = en.indexOf('"attendance.variance.starNote"');
+    expect(en.slice(star, star + 200)).toContain("Getting processed");
+    expect(en.slice(star, star + 200)).toContain("11:59 pm IST");
+  });
+
+  it("is explained on all three period panels from one shared sentence", () => {
+    for (const f of [
+      ["src", "features", "admin", "components", "PeriodVariancePanel.tsx"],
+      ["src", "features", "attendance", "components", "MonthSummaryPanel.tsx"],
+      ["src", "features", "attendance", "components", "MonthTotals.tsx"],
+    ]) {
+      expect(strip(read(...f))).toContain("varianceCoverageText(");
+    }
   });
 });
 

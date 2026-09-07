@@ -30,6 +30,7 @@ import { fmtDurationHm } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AttendanceDay, AttendancePeriodSummary } from "../api/attendance.api";
 import { consequences, fmtSignedMinutes, periodVariance } from "../lib/variance";
+import { varianceCoverageText } from "../lib/varianceCoverage";
 
 export interface MonthSummaryPanelProps {
   days: readonly AttendanceDay[];
@@ -141,14 +142,17 @@ export function MonthSummaryPanel({
         The caveat leads when it dominates. Every figure below is computed over PROCESSED days,
         and on a month that is mostly unprocessed that fact matters more than any of them.
       */}
-      {v.unresolvedDays > 0 ? (
+      {/*
+        Itemised rather than lumped. Today being measured, a date next week, and a day the
+        engine actually stalled on are three different statements, and only the last is a
+        fault — see `varianceCoverage.ts`.
+      */}
+      {v.openDays > 0 || v.futureDays > 0 || v.unresolvedDays > 0 ? (
         <div className="rounded-xl border border-warning/40 bg-warning/5 p-3">
-          <p className="text-sm text-warning">
-            {t("attendance.summaryTab.unresolved", {
-              count: String(v.unresolvedDays),
-              counted: String(v.countedDays),
-            })}
-          </p>
+          <p className="text-sm text-warning">{varianceCoverageText(v)}</p>
+          {v.openDays > 0 ? (
+            <p className="mt-1 text-xs text-warning/90">{t("attendance.variance.todayNote")}</p>
+          ) : null}
         </div>
       ) : null}
 

@@ -24,6 +24,7 @@ import { fmtDurationHm } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AttendanceDay } from "../api/attendance.api";
 import { fmtSignedMinutes, periodVariance } from "../lib/variance";
+import { varianceCoverageText } from "../lib/varianceCoverage";
 
 export interface MonthTotalsProps {
   days: readonly AttendanceDay[];
@@ -106,9 +107,10 @@ export function MonthTotals({ days, monthLabel }: MonthTotalsProps): React.JSX.E
         Named, not hidden. A total over six of twenty-five days is a fact about six days, and
         presenting it without that caveat would make it a claim about the month.
       */}
-      {v.unresolvedDays > 0 ? (
+      {v.openDays > 0 || v.futureDays > 0 || v.unresolvedDays > 0 ? (
         <p className="mt-3 border-t pt-3 text-xs text-warning">
-          {t("attendance.totals.unresolved", { count: String(v.unresolvedDays) })}
+          {varianceCoverageText(v)}
+          {v.openDays > 0 ? ` — ${t("attendance.variance.todayNote")}` : ""}
         </p>
       ) : null}
     </section>

@@ -25,6 +25,7 @@ import { t } from "@/shared/i18n/en";
 import { fmtDurationHm } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { fmtSignedMinutes, type PeriodVariance } from "@/features/attendance/lib/variance";
+import { varianceCoverageText } from "@/features/attendance/lib/varianceCoverage";
 
 export interface PeriodVariancePanelProps {
   variance: PeriodVariance | null;
@@ -66,10 +67,7 @@ export function PeriodVariancePanel({
         <p className="mt-1 text-xs text-muted-foreground">
           {variance === null
             ? t("admin.pAtt.variance.netHint")
-            : t("admin.pAtt.variance.netCounted", {
-              counted: String(variance.countedDays),
-              skipped: String(variance.unresolvedDays),
-            })}
+            : varianceCoverageText(variance)}
         </p>
         {/*
           Named separately from the skipped count. "2 not processed yet" reads as a fault; a

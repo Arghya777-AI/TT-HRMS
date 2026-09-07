@@ -38,7 +38,12 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { PeriodVariancePanel } from "../components/PeriodVariancePanel";
-import { dayVariance, fmtSignedMinutes, periodVariance } from "@/features/attendance/lib/variance";
+import {
+  dayVariance,
+  fmtSignedMinutes,
+  isGettingProcessed,
+  periodVariance,
+} from "@/features/attendance/lib/variance";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { StatusChip, type StatusChipEntry } from "@/shared/ui/StatusChip";
 import { dash, formatDays, formatNumber, formatPercent } from "@/lib/format";
@@ -254,7 +259,25 @@ export default function EmployeeAttendancePage() {
       header: t("admin.pAtt.col.date"),
       width: "12rem",
       sortable: true,
-      render: (r) => <span className="num">{fmtCivilDateWeekday(r.ist_date)}</span>,
+      /*
+        THE STAR MARK. Today's whole row is provisional — worked, payable, over/under, paid, the
+        status chip — so the asterisk goes on the DATE and one footnote under the grid explains
+        it, rather than eight cells each growing their own caveat. That is what a footnote
+        marker is for, and it keeps the columns readable.
+
+        `dayVariance` decides, not a date comparison here: a holiday or a full day of granted
+        leave is settled the moment it starts and gets no asterisk, which is the distinction
+        the reader actually cares about.
+      */
+      render: (r) => {
+        const open = isGettingProcessed(r);
+        return (
+          <span className="num">
+            {fmtCivilDateWeekday(r.ist_date)}
+            {open ? <span className="text-warning" title={t("attendance.variance.starNote")}>{" *"}</span> : null}
+          </span>
+        );
+      },
     },
     {
       key: "status",
@@ -640,6 +663,10 @@ export default function EmployeeAttendancePage() {
                   pageSize={DAY_RECORDS_PAGE_SIZE}
                   onRowClick={(r) => setParam("d", r.ist_date)}
                 />
+                {/* Only when a row actually carries the mark. */}
+                {rows.some((r) => isGettingProcessed(r)) ? (
+                  <p className="mt-2 text-xs text-warning">{t("attendance.variance.starNote")}</p>
+                ) : null}
                 {days.hasNextPage ? (
                   <div className="mt-4 flex justify-center">
                     <Button

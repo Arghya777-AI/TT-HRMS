@@ -61,7 +61,12 @@ import { MonthKpis } from "../components/MonthKpis";
 import { MonthTotals } from "../components/MonthTotals";
 import { MonthSummaryPanel } from "../components/MonthSummaryPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dayVariance, fmtSignedMinutes, type NoExpectationReason } from "../lib/variance";
+import {
+  dayVariance,
+  fmtSignedMinutes,
+  isGettingProcessed,
+  type NoExpectationReason,
+} from "../lib/variance";
 
 /**
  * Why a day contributed nothing, in words.
@@ -184,7 +189,24 @@ export default function MyAttendancePage() {
       width: "9rem",
       sortable: true,
       sortValue: (row) => row.istDate,
-      render: (row) => fmtCivilDayMonthWeekday(row.istDate),
+      /*
+        The star mark. Today's whole row is provisional, so the asterisk sits on the date and
+        one footnote under the grid explains it — see the same treatment on the admin grid.
+        A holiday or a full day of granted leave is settled when it starts and gets no mark.
+      */
+      render: (row) => {
+        const open = row.day !== null && isGettingProcessed(row.day);
+        return (
+          <>
+            {fmtCivilDayMonthWeekday(row.istDate)}
+            {open ? (
+              <span className="text-warning" title={t("attendance.variance.starNote")}>
+                {" *"}
+              </span>
+            ) : null}
+          </>
+        );
+      },
     },
     {
       key: "status",
@@ -613,6 +635,11 @@ export default function MyAttendancePage() {
             )
           }
         />
+
+        {/* The star mark's key, immediately under the rows that carry it. */}
+        {visibleRows.some((row) => row.day !== null && isGettingProcessed(row.day)) ? (
+          <p className="mt-2 text-xs text-warning">{t("attendance.variance.starNote")}</p>
+        ) : null}
 
         {/*
           Under the table, because a reader arrives at the total having just scrolled the

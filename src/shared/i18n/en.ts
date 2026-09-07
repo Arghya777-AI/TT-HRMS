@@ -1914,12 +1914,23 @@ export const en = catalogue({
   */
   "attendance.variance.reason.future": "Still to come — nothing is owed on this day yet",
   "attendance.variance.reason.inProgress":
-    "Processing — you are still clocked in. Today is measured after it ends at 11:59 pm IST.",
+    "Getting processed — you are still clocked in. Today is measured after it ends at 11:59 pm IST.",
   "attendance.variance.reason.provisional":
     "Tentative — today can still change. It is measured after it ends at 11:59 pm IST.",
   /* The short forms that sit inside a table cell, where the sentence above will not fit. */
-  "attendance.variance.cell.inProgress": "Processing",
+  "attendance.variance.cell.inProgress": "Getting processed",
   "attendance.variance.cell.provisional": "Tentative",
+
+  /* The itemised remainder — see `varianceCoverage.ts`. One sentence, three screens. */
+  "attendance.variance.cover.counted": "Over {n} computed days",
+  "attendance.variance.cover.processing": "{n} getting processed (today)",
+  "attendance.variance.cover.future": "{n} still to come",
+  "attendance.variance.cover.stalled": "{n} not processed yet",
+  "attendance.variance.todayNote":
+    "today is getting processed and is added after 11:59 pm IST",
+  /* The star mark's footnote. Sits under the day grid and explains the asterisk on today. */
+  "attendance.variance.starNote":
+    "* Getting processed — today's figures are not final until 11:59 pm IST.",
   "attendance.col.action": "Action",
   "attendance.action.punches": "Punches",
   "attendance.action.fix": "Fix",

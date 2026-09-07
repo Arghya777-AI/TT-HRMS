@@ -219,20 +219,36 @@ export function dayVariance(day: VarianceDay, today: string = istToday()): DayVa
     };
   }
 
+  /*
+    ── TODAY, BUT ONLY IF THERE IS SOMETHING LEFT TO MEASURE ──────────────────
+
+    A holiday, a weekly off or a full day of approved leave asks for nothing and cannot change
+    by sitting through the afternoon. Withholding it until midnight was over-applying the rule:
+    the day is already settled, it is already paid, and an employee should be able to see it
+    the moment it starts — "if there is a holiday you can mark it as a full day, you don't have
+    to wait till the end of the day".
+
+    Scans are the exception to the exception. Somebody working ON a holiday is accruing
+    surplus, and that surplus is no more final than any other day's until the day ends, so a
+    holiday with an in-scan goes back to being measured after midnight like everything else.
+  */
   if (day.ist_date === today) {
-    /*
-      Two labels, because they answer different questions. "Processing" tells somebody who is
-      still clocked in that nothing is wrong; "Tentative" tells somebody who has clocked out
-      that the number they can see is not yet the final one.
-    */
-    const stillIn = day.last_out_at === null && day.first_in_at !== null;
-    return {
-      expectedMinutes: 0,
-      workedMinutes: worked,
-      varianceMinutes: 0,
-      counts: false,
-      reason: stillIn ? "in_progress" : "provisional",
-    };
+    const settled = expectedMinutesFor(day) === 0 && day.first_in_at === null;
+    if (!settled) {
+      /*
+        Two labels, because they answer different questions. "Getting processed" tells somebody
+        still clocked in that nothing is wrong; "Tentative" tells somebody who has clocked out
+        that what they can see is not yet the final figure.
+      */
+      const stillIn = day.last_out_at === null && day.first_in_at !== null;
+      return {
+        expectedMinutes: 0,
+        workedMinutes: worked,
+        varianceMinutes: 0,
+        counts: false,
+        reason: stillIn ? "in_progress" : "provisional",
+      };
+    }
   }
 
   if (UNRESOLVED.has(day.status)) {
@@ -296,6 +312,20 @@ export function dayVariance(day: VarianceDay, today: string = istToday()): DayVa
   };
 }
 
+/**
+ * Is this day still being measured — the thing the star mark marks.
+ *
+ * A predicate rather than four copies of `reason === "in_progress" || reason === "provisional"`
+ * across two grids, their two footnotes and whatever asks next. It routes through
+ * `dayVariance` deliberately: "is today settled" is a question with real rules behind it — a
+ * holiday and a full day of granted leave are finished the moment they begin — and a date
+ * comparison at the call site would get them wrong.
+ */
+export function isGettingProcessed(day: VarianceDay, today: string = istToday()): boolean {
+  const reason = dayVariance(day, today).reason;
+  return reason === "in_progress" || reason === "provisional";
+}
+
 export interface PeriodVariance {
   /** Days that contributed. */
   countedDays: number;
@@ -308,6 +338,15 @@ export interface PeriodVariance {
    * rather than "2 not processed yet", which reads like a fault and was being reported as one.
    */
   openDays: number;
+  /**
+   * Days skipped because they have not happened yet.
+   *
+   * Also apart from `unresolvedDays`, for the same reason and one more: "2 not processed yet"
+   * against two future dates is not merely unhelpful, it is untrue — nothing has failed to
+   * process, the days are next week. A materialised future date is ordinary here, because
+   * approved leave is the one thing that creates one.
+   */
+  futureDays: number;
   expectedMinutes: number;
   workedMinutes: number;
   /** worked − expected across every counted day. */
@@ -341,6 +380,7 @@ export function periodVariance(
   let countedDays = 0;
   let unresolvedDays = 0;
   let openDays = 0;
+  let futureDays = 0;
   let expectedMinutes = 0;
   let workedMinutes = 0;
   let surplusMinutes = 0;
@@ -357,6 +397,7 @@ export function periodVariance(
     const v = dayVariance(day, today);
     if (!v.counts) {
       if (v.reason === "in_progress" || v.reason === "provisional") openDays += 1;
+      else if (v.reason === "future") futureDays += 1;
       else unresolvedDays += 1;
       continue;
     }
@@ -376,6 +417,7 @@ export function periodVariance(
     countedDays,
     unresolvedDays,
     openDays,
+    futureDays,
     expectedMinutes,
     workedMinutes,
     varianceMinutes: workedMinutes - expectedMinutes,

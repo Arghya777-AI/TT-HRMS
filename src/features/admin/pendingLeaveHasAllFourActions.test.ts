@@ -143,8 +143,14 @@ describe("the queue row", () => {
     expect(queue).toContain('status={cancelTarget?.status ?? "approved"}');
   });
 
-  it("widened the column, because a pending row now carries three controls", () => {
+  it("fits three controls in a NARROWER column than two across needed", () => {
+    /*
+      This asserted 17rem when the three buttons sat side by side. Stacking them one per line
+      reversed that: the column needs the width of the longest label, not the sum of three, and
+      the wide version had pushed the grid into a horizontal scroll and clipped the last button.
+      Colour and layout are covered in `decisionButtonsAreLegible.test.ts`.
+    */
     const col = queue.slice(queue.indexOf('key: "actions"'));
-    expect(col.slice(0, 200)).toContain('width: "17rem"');
+    expect(col.slice(0, 300)).toContain('width: "11rem"');
   });
 });

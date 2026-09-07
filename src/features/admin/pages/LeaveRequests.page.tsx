@@ -224,8 +224,12 @@ export default function AdminLeaveRequestsPage() {
       {
         key: "actions",
         header: t("admin.leaveReq.col.actions"),
-        /* Three controls on a pending row now, not two. */
-        width: "17rem",
+        /*
+          Narrower than the two-across version it replaces, not wider. Three buttons in a row
+          ran to 17rem, pushed the grid into a horizontal scroll and clipped the last one; one
+          per line needs the width of the longest label and nothing more.
+        */
+        width: "11rem",
         align: "right",
         render: (row) => {
           /*
@@ -245,7 +249,9 @@ export default function AdminLeaveRequestsPage() {
             return (
               <Button
                 size="sm"
-                variant="outline"
+                /* Amber like the pending row's: both open the same three-way change dialog. */
+                variant="warning"
+                className="w-full"
                 onClick={() =>
                   setCancelTarget({
                     requestId: row.id,
@@ -276,10 +282,16 @@ export default function AdminLeaveRequestsPage() {
             );
           }
           return (
-            <span className="inline-flex gap-2">
+            /*
+              STACKED, NOT IN A ROW. Three controls across a table cell forced the column to
+              17rem, which pushed the whole grid sideways and clipped the last button — visible
+              on the approved rows, where "Cancel or edit" was cut off at the viewport edge.
+              One per line reads as a short menu and the column gets narrower, not wider.
+            */
+            <span className="inline-flex w-full flex-col items-stretch gap-1.5">
               <Button
                 size="sm"
-                variant="outline"
+                variant="success"
                 disabled={decide.isPending}
                 onClick={() =>
                   ask({
@@ -293,7 +305,7 @@ export default function AdminLeaveRequestsPage() {
               </Button>
               <Button
                 size="sm"
-                variant="outline"
+                variant="destructive"
                 disabled={decide.isPending}
                 onClick={() =>
                   ask({
@@ -316,7 +328,7 @@ export default function AdminLeaveRequestsPage() {
               */}
               <Button
                 size="sm"
-                variant="ghost"
+                variant="warning"
                 onClick={() =>
                   setCancelTarget({
                     requestId: row.id,

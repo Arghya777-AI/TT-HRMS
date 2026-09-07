@@ -3977,8 +3977,20 @@ export const en = catalogue({
     me start unpicking it". `days` heads the list while you are looking; `pick` replaces it
     once Cancel has been pressed and the boxes appear.
   */
+  /*
+    The same dialog, opened on a request that cannot be cancelled — a pending one. It offers
+    only "change the dates" and "hand it back", so it must not open by telling somebody to
+    pick days to cancel.
+  */
+  "adminLeave.cancelDays.titleChange": "{name}'s leave request",
+  "adminLeave.cancelDays.bodyChange":
+    "{number} is awaiting a decision. You can correct the dates and leave it waiting, or send "
+    + "it back to the employee as a draft for them to change or withdraw.",
+  "adminLeave.cancelDays.closePlain": "Close",
+
   "adminLeave.cancelDays.days": "Days in this leave",
   "adminLeave.cancelDays.totals": "{days} day(s) of balance · {n} still approved",
+  "adminLeave.cancelDays.totalsPending": "{days} day(s) of balance · {n} awaiting a decision",
   /*
     Three ways out of the read-only view. Only cancelling is destructive; changing dates and
     handing it back are both reversible, and the labels and colours say so.

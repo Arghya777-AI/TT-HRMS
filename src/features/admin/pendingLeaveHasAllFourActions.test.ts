@@ -121,6 +121,73 @@ describe("the dialog offers only what the server will accept", () => {
   });
 });
 
+describe("the dialog actually works on a pending request", () => {
+  /*
+    Reported as "why are you not allowing it": opening "Edit or send back" on LV-2026-000057
+    gave a dialog headed "Cancel Vishwajeet Suresh's leave — pick the days to cancel", all
+    three days struck through as though already cancelled, and "Change dates" greyed out.
+
+    One cause. `cancellable` filtered `status === "approved"`, and every day row of a pending
+    request is 'pending' — so the list was empty, which disabled the edit button, left the
+    date fields blank, and struck every day out.
+  */
+  it("keeps a separate list of days that are still LIVE, not just approved ones", () => {
+    expect(dialog).toContain('(days.data ?? []).filter((d) => d.status === "approved")');
+    expect(dialog).toContain(
+      '(days.data ?? []).filter((d) => d.status === "approved" || d.status === "pending")',
+    );
+  });
+
+  it("gates Change dates on live days, so a pending request can be edited", () => {
+    expect(dialog).toContain("disabled={live.length === 0}");
+    expect(dialog).not.toContain("disabled={cancellable.length === 0}\n                      onClick={() => setStep(\"edit\")}");
+  });
+
+  it("seeds the date fields from the live days, so they are not blank", () => {
+    expect(dialog).toContain('const first = live[0]?.leave_date ?? "";');
+    expect(dialog).toContain("setEditTo(live[live.length - 1]?.leave_date ?? first);");
+    expect(dialog).toContain('setEditPortion((live[0]?.portion ?? "full_day") as LeavePortion);');
+  });
+
+  it("strikes out only days that are genuinely finished", () => {
+    // 'pending' is waiting, not finished. The old test called both the same thing.
+    expect(dialog).toContain('const done = d.status !== "approved" && d.status !== "pending";');
+  });
+
+  it("still restricts the cancel tick box to approved days", () => {
+    // Narrower than `done`: `admin_cancel_leave_days` releases approved days only.
+    expect(dialog).toContain('disabled={d.status !== "approved"}');
+  });
+
+  it("heads the dialog for what is on offer, not for cancelling", () => {
+    expect(dialog).toContain("adminLeave.cancelDays.titleChange");
+    expect(dialog).toContain("adminLeave.cancelDays.bodyChange");
+    expect(dialog).toContain("adminLeave.cancelDays.closePlain");
+    expect(dialog).toContain("allowed.cancel ? \"bg-destructive/10\" : \"bg-warning/10\"");
+    const en = read("src", "shared", "i18n", "en.ts");
+    const at = en.indexOf('"adminLeave.cancelDays.bodyChange"');
+    expect(en.slice(at, at + 300)).toContain("awaiting a decision");
+  });
+
+  it("counts the pending days as awaiting, not as '0 still approved'", () => {
+    expect(dialog).toContain("adminLeave.cancelDays.totalsPending");
+    const en = read("src", "shared", "i18n", "en.ts");
+    const at = en.indexOf('"adminLeave.cancelDays.totalsPending"');
+    expect(en.slice(at, at + 140)).toContain("awaiting a decision");
+  });
+
+  it("no longer paints an empty red error box on every open", () => {
+    /*
+      `userMessage` is `string | null`, so `(a ?? b ?? c) !== undefined` was TRUE with all
+      three null — every open of the dialog rendered an empty destructive-bordered box above
+      the buttons, which reads as an unexplained failure.
+    */
+    expect(dialog).toContain("{serverMessage !== null ? (");
+    expect(dialog).toContain('typeof m === "string" && m.trim() !== ""');
+    expect(dialog).not.toContain("!== undefined ? (");
+  });
+});
+
 describe("the queue row", () => {
   it("names the approved button for everything behind it, not just cancel", () => {
     expect(queue).toContain('t("admin.leaveReq.action.take")');

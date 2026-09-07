@@ -164,7 +164,12 @@ describe("every admin edit can change the half too", () => {
   });
 
   it("seeds from the booking and sends what the admin chose", () => {
-    expect(dialog).toContain('setEditPortion((cancellable[0]?.portion ?? "full_day") as LeavePortion)');
+    /*
+      Seeded from `live[0]`, not `cancellable[0]`: the dialog now opens on pending requests
+      too, whose day rows are 'pending' and so never appear in `cancellable`. Same booking,
+      wider list — see `pendingLeaveHasAllFourActions.test.ts`.
+    */
+    expect(dialog).toContain('setEditPortion((live[0]?.portion ?? "full_day") as LeavePortion)');
     expect(dialog).toContain('portion: editSingleDate ? editPortion : "full_day",');
   });
 

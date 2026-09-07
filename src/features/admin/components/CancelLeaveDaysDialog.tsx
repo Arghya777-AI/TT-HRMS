@@ -31,7 +31,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, CalendarX, Loader2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarX, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { cn } from "@/lib/utils";
@@ -125,8 +125,23 @@ export function CancelLeaveDaysDialog({
   */
   const [editPortion, setEditPortion] = useState<LeavePortion>("full_day");
 
+  /*
+    TWO LISTS, BECAUSE THE ACTIONS ASK DIFFERENT QUESTIONS.
+
+    `cancellable` is APPROVED days — the only ones `admin_cancel_leave_days` will release.
+    `live` is every day still in play, approved or pending.
+
+    Conflating them broke editing the moment a pending request could reach this dialog: every
+    day row of a pending request has status 'pending', so `cancellable` was empty, which
+    disabled "Change dates", left the date fields blank, and struck every day through as
+    though it had already been cancelled. Reported as "why are you not allowing it".
+  */
   const cancellable = useMemo(
     () => (days.data ?? []).filter((d) => d.status === "approved"),
+    [days.data],
+  );
+  const live = useMemo(
+    () => (days.data ?? []).filter((d) => d.status === "approved" || d.status === "pending"),
     [days.data],
   );
 
@@ -146,11 +161,11 @@ export function CancelLeaveDaysDialog({
       day rows are what the server will rebuild against — and a range that disagreed with them
       would silently move the booking on save.
     */
-    const first = cancellable[0]?.leave_date ?? "";
+    const first = live[0]?.leave_date ?? "";
     setEditFrom(first);
-    setEditTo(cancellable[cancellable.length - 1]?.leave_date ?? first);
-    setEditPortion((cancellable[0]?.portion ?? "full_day") as LeavePortion);
-  }, [cancellable, requestId]);
+    setEditTo(live[live.length - 1]?.leave_date ?? first);
+    setEditPortion((live[0]?.portion ?? "full_day") as LeavePortion);
+  }, [cancellable, live, requestId]);
 
   const edit = useEditLeaveDates((input, result) => {
     onOpenChange(false);
@@ -190,6 +205,11 @@ export function CancelLeaveDaysDialog({
   /* One date, so the half means something. Both fields are "YYYY-MM-DD" and compare as text. */
   const editSingleDate = editFrom !== "" && editFrom === editTo;
 
+  /* First of the three that actually said something. Empty strings count as nothing. */
+  const serverMessage =
+    [cancel.userMessage, edit.userMessage, sendBack.userMessage]
+      .find((m): m is string => typeof m === "string" && m.trim() !== "") ?? null;
+
   const reasonOk = reason.trim().length >= SENSITIVE_REASON_LENGTH;
   /*
     Compared as IST civil dates, never against a browser clock. `istToday()` is the venue's
@@ -216,17 +236,41 @@ export function CancelLeaveDaysDialog({
           )}
         >
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/10">
-              <CalendarX className="size-5 text-destructive" aria-hidden />
+            {/*
+              THE HEADING HAS TO MATCH WHAT IS ON OFFER.
+
+              It said "Cancel {name}'s leave — pick the days to cancel" on a PENDING request,
+              where cancelling is the one thing this dialog cannot do. Somebody who opened
+              "Edit or send back" was told to pick days to cancel and handed a disabled button.
+            */}
+            <span
+              className={cn(
+                "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full",
+                allowed.cancel ? "bg-destructive/10" : "bg-warning/10",
+              )}
+            >
+              {allowed.cancel ? (
+                <CalendarX className="size-5 text-destructive" aria-hidden />
+              ) : (
+                <CalendarClock className="size-5 text-warning" aria-hidden />
+              )}
             </span>
             <div className="min-w-0 flex-1">
               <Dialog.Title className="font-display text-base font-semibold">
-                {t("adminLeave.cancelDays.title", {
-                  name: employeeName ?? t("admin.common.unknownPerson"),
-                })}
+                {t(
+                  allowed.cancel
+                    ? "adminLeave.cancelDays.title"
+                    : "adminLeave.cancelDays.titleChange",
+                  { name: employeeName ?? t("admin.common.unknownPerson") },
+                )}
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-muted-foreground">
-                {t("adminLeave.cancelDays.body", { number: requestNumber })}
+                {t(
+                  allowed.cancel
+                    ? "adminLeave.cancelDays.body"
+                    : "adminLeave.cancelDays.bodyChange",
+                  { number: requestNumber },
+                )}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -274,7 +318,12 @@ export function CancelLeaveDaysDialog({
 
               <ul className="divide-y rounded-lg border">
                 {(days.data ?? []).map((d) => {
-                  const done = d.status !== "approved";
+                  /*
+                    Struck through means FINISHED — cancelled, rejected, withdrawn. A pending
+                    day is not finished, it is waiting, and `!== "approved"` called both the
+                    same thing.
+                  */
+                  const done = d.status !== "approved" && d.status !== "pending";
                   const free = !d.is_counted;
                   return (
                     <li key={d.id} className="flex items-center gap-3 px-3 py-2">
@@ -284,7 +333,8 @@ export function CancelLeaveDaysDialog({
                           type="checkbox"
                           id={`day-${d.id}`}
                           checked={picked.includes(d.leave_date)}
-                          disabled={done}
+                          /* Cancel releases APPROVED days only — narrower than `done`. */
+                          disabled={d.status !== "approved"}
                           onChange={() => toggle(d.leave_date)}
                           className="size-4 shrink-0 accent-destructive"
                         />
@@ -323,12 +373,19 @@ export function CancelLeaveDaysDialog({
 
               <p className="mt-2 text-xs text-muted-foreground">
                 {step === "view"
-                  ? t("adminLeave.cancelDays.totals", {
+                  ? t(
+                    /* "n still approved" is 0 on a pending request and reads as a warning
+                       rather than a count. It says how many are waiting instead. */
+                    allowed.cancel
+                      ? "adminLeave.cancelDays.totals"
+                      : "adminLeave.cancelDays.totalsPending",
+                    {
                     days: (days.data ?? [])
                       .reduce((sum, d) => sum + (d.is_counted ? Number(d.day_value) : 0), 0)
                       .toFixed(2),
-                    n: String(cancellable.length),
-                  })
+                    n: String(allowed.cancel ? cancellable.length : live.length),
+                    },
+                  )
                   : t("adminLeave.cancelDays.releasing", { days: releasing.toFixed(2) })}
               </p>
             </div>
@@ -474,9 +531,15 @@ export function CancelLeaveDaysDialog({
               whole — arrive here and are shown rather than swallowed. Each names something the
               administrator has to go and do.
             */}
-            {(cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage) !== undefined ? (
+            {/*
+              `userMessage` is `string | null`, so the old test — `(a ?? b ?? c) !== undefined`
+              — was TRUE whenever all three were null, which is every time the dialog opens
+              with nothing having failed. It rendered an empty red-bordered box above the
+              buttons on every single open, which reads as an unexplained error.
+            */}
+            {serverMessage !== null ? (
               <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage}
+                {serverMessage}
               </p>
             ) : null}
 
@@ -497,7 +560,8 @@ export function CancelLeaveDaysDialog({
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={cancellable.length === 0}
+                      /* Any day still in play can have its dates changed. */
+                      disabled={live.length === 0}
                       onClick={() => setStep("edit")}
                     >
                       {t("adminLeave.cancelDays.startEdit")}
@@ -528,7 +592,13 @@ export function CancelLeaveDaysDialog({
                   ) : null}
                   <Dialog.Close asChild>
                     <Button type="button" variant="ghost" size="sm">
-                      {t("adminLeave.cancelDays.close")}
+                      {/* "Close without cancelling" is nonsense where cancelling is not on
+                          offer. */}
+                      {t(
+                        allowed.cancel
+                          ? "adminLeave.cancelDays.close"
+                          : "adminLeave.cancelDays.closePlain",
+                      )}
                     </Button>
                   </Dialog.Close>
                 </>

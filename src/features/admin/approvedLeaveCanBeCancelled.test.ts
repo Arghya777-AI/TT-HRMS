@@ -187,6 +187,7 @@ describe("where an administrator can reach it", () => {
   it("shows the function's refusal instead of swallowing it", () => {
     // "locked period", "already paid", "comp-off is booked whole" — each names a next step.
     expect(dialog).toContain("cancel.userMessage");
+    expect(dialog).toContain("serverMessage");
   });
 });
 
@@ -232,7 +233,12 @@ describe("picking which days", () => {
 
   it("cannot re-pick a day that is already cancelled", () => {
     expect(dialog).toContain('(days.data ?? []).filter((d) => d.status === "approved")');
-    expect(dialog).toContain("disabled={done}");
+    /*
+      Was `disabled={done}`, which also disabled a PENDING day once this dialog could open on a
+      pending request. The tick box is now gated on approved specifically — narrower than
+      `done`, which only strikes out days that are genuinely finished.
+    */
+    expect(dialog).toContain('disabled={d.status !== "approved"}');
   });
 
   it("shows a holiday or weekly off rather than hiding it", () => {
@@ -340,9 +346,17 @@ describe("changing the dates, and handing it back", () => {
     expect(dialog).toContain('{step !== "view" ? (');
   });
 
-  it("surfaces whichever refusal came back", () => {
+  it("surfaces whichever refusal came back, and NOTHING when none did", () => {
     // A locked period refuses all three, and the message names what to do about it.
-    expect(dialog).toContain("cancel.userMessage ?? edit.userMessage ?? sendBack.userMessage");
+    expect(dialog).toContain("[cancel.userMessage, edit.userMessage, sendBack.userMessage]");
+    expect(dialog).toContain('typeof m === "string" && m.trim() !== ""');
+    expect(dialog).toContain("{serverMessage !== null ? (");
+    /*
+      The old test — `(a ?? b ?? c) !== undefined` — was true whenever all three were null,
+      which is every open with nothing having failed, so an empty red-bordered box rendered
+      above the buttons every time. `userMessage` is `string | null`, never undefined.
+    */
+    expect(dialog).not.toContain("!== undefined ? (");
   });
 
   it("refuses a range that ends before it starts, in the form and the function", () => {

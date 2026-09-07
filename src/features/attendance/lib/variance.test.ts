@@ -7,7 +7,13 @@
  * computed yet. Each of those would read as a full shift's shortfall.
  */
 import { describe, expect, it } from "vitest";
-import { consequences, dayVariance, fmtSignedMinutes, periodVariance } from "./variance";
+import {
+  consequences,
+  dayVariance,
+  expectedMinutesFor,
+  fmtSignedMinutes,
+  periodVariance,
+} from "./variance";
 import type { AttendanceDay, AttendancePeriodSummary } from "../api/attendance.api";
 
 /** A resolved, ordinary working day with a 9-hour shift. Overridden per case. */
@@ -363,10 +369,48 @@ describe("a future day is never a shortfall", () => {
     expect(v.reason).toBe("future");
   });
 
-  it("still judges today, which can genuinely be behind", () => {
+  /*
+    ── TODAY IS NOT JUDGED EITHER, AND THIS REVERSES AN EARLIER DECISION ───────
+
+    This suite used to assert the opposite, under the name "still judges today, which can
+    genuinely be behind": somebody checking at 4pm should see they are short, because that is
+    information rather than an error.
+
+    It is not information. The engine cannot measure a day it has no end time for, so an
+    employee scanned in at 08:29 with no out-scan yet has `total_worked_minutes = 0` meaning
+    "not known", and subtracting a full shift from it produced a red −8h against somebody
+    sitting at their desk. It dominated the period total too: a month genuinely 3h 09m AHEAD
+    displayed as 4h 51m BEHIND, off the back of that one unfinished day. It was reported as a
+    fault repeatedly, which is what a number nobody can act on gets you.
+
+    The boundary is now the one people already understand — the day is measured once it has
+    ended, at 23:59:59 IST. Every OTHER rule in this file is deliberately unchanged.
+  */
+  it("does not judge today while somebody is still clocked in", () => {
+    const v = dayVariance(
+      day({
+        ist_date: TODAY,
+        status: "half_day",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        first_in_at: "2026-09-03T02:59:00Z",
+        last_out_at: null,
+        total_worked_minutes: 0,
+        payable_worked_minutes: 0,
+      }),
+      TODAY,
+    );
+    expect(v.counts).toBe(false);
+    expect(v.reason).toBe("in_progress");
+    // The whole point: no invented shortfall.
+    expect(v.varianceMinutes).toBe(0);
+  });
+
+  it("calls today TENTATIVE once an out-scan exists, because more scans can still land", () => {
     /*
-      Deliberately NOT excluded. Somebody checking at 4 pm should see they are short — that is
-      information, not an error. Only strictly-future days are exempt.
+      An out-scan is not the end of the day. Somebody who steps out at 16:00 and returns at
+      17:00 has a last-out-scan that is not their last scan of the day, and the engine pairs
+      scans by ORDER — so the figure is not settled until the day can gain no more.
     */
     const v = dayVariance(
       day({
@@ -374,13 +418,74 @@ describe("a future day is never a shortfall", () => {
         status: "present",
         is_working_day: true,
         shift_duration_minutes: 480,
+        first_in_at: "2026-09-03T02:44:00Z",
+        last_out_at: "2026-09-03T10:44:00Z",
         total_worked_minutes: 200,
         payable_worked_minutes: 200,
       }),
       TODAY,
     );
-    expect(v.counts).toBe(true);
-    expect(v.varianceMinutes).toBe(-280);
+    expect(v.counts).toBe(false);
+    expect(v.reason).toBe("provisional");
+    expect(v.varianceMinutes).toBe(0);
+  });
+
+  it("still reports what today ASKS for, so the live countdown survives", () => {
+    /*
+      `TodayLive` renders "time left in your shift" only when the day expects something, and it
+      used to read `dayVariance(today).expectedMinutes`. Excluding today from the totals sent
+      that to 0 and would have deleted the countdown — the one live figure that reassures
+      somebody mid-shift, removed by the very change meant to stop them worrying.
+    */
+    const today = day({
+      ist_date: TODAY,
+      status: "half_day",
+      is_working_day: true,
+      shift_duration_minutes: 480,
+      first_in_at: "2026-09-03T02:59:00Z",
+      last_out_at: null,
+    });
+    expect(dayVariance(today, TODAY).expectedMinutes).toBe(0);
+    expect(expectedMinutesFor(today)).toBe(480);
+  });
+
+  it("keeps today OUT of the period total and names it apart from a stalled day", () => {
+    const p = periodVariance([
+      // Yesterday, genuinely 106 minutes over.
+      day({
+        ist_date: "2026-09-02",
+        status: "present",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        first_in_at: "2026-09-02T02:30:00Z",
+        last_out_at: "2026-09-02T12:16:00Z",
+        total_worked_minutes: 586,
+        payable_worked_minutes: 586,
+      }),
+      // Today, clocked in and not out. Would previously have booked a full −480.
+      day({
+        ist_date: TODAY,
+        status: "half_day",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+        first_in_at: "2026-09-03T02:59:00Z",
+        last_out_at: null,
+        total_worked_minutes: 0,
+        payable_worked_minutes: 0,
+      }),
+      // A day the engine genuinely has not resolved — a DIFFERENT thing, counted apart.
+      day({
+        ist_date: "2026-09-01",
+        status: "pending",
+        is_working_day: true,
+        shift_duration_minutes: 480,
+      }),
+    ], TODAY);
+    expect(p.varianceMinutes).toBe(106);
+    expect(p.shortfallMinutes).toBe(0);
+    expect(p.countedDays).toBe(1);
+    expect(p.openDays).toBe(1);
+    expect(p.unresolvedDays).toBe(1);
   });
 
   it("still judges yesterday", () => {

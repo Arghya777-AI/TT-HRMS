@@ -322,7 +322,23 @@ export default function EmployeeAttendancePage() {
       align: "right",
       render: (r) => {
         const v = dayVariance(r);
-        if (!v.counts) return <span className="text-muted-foreground">{t("common.empty")}</span>;
+        if (!v.counts) {
+          /*
+            Today gets a WORD, not an em dash. The dash was read as "nothing", and beside a red
+            period total an administrator reasonably concluded the total was right and the dash
+            was broken — which is the confusion this replaces. Everything else that does not
+            count (a holiday, granted leave, a day the engine has not resolved) keeps the dash.
+          */
+          const open = v.reason === "in_progress" || v.reason === "provisional";
+          if (!open) return <span className="text-muted-foreground">{t("common.empty")}</span>;
+          return (
+            <span className="text-warning">
+              {v.reason === "in_progress"
+                ? t("attendance.variance.cell.inProgress")
+                : t("attendance.variance.cell.provisional")}
+            </span>
+          );
+        }
         return (
           <span
             className={cn(

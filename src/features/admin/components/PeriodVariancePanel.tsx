@@ -71,6 +71,14 @@ export function PeriodVariancePanel({
               skipped: String(variance.unresolvedDays),
             })}
         </p>
+        {/*
+          Named separately from the skipped count. "2 not processed yet" reads as a fault; a
+          day still in progress is not one, and saying which is which is the whole point of
+          `openDays` being its own figure.
+        */}
+        {variance !== null && variance.openDays > 0 ? (
+          <p className="mt-1 text-xs text-warning">{t("admin.pAtt.variance.openToday")}</p>
+        ) : null}
       </div>
 
       {/*

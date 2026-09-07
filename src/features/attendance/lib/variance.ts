@@ -58,6 +58,15 @@ export interface VarianceDay {
   readonly leave_day_fraction: number | null;
   readonly total_worked_minutes: number | null;
   readonly payable_worked_minutes: number | null;
+  /**
+   * The day's first in-scan and last out-scan.
+   *
+   * Read for one purpose: deciding whether TODAY has finished being measured. A day with an
+   * in-scan and no out-scan yet has no end time to measure against, and the engine's
+   * `total_worked_minutes` of 0 for it means "not known yet", not "worked nothing".
+   */
+  readonly first_in_at: string | null;
+  readonly last_out_at: string | null;
 }
 
 /** Why a day expects nothing, when it expects nothing. */
@@ -68,7 +77,11 @@ export type NoExpectationReason =
   | "not_working_day"
   | "unresolved"
   /** The day is still ahead. Distinct from `unresolved`, which is a day that HAS passed. */
-  | "future";
+  | "future"
+  /** Today, clocked in and not yet out. There is no end time to measure against. */
+  | "in_progress"
+  /** Today, with an out-scan — but the day can still change before IST midnight. */
+  | "provisional";
 
 export interface DayVariance {
   /** Minutes the shift asked for. 0 when the day expects nothing. */
@@ -112,6 +125,38 @@ const OUTSIDE_EMPLOYMENT: ReadonlySet<AttendanceStatus> = new Set<AttendanceStat
 ]);
 
 /**
+ * How many minutes THIS DAY asks for, regardless of whether it has finished.
+ *
+ * Separate from `dayVariance` because the two questions are genuinely different, and conflating
+ * them broke a feature: `TodayLive` renders the live "time left in your shift" countdown only
+ * when the day expects something, and it read `dayVariance(today).expectedMinutes`. The moment
+ * today stopped counting towards the period total, that went to 0 and the countdown vanished —
+ * removing the one live figure that actually reassures somebody mid-shift, in the same change
+ * meant to stop them worrying.
+ *
+ * So: this answers "how long is your day", `dayVariance` answers "did it come out ahead or
+ * behind, and may we say so yet". The rules live here once and both callers read them.
+ */
+export function expectedMinutesFor(day: VarianceDay): number {
+  // Not employed, or a day already paid for by an earlier surplus: nothing is asked of them.
+  if (OUTSIDE_EMPLOYMENT.has(day.status) || day.status === "comp_off_availed") return 0;
+  if (day.is_holiday || day.is_weekly_off || !day.is_working_day) return 0;
+
+  const shift = day.shift_duration_minutes ?? 0;
+  /*
+    Leave reduces what the day asks for, in proportion. A full day of approved leave expects
+    nothing; a half day expects half. `leave_day_fraction` is the granted fraction, so the
+    fraction still owed is 1 − that.
+  */
+  const leaveFraction = day.leave_type_id !== null ? Number(day.leave_day_fraction ?? 1) : 0;
+  const owedFraction = Math.max(
+    0,
+    Math.min(1, 1 - (Number.isFinite(leaveFraction) ? leaveFraction : 0)),
+  );
+  return Math.round(shift * owedFraction);
+}
+
+/**
  * One day's surplus or shortfall.
  *
  * Deliberately tolerant of nulls: every minute field on the view is nullable, and a day with no
@@ -141,8 +186,28 @@ export function dayVariance(day: VarianceDay, today: string = istToday()): DayVa
     answer for a day nobody can report on yet. ISO dates compare lexicographically in
     chronological order, so a string comparison is the whole test.
 
-    TODAY IS DELIBERATELY NOT EXCLUDED. A day in progress genuinely can be behind, and somebody
-    checking at 4 pm should see that they are short — that is information, not an error.
+    TODAY IS EXCLUDED TOO, and this is the second version of that decision.
+
+    It used to count, on the reasoning that "a day in progress genuinely can be behind, and
+    somebody checking at 4pm should see that they are short". That reasoning is wrong, and it
+    was wrong in a way that generated the same support question over and over.
+
+    The engine cannot measure a day it has no end time for. An employee who scanned in at 08:29
+    and has not scanned out has `total_worked_minutes = 0` — which means "not known yet", not
+    "worked nothing". Subtracting an eight-hour shift from it produced a red −8h against
+    somebody sitting at their desk working, and it dominated the period total: a month genuinely
+    3h 09m ahead displayed as 4h 51m BEHIND, entirely because of one unfinished day.
+
+    Nor is an out-scan enough to settle it. Somebody who steps out at 16:00 and returns at 17:00
+    has a last-out-scan that is not their last scan of the day, and the punch engine pairs scans
+    by order — so the figure is not final until the day cannot gain another scan.
+
+    So the boundary is the one the employee already understands: the day is measured after it
+    ends, at 23:59:59 IST. Before that it reports as `in_progress` or `provisional`, contributes
+    nothing to any total, and says so on the row instead of inventing a shortfall.
+
+    ISO dates compare lexicographically in chronological order, so string comparison is the
+    whole test. `>=` rather than `>` is the entire behavioural change here.
   */
   if (day.ist_date > today) {
     return {
@@ -151,6 +216,22 @@ export function dayVariance(day: VarianceDay, today: string = istToday()): DayVa
       varianceMinutes: 0,
       counts: false,
       reason: "future",
+    };
+  }
+
+  if (day.ist_date === today) {
+    /*
+      Two labels, because they answer different questions. "Processing" tells somebody who is
+      still clocked in that nothing is wrong; "Tentative" tells somebody who has clocked out
+      that the number they can see is not yet the final one.
+    */
+    const stillIn = day.last_out_at === null && day.first_in_at !== null;
+    return {
+      expectedMinutes: 0,
+      workedMinutes: worked,
+      varianceMinutes: 0,
+      counts: false,
+      reason: stillIn ? "in_progress" : "provisional",
     };
   }
 
@@ -195,16 +276,7 @@ export function dayVariance(day: VarianceDay, today: string = istToday()): DayVa
     return { expectedMinutes: 0, workedMinutes: worked, varianceMinutes: worked, counts: true, reason: "not_working_day" };
   }
 
-  const shift = day.shift_duration_minutes ?? 0;
-
-  /*
-    Leave reduces what the day asks for, in proportion. A full day of approved leave expects
-    nothing; a half day expects half. `leave_day_fraction` is the granted fraction, so the
-    fraction still owed is 1 − that.
-  */
-  const leaveFraction = day.leave_type_id !== null ? Number(day.leave_day_fraction ?? 1) : 0;
-  const owedFraction = Math.max(0, Math.min(1, 1 - (Number.isFinite(leaveFraction) ? leaveFraction : 0)));
-  const expected = Math.round(shift * owedFraction);
+  const expected = expectedMinutesFor(day);
 
   if (expected === 0) {
     return {
@@ -229,6 +301,13 @@ export interface PeriodVariance {
   countedDays: number;
   /** Days skipped because the engine has not resolved them. */
   unresolvedDays: number;
+  /**
+   * Days skipped because they are TODAY and not finished yet.
+   *
+   * Counted apart from `unresolvedDays` so a screen can say "today is still being measured"
+   * rather than "2 not processed yet", which reads like a fault and was being reported as one.
+   */
+  openDays: number;
   expectedMinutes: number;
   workedMinutes: number;
   /** worked − expected across every counted day. */
@@ -249,9 +328,19 @@ export interface PeriodVariance {
  * up overall may be four hours ahead on some days and nearly four behind on others, and netting
  * that to "+40" hides the thing a manager would actually want to look at.
  */
-export function periodVariance(days: readonly VarianceDay[]): PeriodVariance {
+export function periodVariance(
+  days: readonly VarianceDay[],
+  /*
+    Injectable for the same reason `dayVariance` takes it: without it, no date-sensitive
+    behaviour of this function can be tested. A fixture dated "today" is dated whenever the
+    suite happens to run, so the day-in-progress rule silently became "a day in the past" and
+    the assertion measured the opposite of what it claimed.
+  */
+  today: string = istToday(),
+): PeriodVariance {
   let countedDays = 0;
   let unresolvedDays = 0;
+  let openDays = 0;
   let expectedMinutes = 0;
   let workedMinutes = 0;
   let surplusMinutes = 0;
@@ -262,14 +351,13 @@ export function periodVariance(days: readonly VarianceDay[]): PeriodVariance {
   /*
     Resolved ONCE for the whole period, not per day: a month spanning midnight IST would
     otherwise classify its last days against two different "today"s and the parts would not sum
-    to the whole.
+    to the whole. That is why it is a parameter with a default rather than a call per row.
   */
-  const today = istToday();
-
   for (const day of days) {
     const v = dayVariance(day, today);
     if (!v.counts) {
-      unresolvedDays += 1;
+      if (v.reason === "in_progress" || v.reason === "provisional") openDays += 1;
+      else unresolvedDays += 1;
       continue;
     }
     countedDays += 1;
@@ -287,6 +375,7 @@ export function periodVariance(days: readonly VarianceDay[]): PeriodVariance {
   return {
     countedDays,
     unresolvedDays,
+    openDays,
     expectedMinutes,
     workedMinutes,
     varianceMinutes: workedMinutes - expectedMinutes,

@@ -1913,6 +1913,13 @@ export const en = catalogue({
     worked.
   */
   "attendance.variance.reason.future": "Still to come — nothing is owed on this day yet",
+  "attendance.variance.reason.inProgress":
+    "Processing — you are still clocked in. Today is measured after it ends at 11:59 pm IST.",
+  "attendance.variance.reason.provisional":
+    "Tentative — today can still change. It is measured after it ends at 11:59 pm IST.",
+  /* The short forms that sit inside a table cell, where the sentence above will not fit. */
+  "attendance.variance.cell.inProgress": "Processing",
+  "attendance.variance.cell.provisional": "Tentative",
   "attendance.col.action": "Action",
   "attendance.action.punches": "Punches",
   "attendance.action.fix": "Fix",
@@ -10593,6 +10600,9 @@ export const en = catalogue({
   "admin.pAtt.variance.net": "Over / under worked",
   "admin.pAtt.variance.netHint": "Worked, against the shifts rostered.",
   "admin.pAtt.variance.netCounted": "Over {counted} computed days · {skipped} not processed yet",
+  /* Today is excluded on purpose, so the panel says so rather than leaving a gap to explain. */
+  "admin.pAtt.variance.openToday":
+    "Today is still being measured and is not counted yet — it is added after 11:59 pm IST.",
   "admin.pAtt.variance.over": "Worked extra",
   "admin.pAtt.variance.overHint": "Across {days} days that ran long.",
   "admin.pAtt.variance.under": "Worked short",

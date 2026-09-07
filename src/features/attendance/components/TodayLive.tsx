@@ -30,7 +30,7 @@ import { fmtDurationHm, fmtTime, nowInstantIso } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { AttendanceDay } from "../api/attendance.api";
 import type { SelfPunchState } from "../api/selfPunch.api";
-import { dayVariance, fmtSignedMinutes } from "../lib/variance";
+import { expectedMinutesFor, fmtSignedMinutes } from "../lib/variance";
 
 export interface TodayLiveProps {
   /** Today's row, when the engine has one. Carries the shift, and the breaks it has seen. */
@@ -69,7 +69,12 @@ export function TodayLive({ today, state }: TodayLiveProps): React.JSX.Element |
   const breaks = today?.break_minutes ?? 0;
   const worked = Math.max(0, onSite - breaks);
 
-  const expected = today !== null ? dayVariance(today).expectedMinutes : 0;
+  /*
+    `expectedMinutesFor`, NOT `dayVariance(...).expectedMinutes`. Today deliberately contributes
+    nothing to the period total now, so its `DayVariance.expectedMinutes` is 0 — reading it here
+    would silently remove this countdown, which is the opposite of what that change is for.
+  */
+  const expected = today !== null ? expectedMinutesFor(today) : 0;
   const remaining = expected - worked;
   const late = today?.late_minutes ?? 0;
 

@@ -76,6 +76,20 @@ const VARIANCE_REASON_KEY: Record<NoExpectationReason, Parameters<typeof t>[0]> 
   not_working_day: "attendance.variance.reason.notWorking",
   unresolved: "attendance.variance.reason.unresolved",
   future: "attendance.variance.reason.future",
+  in_progress: "attendance.variance.reason.inProgress",
+  provisional: "attendance.variance.reason.provisional",
+};
+
+/**
+ * The two reasons that get WORDS in the cell rather than an em dash.
+ *
+ * A dash against today is what caused the confusion in the first place — it reads as "nothing",
+ * and next to a red period total people concluded the total was the truth and the dash was a
+ * bug. "Processing" says the day is fine and not finished; the tooltip says when it will be.
+ */
+const VARIANCE_CELL_KEY: Partial<Record<NoExpectationReason, Parameters<typeof t>[0]>> = {
+  in_progress: "attendance.variance.cell.inProgress",
+  provisional: "attendance.variance.cell.provisional",
 };
 
 const SLICE_LABEL_KEY: Record<SliceKey, Parameters<typeof t>[0]> = {
@@ -314,9 +328,10 @@ export default function MyAttendancePage() {
         if (row.day === null) return dash(null);
         const v = dayVariance(row.day);
         if (!v.counts) {
+          const cell = v.reason === undefined ? undefined : VARIANCE_CELL_KEY[v.reason];
           return (
             <span className="text-muted-foreground" title={t(VARIANCE_REASON_KEY[v.reason ?? "unresolved"])}>
-              {dash(null)}
+              {cell === undefined ? dash(null) : <span className="text-warning">{t(cell)}</span>}
             </span>
           );
         }

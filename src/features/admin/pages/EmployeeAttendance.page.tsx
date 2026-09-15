@@ -35,6 +35,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CalendarClock, Clock, Lock, ScanFace, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { AttendanceExportButton } from "@/features/attendance/components/AttendanceExportButton";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { PeriodVariancePanel } from "../components/PeriodVariancePanel";
@@ -466,6 +467,10 @@ export default function EmployeeAttendancePage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* This person, over whatever period the bar below is showing. */}
+            {employeeId === null ? null : (
+              <AttendanceExportButton employeeId={employeeId} anchorDate={analytics.period.from} />
+            )}
             <Button asChild variant="outline" size="sm">
               <Link to={`/admin/people/${encodeURIComponent(code)}`}>
                 <ArrowLeft className="mr-2 size-4" aria-hidden />

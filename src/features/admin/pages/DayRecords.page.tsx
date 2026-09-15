@@ -35,6 +35,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { CalendarClock, Lock, ScanFace, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { AttendanceExportButton } from "@/features/attendance/components/AttendanceExportButton";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -405,6 +406,14 @@ export default function DayRecordsPage() {
         icon={CalendarClock}
         title={t("admin.days.title")}
         subtitle={t("admin.days.subtitle", { period: shownPeriod })}
+        actions={
+          /*
+            The venue's own download. `employeeId={null}` leaves the scope to RLS — this page
+            is already the whole-organisation view, and the export inherits exactly the rows
+            the reader may see, test accounts excluded by the view itself.
+          */
+          <AttendanceExportButton employeeId={null} anchorDate={range.from} alsoEveryone={false} />
+        }
       />
 
       <PeriodBar className="mb-4" />

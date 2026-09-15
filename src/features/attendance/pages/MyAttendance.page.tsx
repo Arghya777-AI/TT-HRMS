@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { DataGrid, type DataGridColumn } from "@/shared/ui/DataGrid";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageHeader } from "@/shared/ui/PageHeader";
+import { AttendanceExportButton } from "../components/AttendanceExportButton";
+import { useEmployeeId } from "@/shared/api/employee-scope";
 import { StateBoundary } from "@/shared/ui/StateBoundary";
 import { StatusChip } from "@/shared/ui/StatusChip";
 import {
@@ -118,6 +120,7 @@ export default function MyAttendancePage() {
   const month = requested !== null && isIstMonthKey(requested) ? requested : nowIstMonth();
   const range = useMemo(() => istMonthRange(month), [month]);
 
+  const employeeId = useEmployeeId();
   const context = useMyAttendanceContext();
   const summary = useAttendancePeriodSummary(month, range);
   const days = useAttendanceDays(range);
@@ -454,11 +457,20 @@ export default function MyAttendancePage() {
         title={t("attendance.page.title")}
         subtitle={t("attendance.page.subtitle")}
         actions={
-          <PeriodSelector
-            month={month}
-            dateOfJoin={context.data?.date_of_join ?? null}
-            onChange={setMonth}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodSelector
+              month={month}
+              dateOfJoin={context.data?.date_of_join ?? null}
+              onChange={setMonth}
+            />
+            {/*
+              Their own attendance, their own download. The anchor is the month ON SCREEN, so
+              the file is the period they were reading rather than whatever month it is today.
+            */}
+            {employeeId === null ? null : (
+              <AttendanceExportButton employeeId={employeeId} anchorDate={`${month}-01`} />
+            )}
+          </div>
         }
       />
 

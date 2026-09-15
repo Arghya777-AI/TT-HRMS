@@ -13,6 +13,7 @@ import { keysPlatformAdmin } from "./keys/platform-admin";
 import { keysTeamExtra } from "./keys/team-extra";
 import { keysMeApply } from "./keys/me-apply";
 import { keysMeMisc } from "./keys/me-misc";
+import { keysAttendanceExport } from "./keys/attendance-export";
 import { keysMeIndex } from "./keys/me-index";
 import { keysAiSurfaces } from "./keys/ai-surfaces";
 import { keysRecovered } from "./keys/recovered";
@@ -116,6 +117,7 @@ export const en = catalogue({
   ...keysTeamCharts,
   ...keysMeApply,
   ...keysMeMisc,
+  ...keysAttendanceExport,
   ...keysMeIndex,
   ...keysAiSurfaces,
   ...keysRecovered,

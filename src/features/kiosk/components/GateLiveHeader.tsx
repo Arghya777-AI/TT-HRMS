@@ -24,7 +24,7 @@
  * a shared device whose timezone nobody owns, and a punch is stamped by the server
  * regardless of what this shows.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScanFace, Volume2, VolumeX, Wifi, WifiOff } from "lucide-react";
 import { chimeReady, chimeSupported, isMuted, playChime, primeChime, setMuted } from "@/shared/audio/chime";
 import { cn } from "@/lib/utils";
@@ -84,6 +84,11 @@ function useGateNow(): { clock: string; date: string; weekday: string } {
 function SoundButton(): React.JSX.Element | null {
   const [muted, setMutedState] = useState(isMuted);
   const [ready, setReady] = useState(chimeReady);
+  /*
+    A long press mutes; a tap never can. See the handler below for why.
+  */
+  const held = useRef(false);
+  const holdTimer = useRef<number | null>(null);
 
   /*
     The context can be unlocked by ANY tap on the page — the unlock listeners in `chime.ts`
@@ -101,41 +106,75 @@ function SoundButton(): React.JSX.Element | null {
 
   const locked = !muted && !ready;
 
+  /*
+    ── A TAP TESTS THE SOUND. IT NEVER SILENCES THE GATE. ─────────────────────
+
+    This used to be a plain toggle, which made it a trap: a guard investigating "the gate is
+    not making a noise" taps the speaker icon, and the tap MUTES it — persistently, across
+    reloads, because the preference is in localStorage. The one action somebody takes to
+    diagnose the fault was the action that caused it, and there was no way back that did not
+    involve noticing a small icon had changed shape.
+
+    So a tap now always makes a noise: it unlocks the audio context if the browser was waiting
+    for a gesture, un-mutes if somebody had muted it, and plays the confirmation tone either
+    way. Muting still exists — a gate is sometimes genuinely wanted silent — but it takes a
+    deliberate press-and-hold, which nobody does by accident.
+  */
+  const testOrEnable = (): void => {
+    if (muted) {
+      setMuted(false);
+      setMutedState(false);
+    }
+    // Both are safe outside a gesture and this IS one, so the context unlocks here.
+    primeChime();
+    playChime("recorded");
+    setReady(chimeReady());
+  };
+
+  const startHold = (): void => {
+    held.current = false;
+    holdTimer.current = window.setTimeout(() => {
+      held.current = true;
+      setMuted(true);
+      setMutedState(true);
+    }, 700);
+  };
+  const endHold = (): void => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+
   return (
     <button
       type="button"
+      onPointerDown={startHold}
+      onPointerUp={endHold}
+      onPointerLeave={endHold}
+      onPointerCancel={endHold}
       onClick={() => {
-        if (muted) {
-          setMuted(false);
-          setMutedState(false);
-          // Unmuting is itself a gesture, so take the chance to unlock as well.
-          primeChime();
-          playChime("recorded");
-          setReady(chimeReady());
+        // The hold already muted it; the click that follows must not undo that.
+        if (held.current) {
+          held.current = false;
           return;
         }
-        if (locked) {
-          primeChime();
-          playChime("recorded");
-          setReady(chimeReady());
-          return;
-        }
-        setMuted(true);
-        setMutedState(true);
+        testOrEnable();
       }}
       aria-label={
         muted
-          ? "Sound is off. Turn the attendance chime on."
+          ? "Sound is off. Tap to turn the attendance chime back on."
           : locked
             ? "Tap to enable the attendance chime on this device."
-            : "Sound is on. Turn the attendance chime off."
+            : "Sound is on. Tap to test it; press and hold to mute."
       }
       className={cn(
         "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider",
         locked
           ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40"
           : muted
-            ? "bg-neutral-800 text-neutral-400"
+            /* A silent gate is a FAULT, not a preference, and it is read from across a foyer. */
+            ? "bg-destructive/20 text-red-300 ring-1 ring-destructive/50"
             : "bg-neutral-800/70 text-neutral-300",
       )}
     >
@@ -144,7 +183,12 @@ function SoundButton(): React.JSX.Element | null {
       ) : (
         <Volume2 className="size-4" aria-hidden />
       )}
-      {locked ? "Enable sound" : null}
+      {/*
+        ALWAYS A WORD, never a bare icon. "On" and "off" were a speaker glyph with and without
+        a cross through it, at 16px, on a tablet across a lobby — which is how a gate stays
+        muted for a fortnight without anybody realising that is what they are looking at.
+      */}
+      {locked ? "Enable sound" : muted ? "Sound off" : "Sound on"}
     </button>
   );
 }

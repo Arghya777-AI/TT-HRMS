@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, X } from "lucide-react";
 import { t } from "@/shared/i18n/en";
+import { chimeStatus } from "@/shared/audio/chime";
 import { fmtDate, nowInstantIso, nowIstClock } from "@/lib/datetime";
 import {
   MAX_ATTEMPTS,
@@ -90,6 +91,17 @@ export function LocalLogSheet({
             {t("kiosk.gate.log.title")}
           </h2>
           <p className="text-xs text-neutral-400">{t("kiosk.gate.log.subtitle")}</p>
+          {/*
+            THE SOUND DIAGNOSTIC, WHICH EXISTED AND WAS RENDERED NOWHERE.
+
+            `chimeStatus()` has always been able to say which of the three silences this is —
+            "not supported", "muted", "waiting for a tap", "ready" — and nothing displayed it,
+            so "the gate makes no noise" could not be told apart from "somebody muted it a
+            fortnight ago" without a debugger. It says so here, where a guard can read it out.
+          */}
+          <p className="mt-0.5 text-xs text-neutral-500">
+            {t("kiosk.gate.log.sound", { state: chimeStatus() })}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button

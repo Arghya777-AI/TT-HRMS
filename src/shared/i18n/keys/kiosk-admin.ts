@@ -596,6 +596,8 @@ export const keysKioskAdmin = {
     "Use this if the screen freezes or a scan is slow to come back. Nothing is lost — this device stays paired and any scans waiting to sync are kept.",
   "kiosk.gate.log.title": "Stored on this device",
   "kiosk.gate.log.subtitle": "Scans held here, and what has already reached the server.",
+  /* The three silences, told apart — see `chimeStatus`. */
+  "kiosk.gate.log.sound": "Sound on this device: {state}",
   "kiosk.gate.log.open": "Stored here ({count})",
   "kiosk.gate.log.close": "Close",
   "kiosk.gate.log.syncNow": "Sync now",
